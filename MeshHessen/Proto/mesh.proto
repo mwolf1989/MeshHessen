@@ -1,0 +1,275 @@
+syntax = "proto3";
+
+package meshtastic;
+
+option java_package = "com.geeksville.mesh";
+option java_outer_classname = "MeshProtos";
+option optimize_for = LITE_RUNTIME;
+
+// GPS coordinates (integer, scaled by 1e7)
+message Position {
+  sfixed32 latitude_i = 1;
+  sfixed32 longitude_i = 2;
+  int32 altitude = 3;
+  fixed32 time = 4;
+}
+
+// Node user identity
+message User {
+  string id = 1;
+  string long_name = 2;
+  string short_name = 3;
+  bytes macaddr = 4;
+  HardwareModel hw_model = 5;
+  bool is_licensed = 6;
+  Role role = 7;
+}
+
+// Application data payload
+message Data {
+  uint32 portnum = 1;
+  bytes payload = 2;
+  bool want_response = 3;
+  fixed32 dest = 4;
+  fixed32 source = 5;
+  fixed32 request_id = 6;
+  fixed32 reply_id = 7;
+  bytes emoji = 8;
+}
+
+// Priority for mesh packet
+enum Priority {
+  UNSET_PRIORITY = 0;
+  MIN = 1;
+  BACKGROUND = 10;
+  DEFAULT = 64;
+  RELIABLE = 70;
+  ACK = 120;
+  MAX = 127;
+}
+
+// A packet in the mesh
+message MeshPacket {
+  fixed32 from = 1;
+  fixed32 to = 2;
+  uint32 channel = 3;
+  oneof payload_variant {
+    Data decoded = 4;
+    bytes encrypted = 5;
+  }
+  fixed32 id = 6;
+  uint32 rx_time = 7;
+  float rx_snr = 8;
+  int32 rx_rssi = 9;
+  uint32 hop_limit = 10;
+  bool want_ack = 11;
+  Priority priority = 12;
+  int32 hop_start = 13;
+  bool via_mqtt = 14;
+}
+
+// Info about a node in the mesh
+message NodeInfo {
+  uint32 num = 1;
+  User user = 2;
+  Position position = 3;
+  float snr = 4;
+  int32 last_heard = 5;
+  DeviceMetrics device_metrics = 6;
+  uint32 channel = 7;
+  bool via_mqtt = 8;
+}
+
+// Info about the local device
+message MyNodeInfo {
+  uint32 my_node_num = 1;
+  uint32 reboot_count = 2;
+  uint32 min_app_version = 3;
+  uint32 max_channels = 4;
+}
+
+// Telemetry from device
+message DeviceMetrics {
+  uint32 battery_level = 1;
+  float voltage = 2;
+  float channel_utilization = 3;
+  float air_util_tx = 4;
+  uint32 uptime_seconds = 5;
+}
+
+// Data streaming from radio to app
+message FromRadio {
+  uint32 id = 1;
+  oneof payload_variant {
+    MeshPacket packet = 2;
+    MyNodeInfo my_info = 3;
+    NodeInfo node_info = 4;
+    Config config = 5;
+    ModuleConfig module_config = 6;
+    Channel channel = 7;
+    bytes config_complete_id = 8;
+    bytes rebooted = 9;
+    bytes moduleconfig_complete_id = 10;
+    bytes channels_complete_id = 11;
+  }
+}
+
+// Data from app to radio
+message ToRadio {
+  oneof payload_variant {
+    MeshPacket packet = 1;
+    uint32 want_config_id = 3;
+    bool disconnect = 4;
+    bytes xmodem_packet = 5;
+  }
+}
+
+// Channel slot
+message Channel {
+  int32 index = 1;
+  ChannelSettings settings = 2;
+  ChannelRole role = 3;
+}
+
+// Channel configuration
+message ChannelSettings {
+  uint32 channel_num = 1;
+  bytes psk = 2;
+  string name = 3;
+  fixed32 id = 4;
+  bool uplink_enabled = 5;
+  bool downlink_enabled = 6;
+}
+
+// Device config wrapper
+message Config {
+  oneof payload_variant {
+    DeviceConfig device = 1;
+    PositionConfig position = 2;
+    PowerConfig power = 3;
+    NetworkConfig network = 4;
+    DisplayConfig display = 5;
+    LoRaConfig lora = 6;
+    BluetoothConfig bluetooth = 7;
+  }
+}
+
+message DeviceConfig {}
+message PositionConfig {}
+message PowerConfig {}
+message NetworkConfig {}
+message DisplayConfig {}
+message BluetoothConfig {}
+message ModuleConfig {}
+
+// LoRa radio configuration
+message LoRaConfig {
+  bool use_preset = 1;
+  ModemPreset modem_preset = 2;
+  uint32 bandwidth = 3;
+  uint32 spread_factor = 4;
+  uint32 coding_rate = 5;
+  uint32 frequency_offset = 6;
+  Region region = 7;
+  uint32 hop_limit = 8;
+  bool tx_enabled = 9;
+  float tx_power = 10;
+  uint32 channel_num = 11;
+}
+
+// Hardware model identifiers
+enum HardwareModel {
+  UNSET = 0;
+  TLORA_V2 = 1;
+  TLORA_V1 = 2;
+  TLORA_V2_1_1P6 = 3;
+  TBEAM = 4;
+  HELTEC_V2_0 = 5;
+  TBEAM_V0P7 = 6;
+  T_ECHO = 7;
+  TLORA_V1_1P3 = 8;
+  RAK4631 = 9;
+  HELTEC_V2_1 = 10;
+  HELTEC_V1 = 11;
+  LILYGO_TBEAM_S3_CORE = 12;
+  RAK11200 = 13;
+  NANO_G1 = 14;
+  TLORA_V2_1_1P8 = 15;
+  TLORA_T3_S3 = 16;
+  NANO_G1_EXPLORER = 17;
+  NANO_G2_ULTRA = 18;
+  LORA_TYPE = 19;
+  WIPHONE = 20;
+  WIO_WM1110 = 21;
+  RAK2560 = 22;
+  HELTEC_HRU_3601 = 23;
+  STATION_G1 = 25;
+  RAK11310 = 26;
+  SENSELORA_RP2040 = 27;
+  SENSELORA_S3 = 28;
+  CANARYONE = 29;
+  RP2040_LORA = 30;
+  STATION_G2 = 31;
+  LORA_RELAY_V1 = 32;
+  NRF52840DK = 33;
+  PPR = 34;
+  GENIEBLOCKS = 35;
+  NRF52_UNKNOWN = 36;
+  PORTDUINO = 37;
+  ANDROID_SIM = 38;
+  T_DECK = 39;
+  PRIVATE_HW = 255;
+}
+
+// Node role in mesh
+enum Role {
+  CLIENT = 0;
+  CLIENT_MUTE = 1;
+  ROUTER = 2;
+  ROUTER_CLIENT = 3;
+  REPEATER = 4;
+  TRACKER = 5;
+  SENSOR = 6;
+}
+
+// Channel role
+enum ChannelRole {
+  DISABLED = 0;
+  PRIMARY = 1;
+  SECONDARY = 2;
+}
+
+// LoRa region
+enum Region {
+  UNSET_REGION = 0;
+  US = 1;
+  EU_433 = 2;
+  EU_868 = 3;
+  CN = 4;
+  JP = 5;
+  ANZ = 6;
+  KR = 7;
+  TW = 8;
+  RU = 9;
+  IN = 10;
+  NZ_865 = 11;
+  TH = 12;
+  LORA_24 = 13;
+  UA_433 = 14;
+  UA_868 = 15;
+  MY_433 = 16;
+  MY_919 = 17;
+  SG_923 = 18;
+}
+
+// Modem preset
+enum ModemPreset {
+  LONG_FAST = 0;
+  LONG_SLOW = 1;
+  VERY_LONG_SLOW = 2;
+  MEDIUM_SLOW = 3;
+  MEDIUM_FAST = 4;
+  SHORT_SLOW = 5;
+  SHORT_FAST = 6;
+  LONG_MODERATE = 7;
+}

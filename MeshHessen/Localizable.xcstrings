@@ -1,0 +1,1422 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+
+    "Messages" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Nachrichten" }
+        }
+      }
+    },
+    "Nodes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Knoten" }
+        }
+      }
+    },
+    "Channels" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kanäle" }
+        }
+      }
+    },
+    "Map" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Karte" }
+        }
+      }
+    },
+    "Debug" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Debug" }
+        }
+      }
+    },
+    "Info" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Info" }
+        }
+      }
+    },
+
+    "Disconnect" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Trennen" }
+        }
+      }
+    },
+    "Connect" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Verbinden" }
+        }
+      }
+    },
+    "Disconnect from device" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Verbindung zum Gerät trennen" }
+        }
+      }
+    },
+    "Connect to device" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Mit Gerät verbinden" }
+        }
+      }
+    },
+    "Direct Messages" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Direktnachrichten" }
+        }
+      }
+    },
+    "Open Direct Messages" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Direktnachrichten öffnen" }
+        }
+      }
+    },
+
+    "Disconnected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Getrennt" }
+        }
+      }
+    },
+    "Connecting…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Verbinde…" }
+        }
+      }
+    },
+    "Connected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Verbunden" }
+        }
+      }
+    },
+    "Reconnecting in %llds… (attempt %lld)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Neuverbindung in %llds… (Versuch %lld)" }
+        }
+      }
+    },
+    "Error: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Fehler: %@" }
+        }
+      }
+    },
+
+    "Serial / USB" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Seriell / USB" }
+        }
+      }
+    },
+    "Bluetooth" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Bluetooth" }
+        }
+      }
+    },
+    "TCP / WiFi" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "TCP / WLAN" }
+        }
+      }
+    },
+
+    "Connect to Device" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Mit Gerät verbinden" }
+        }
+      }
+    },
+    "Connection Type" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Verbindungsart" }
+        }
+      }
+    },
+    "Serial Port" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Serieller Port" }
+        }
+      }
+    },
+    "Port" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Port" }
+        }
+      }
+    },
+    "Refresh port list" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Portliste aktualisieren" }
+        }
+      }
+    },
+    "Baud rate: 115200, 8N1" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Baudrate: 115200, 8N1" }
+        }
+      }
+    },
+    "Bluetooth Device Name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Bluetooth-Gerätename" }
+        }
+      }
+    },
+    "e.g. Meshtastic_1234 or T-Deck" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "z.B. Meshtastic_1234 oder T-Deck" }
+        }
+      }
+    },
+    "The app will scan for a device whose name contains the text above." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Die App sucht nach einem Gerät, dessen Name den obigen Text enthält." }
+        }
+      }
+    },
+    "Host (e.g. 192.168.1.1)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Host (z.B. 192.168.1.1)" }
+        }
+      }
+    },
+    "Cancel" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Abbrechen" }
+        }
+      }
+    },
+
+    "General" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Allgemein" }
+        }
+      }
+    },
+    "Connection" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Verbindung" }
+        }
+      }
+    },
+    "Notifications" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Benachrichtigungen" }
+        }
+      }
+    },
+    "Identity" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Identität" }
+        }
+      }
+    },
+    "Station Name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Stationsname" }
+        }
+      }
+    },
+    "Your station name shown to other nodes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Ihr Stationsname, der anderen Knoten angezeigt wird" }
+        }
+      }
+    },
+    "Show encrypted messages" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Verschlüsselte Nachrichten anzeigen" }
+        }
+      }
+    },
+    "Own Position" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Eigene Position" }
+        }
+      }
+    },
+    "Latitude:" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Breitengrad:" }
+        }
+      }
+    },
+    "Longitude:" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Längengrad:" }
+        }
+      }
+    },
+    "Used to calculate distance to other nodes and show your position on the map." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Wird zur Berechnung der Entfernung zu anderen Knoten und zur Anzeige Ihrer Position auf der Karte verwendet." }
+        }
+      }
+    },
+    "Last Used Connection" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Zuletzt verwendete Verbindung" }
+        }
+      }
+    },
+    "Serial Port:" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Serieller Port:" }
+        }
+      }
+    },
+    "TCP Host:" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "TCP-Host:" }
+        }
+      }
+    },
+    "Port:" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Port:" }
+        }
+      }
+    },
+    "Map Source" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kartenquelle" }
+        }
+      }
+    },
+    "OpenStreetMap Standard" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "OpenStreetMap Standard" }
+        }
+      }
+    },
+    "OpenTopoMap" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "OpenTopoMap" }
+        }
+      }
+    },
+    "OSM Dark" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "OSM Dunkel" }
+        }
+      }
+    },
+    "Tile Server URLs" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Tile-Server-URLs" }
+        }
+      }
+    },
+    "OSM Standard:" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "OSM Standard:" }
+        }
+      }
+    },
+    "OpenTopoMap:" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "OpenTopoMap:" }
+        }
+      }
+    },
+    "OSM Dark:" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "OSM Dunkel:" }
+        }
+      }
+    },
+    "URL" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "URL" }
+        }
+      }
+    },
+    "Offline Tiles" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Offline-Kacheln" }
+        }
+      }
+    },
+    "Download Tiles…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kacheln herunterladen…" }
+        }
+      }
+    },
+    "Alert Bell" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Alarmglocke" }
+        }
+      }
+    },
+    "Play sound on alert bell (🔔)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Ton bei Alarmglocke abspielen (🔔)" }
+        }
+      }
+    },
+    "When a message containing 🔔 or the BEL character is received, the app flashes red and plays a sound." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Wenn eine Nachricht mit 🔔 oder dem BEL-Zeichen empfangen wird, blinkt die App rot und spielt einen Ton ab." }
+        }
+      }
+    },
+    "Debug Logging" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Debug-Protokollierung" }
+        }
+      }
+    },
+    "Debug Messages" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Debug-Nachrichten" }
+        }
+      }
+    },
+    "Debug Serial" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Debug Seriell" }
+        }
+      }
+    },
+    "Debug Device" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Debug Gerät" }
+        }
+      }
+    },
+    "Debug Bluetooth" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Debug Bluetooth" }
+        }
+      }
+    },
+    "Enables verbose logging in the Debug tab" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Aktiviert ausführliche Protokollierung im Debug-Tab" }
+        }
+      }
+    },
+
+    "Name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Name" }
+        }
+      }
+    },
+    "Node ID" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Knoten-ID" }
+        }
+      }
+    },
+    "Short" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kurz" }
+        }
+      }
+    },
+    "Battery" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Batterie" }
+        }
+      }
+    },
+    "SNR" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "SNR" }
+        }
+      }
+    },
+    "Distance" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Entfernung" }
+        }
+      }
+    },
+    "Last Heard" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Zuletzt gehört" }
+        }
+      }
+    },
+    "Show Info…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Info anzeigen…" }
+        }
+      }
+    },
+    "Send Direct Message" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Direktnachricht senden" }
+        }
+      }
+    },
+    "Copy Node ID" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Knoten-ID kopieren" }
+        }
+      }
+    },
+    "Set Color" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Farbe setzen" }
+        }
+      }
+    },
+    "Clear Color" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Farbe entfernen" }
+        }
+      }
+    },
+    "Filter nodes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Knoten filtern" }
+        }
+      }
+    },
+
+    "Done" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Fertig" }
+        }
+      }
+    },
+    "Short Name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kurzname" }
+        }
+      }
+    },
+    "Long Name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Langname" }
+        }
+      }
+    },
+    "Position" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Position" }
+        }
+      }
+    },
+    " ago" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : " her" }
+        }
+      }
+    },
+    "Color Tag" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Farbmarkierung" }
+        }
+      }
+    },
+    "Clear" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Löschen" }
+        }
+      }
+    },
+    "Note" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Notiz" }
+        }
+      }
+    },
+    "Optional note…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Optionale Notiz…" }
+        }
+      }
+    },
+    "Red" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Rot" }
+        }
+      }
+    },
+    "Blue" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Blau" }
+        }
+      }
+    },
+    "Green" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Grün" }
+        }
+      }
+    },
+    "Yellow" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Gelb" }
+        }
+      }
+    },
+    "Orange" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Orange" }
+        }
+      }
+    },
+    "Purple" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Lila" }
+        }
+      }
+    },
+    "Cyan" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Cyan" }
+        }
+      }
+    },
+    "Gray" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Grau" }
+        }
+      }
+    },
+
+    "Add Mesh Hessen" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Mesh Hessen hinzufügen" }
+        }
+      }
+    },
+    "Browse" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Durchsuchen" }
+        }
+      }
+    },
+    "Add" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Hinzufügen" }
+        }
+      }
+    },
+    "No Channels" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Keine Kanäle" }
+        }
+      }
+    },
+    "Connect to a node to load channel configuration." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Verbinde dich mit einem Knoten, um die Kanalkonfiguration zu laden." }
+        }
+      }
+    },
+    "Connect to a node to load channels." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Verbinde dich mit einem Knoten, um Kanäle zu laden." }
+        }
+      }
+    },
+    "Uplink enabled" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Uplink aktiviert" }
+        }
+      }
+    },
+    "Downlink enabled" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Downlink aktiviert" }
+        }
+      }
+    },
+
+    "SOS" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "SOS" }
+        }
+      }
+    },
+    "Send SOS broadcast on this channel" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "SOS-Nachricht auf diesem Kanal senden" }
+        }
+      }
+    },
+    "Message…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Nachricht…" }
+        }
+      }
+    },
+
+    "No Conversation Selected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Keine Unterhaltung ausgewählt" }
+        }
+      }
+    },
+    "Select a conversation from the sidebar." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Wähle eine Unterhaltung in der Seitenleiste aus." }
+        }
+      }
+    },
+
+    "Map style" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kartenstil" }
+        }
+      }
+    },
+    "Street" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Straße" }
+        }
+      }
+    },
+    "Topo" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Topo" }
+        }
+      }
+    },
+    "Dark" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Dunkel" }
+        }
+      }
+    },
+    "Show Node Info" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Knoten-Info anzeigen" }
+        }
+      }
+    },
+    "Set Note" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Notiz setzen" }
+        }
+      }
+    },
+    "Set as My Position" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Als eigene Position setzen" }
+        }
+      }
+    },
+    "Save" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Speichern" }
+        }
+      }
+    },
+
+    "Debug Log" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Debug-Protokoll" }
+        }
+      }
+    },
+    "Auto-scroll" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Auto-Scroll" }
+        }
+      }
+    },
+
+    "Mesh Hessen" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Mesh Hessen" }
+        }
+      }
+    },
+    "A native macOS client for the Meshtastic mesh radio network, focused on the Mesh Hessen community." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Ein nativer macOS-Client für das Meshtastic-Mesh-Funknetzwerk, ausgerichtet auf die Mesh-Hessen-Community." }
+        }
+      }
+    },
+    "Open Source Libraries" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Open-Source-Bibliotheken" }
+        }
+      }
+    },
+    "Map Tiles" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kartenkacheln" }
+        }
+      }
+    },
+    "Tile server provided by schwarzes-seelenreich.de. OpenStreetMap data © OpenStreetMap contributors." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Tile-Server bereitgestellt von schwarzes-seelenreich.de. OpenStreetMap-Daten © OpenStreetMap-Mitwirkende." }
+        }
+      }
+    },
+    "OpenTopoMap © opentopomap.org" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "OpenTopoMap © opentopomap.org" }
+        }
+      }
+    },
+    "Channel information sourced from github.com/SMLunchen/mh_windowsclient." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kanalinformationen stammen von github.com/SMLunchen/mh_windowsclient." }
+        }
+      }
+    },
+
+    "Add Channel" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kanal hinzufügen" }
+        }
+      }
+    },
+    "Channel Name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kanalname" }
+        }
+      }
+    },
+    "PSK (base64)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "PSK (Base64)" }
+        }
+      }
+    },
+    "Uplink Enabled" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Uplink aktiviert" }
+        }
+      }
+    },
+    "Downlink Enabled" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Downlink aktiviert" }
+        }
+      }
+    },
+
+    "Channel Browser" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kanal-Browser" }
+        }
+      }
+    },
+    "Close" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Schließen" }
+        }
+      }
+    },
+    "Search…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Suchen…" }
+        }
+      }
+    },
+    "Bundesland" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Bundesland" }
+        }
+      }
+    },
+    "All" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Alle" }
+        }
+      }
+    },
+    "Loading channels…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kanäle werden geladen…" }
+        }
+      }
+    },
+    "PSK" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "PSK" }
+        }
+      }
+    },
+    "(none)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "(keiner)" }
+        }
+      }
+    },
+
+    "Download Offline Tiles" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Offline-Kacheln herunterladen" }
+        }
+      }
+    },
+    "Tiles are stored locally for offline use. Higher zoom levels (12+) require many tiles. Respect OSM usage policy (~2 req/s max)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kacheln werden lokal für die Offline-Nutzung gespeichert. Höhere Zoomstufen (12+) benötigen viele Kacheln. Bitte die OSM-Nutzungsrichtlinien beachten (~2 Anfragen/s max)." }
+        }
+      }
+    },
+    "Layer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Ebene" }
+        }
+      }
+    },
+    "Street (OSM)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Straße (OSM)" }
+        }
+      }
+    },
+    "Region" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Region" }
+        }
+      }
+    },
+    "Bounding Box (WGS84)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Begrenzungsrahmen (WGS84)" }
+        }
+      }
+    },
+    "North (max lat)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Nord (max. Breitengrad)" }
+        }
+      }
+    },
+    "South (min lat)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Süd (min. Breitengrad)" }
+        }
+      }
+    },
+    "East (max lon)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Ost (max. Längengrad)" }
+        }
+      }
+    },
+    "West (min lon)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "West (min. Längengrad)" }
+        }
+      }
+    },
+    "Min" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Min" }
+        }
+      }
+    },
+    "Max" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Max" }
+        }
+      }
+    },
+    "Download" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Herunterladen" }
+        }
+      }
+    },
+
+    "Import Tile Archive" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kachelarchiv importieren" }
+        }
+      }
+    },
+    "Import a .zip archive containing offline map tiles." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Importiere ein .zip-Archiv mit Offline-Kartenkacheln." }
+        }
+      }
+    },
+    "Recognised folder names:" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Erkannte Ordnernamen:" }
+        }
+      }
+    },
+    "Choose Archive…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Archiv wählen…" }
+        }
+      }
+    },
+
+    "Alert from %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Alarm von %@" }
+        }
+      }
+    },
+    "Show on Map" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Auf Karte anzeigen" }
+        }
+      }
+    },
+    "Dismiss" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Schließen" }
+        }
+      }
+    },
+    "Unknown" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Unbekannt" }
+        }
+      }
+    },
+
+    "DM from %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "DM von %@" }
+        }
+      }
+    },
+    "New direct message" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Neue Direktnachricht" }
+        }
+      }
+    },
+
+    "Nodes (%lld)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Knoten (%lld)" }
+        }
+      }
+    },
+
+    "Set Note for %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Notiz setzen für %@" }
+        }
+      }
+    },
+    "Enter a note for this node:" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Gib eine Notiz für diesen Knoten ein:" }
+        }
+      }
+    },
+
+    "Message to %@…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Nachricht an %@…" }
+        }
+      }
+    },
+    "DM: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "DM: %@" }
+        }
+      }
+    },
+
+    "Send" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Senden" }
+        }
+      }
+    },
+    "Settings" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Einstellungen" }
+        }
+      }
+    },
+
+    "Node" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Knoten" }
+        }
+      }
+    },
+    "away" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "entfernt" }
+        }
+      }
+    },
+
+    "Starting..." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Starte..." }
+        }
+      }
+    },
+    "No tiles to download." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Keine Kacheln zum Herunterladen." }
+        }
+      }
+    },
+    "Cancelled." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Abgebrochen." }
+        }
+      }
+    },
+    "Done — %lld tiles (%lld already cached)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Fertig — %lld Kacheln (%lld bereits im Cache)." }
+        }
+      }
+    },
+    "Done — %lld tiles downloaded." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Fertig — %lld Kacheln heruntergeladen." }
+        }
+      }
+    },
+
+    "Extracting archive…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Archiv wird entpackt…" }
+        }
+      }
+    },
+    "Error: Could not access file." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Fehler: Datei konnte nicht geöffnet werden." }
+        }
+      }
+    },
+    "Error: Could not create temp directory." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Fehler: Temporäres Verzeichnis konnte nicht erstellt werden." }
+        }
+      }
+    },
+    "Error: unzip exited with code %lld." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Fehler: unzip beendet mit Code %lld." }
+        }
+      }
+    },
+    "Detecting tile sources…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kachelquellen werden erkannt…" }
+        }
+      }
+    },
+    "Archive contains no folders." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Archiv enthält keine Ordner." }
+        }
+      }
+    },
+    "Unrecognised folders: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Unbekannte Ordner: %@" }
+        }
+      }
+    },
+    "Error: No tile sources found." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Fehler: Keine Kachelquellen gefunden." }
+        }
+      }
+    },
+    "Scanning tiles…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kacheln werden gescannt…" }
+        }
+      }
+    },
+    "Error: No valid tile images found in archive." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Fehler: Keine gültigen Kachelbilder im Archiv gefunden." }
+        }
+      }
+    },
+    "Importing %lld tiles…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "%lld Kacheln werden importiert…" }
+        }
+      }
+    },
+    "Importing tiles… %lld/%lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Kacheln importieren… %lld/%lld" }
+        }
+      }
+    },
+    "Imported %lld tiles: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "%lld Kacheln importiert: %@" }
+        }
+      }
+    },
+    " (%lld failed)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : " (%lld fehlgeschlagen)" }
+        }
+      }
+    },
+    "Skipped unknown folders: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Unbekannte Ordner übersprungen: %@" }
+        }
+      }
+    },
+
+    "[Encrypted message — PSK required]" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "[Verschlüsselte Nachricht — PSK erforderlich]" }
+        }
+      }
+    },
+    "Other Channel (%lld)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Anderer Kanal (%lld)" }
+        }
+      }
+    },
+
+    "Me" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Ich" }
+        }
+      }
+    },
+
+    "Invalid connection parameters" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Ungültige Verbindungsparameter" }
+        }
+      }
+    },
+    "Not connected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Nicht verbunden" }
+        }
+      }
+    },
+    "Connection cancelled" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Verbindung abgebrochen" }
+        }
+      }
+    },
+    "Connection timed out" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : { "state" : "translated", "value" : "Verbindungszeitüberschreitung" }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

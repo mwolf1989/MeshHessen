@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package meshtastic;
+
+import "mesh.proto";
+
+option java_package = "com.geeksville.mesh";
+option optimize_for = LITE_RUNTIME;
+
+// Admin message for device management
+message AdminMessage {
+  bytes session_passkey = 101;
+
+  oneof payload_variant {
+    uint32 get_channel_request = 1;
+    Channel get_channel_response = 2;
+    bool get_owner_request = 3;
+    User get_owner_response = 4;
+    uint32 get_config_request = 5;
+    Config get_config_response = 6;
+    uint32 get_module_config_request = 7;
+    ModuleConfig get_module_config_response = 8;
+    User set_owner = 32;
+    Channel set_channel = 33;
+    Config set_config = 34;
+    ModuleConfig set_module_config = 35;
+    bool begin_edit_settings = 64;
+    bool commit_edit_settings = 65;
+    int32 factory_reset_device = 94;
+    int32 reboot_seconds = 97;
+    int32 shutdown_seconds = 98;
+    int32 factory_reset_config = 99;
+    bool nodedb_reset = 100;
+  }
+}

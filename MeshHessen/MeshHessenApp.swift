@@ -1,17 +1,84 @@
-//
-//  MeshHessenApp.swift
-//  MeshHessen
-//
-//  Created by Marcel Wolf on 22.02.26.
-//
-
 import SwiftUI
+import AppKit
+import UserNotifications
 
 @main
 struct MeshHessenApp: App {
+    @State private var coordinator = AppCoordinator()
+    @Environment(\.openWindow) private var openWindow
+
     var body: some Scene {
+        // MARK: - Main Window
         WindowGroup {
-            ContentView()
+            MainView()
+                .environment(\.appState, coordinator.appState)
+                .environment(coordinator)
+                .onReceive(NotificationCenter.default.publisher(for: .incomingDirectMessage)) { note in
+                    handleIncomingDM(note)
+                }
+        }
+        .windowStyle(.titleBar)
+        .windowToolbarStyle(.unified(showsTitle: true))
+        .defaultSize(width: 1100, height: 720)
+
+        // MARK: - Direct Messages Window
+        Window("Direct Messages", id: "dm") {
+            DMWindowView()
+                .environment(\.appState, coordinator.appState)
+                .environment(coordinator)
+        }
+        .windowStyle(.titleBar)
+        .defaultSize(width: 750, height: 520)
+
+        // MARK: - Settings (⌘,)
+        Settings {
+            SettingsView()
+                .environment(\.appState, coordinator.appState)
+        }
+    }
+
+    // MARK: - Incoming DM Handler
+
+    private func handleIncomingDM(_ notification: Notification) {
+        guard let partnerId = notification.userInfo?["partnerId"] as? UInt32 else { return }
+        let msg = notification.userInfo?["message"] as? MessageItem
+
+        // Set target node so DMWindowView auto-selects the conversation
+        coordinator.appState.dmTargetNodeId = partnerId
+
+        // Open / bring DM window to front
+        openWindow(id: "dm")
+
+        // Play notification sound
+        NSSound(named: "Blow")?.play()
+
+        // Bounce dock icon to attract attention
+        NSApp.requestUserAttention(.criticalRequest)
+
+        // Post system notification for background awareness
+        postSystemNotification(for: msg, partnerId: partnerId)
+    }
+
+    // MARK: - System Notification
+
+    private func postSystemNotification(for message: MessageItem?, partnerId: UInt32) {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            guard granted else { return }
+
+            let content = UNMutableNotificationContent()
+            let senderName = message?.from ?? "Node \(partnerId)"
+            content.title = String(localized: "DM from \(senderName)")
+            content.body = message?.message ?? String(localized: "New direct message")
+            content.sound = .default
+            content.categoryIdentifier = "INCOMING_DM"
+
+            let request = UNNotificationRequest(
+                identifier: "dm-\(partnerId)-\(Date().timeIntervalSince1970)",
+                content: content,
+                trigger: nil  // deliver immediately
+            )
+            center.add(request)
         }
     }
 }
