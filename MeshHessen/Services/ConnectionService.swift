@@ -20,8 +20,16 @@ enum ConnectionType: String, CaseIterable, Identifiable {
 /// Connection parameters union
 enum ConnectionParameters {
     case serial(portName: String, baudRate: Int = 115200)
+    /// deviceAddress: der UUID-String des CBPeripheral (.identifier.uuidString)
     case bluetooth(deviceAddress: String, deviceName: String)
     case tcp(hostname: String, port: Int = 4403)
+}
+
+/// A Bluetooth LE device discovered during a scan
+struct DiscoveredBLEDevice: Identifiable, Sendable {
+    let id: UUID
+    let name: String
+    var rssi: Int
 }
 
 /// Connection lifecycle state

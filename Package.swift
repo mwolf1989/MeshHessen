@@ -24,8 +24,14 @@ let package = Package(
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
             ],
             path: "MeshHessen",
-            exclude: ["Assets.xcassets", "MeshHessen.entitlements", "MeshHessen.xcdatamodeld",
-                       "Proto", "Resources"]
+            exclude: [
+                "Assets.xcassets",
+                "MeshHessen.entitlements",
+                "MeshHessen.xcdatamodeld",   // CoreData model: compiled by Xcode, not SPM
+                "Proto",
+                "Resources",
+                "MeshHessenApp.swift",       // @main — excluded so test binary can link
+            ]
         ),
         .testTarget(
             name: "MeshHessenTests",

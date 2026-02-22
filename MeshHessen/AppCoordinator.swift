@@ -1,6 +1,7 @@
+import CoreBluetooth
+import CoreData
 import Foundation
 import SwiftUI
-import CoreData
 
 /// Coordinates the connection lifecycle and wires together the app state
 /// and protocol service with the active connection service.
@@ -14,6 +15,11 @@ final class AppCoordinator {
     let coreDataStore: MeshCoreDataStore
     let backgroundContext: NSManagedObjectContext
     private var activeConnection: (any ConnectionService)?
+
+    // Persistent BLE service for scanning + connecting
+    private let bleService: BluetoothConnectionService = BluetoothConnectionService()
+    /// BLE devices discovered during the last scan (updated on MainActor)
+    private(set) var discoveredBLEDevices: [DiscoveredBLEDevice] = []
 
     // Exposed for the serial connection port refresh
     var availableSerialPorts: [String] = []
@@ -71,6 +77,7 @@ final class AppCoordinator {
         }
 
         refreshSerialPorts()
+        setupBLEScanner()
 
         // Run startup maintenance tasks
         Task.detached { [coreDataStore] in
@@ -171,6 +178,44 @@ final class AppCoordinator {
     func refreshSerialPorts() {
         availableSerialPorts = SerialConnectionService.availablePorts
         AppLogger.shared.log("[Coordinator] Refreshed serial ports: \(availableSerialPorts.count) available", debug: true)
+    }
+
+    // MARK: - Bluetooth scanning
+
+    /// Starts a BLE device scan; results appear in `discoveredBLEDevices`.
+    func startBLEScanning() {
+        discoveredBLEDevices.removeAll()
+        bleService.onPeripheralDiscovered = { [weak self] peripheral, rssi in
+            // Capture only Sendable values before crossing the concurrency boundary
+            let id   = peripheral.identifier
+            let name = peripheral.name ?? String(localized: "Unknown Device")
+            let rssiInt = rssi.intValue
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let dev = DiscoveredBLEDevice(id: id, name: name, rssi: rssiInt)
+                if let idx = self.discoveredBLEDevices.firstIndex(where: { $0.id == id }) {
+                    self.discoveredBLEDevices[idx].rssi = rssiInt
+                } else {
+                    self.discoveredBLEDevices.append(dev)
+                }
+            }
+        }
+        bleService.startScanning()
+        AppLogger.shared.log("[Coordinator] BLE scan started", debug: true)
+    }
+
+    /// Stops any ongoing BLE device scan.
+    func stopBLEScanning() {
+        bleService.stopScanning()
+        bleService.onPeripheralDiscovered = nil
+        AppLogger.shared.log("[Coordinator] BLE scan stopped", debug: true)
+    }
+
+    // MARK: - Private BLE setup
+
+    private func setupBLEScanner() {
+        // onPeripheralDiscovered is wired per-scan in startBLEScanning()
+        // Nothing to do here; the CBCentralManager warms up on first use
     }
 
     // MARK: - Message history
@@ -337,7 +382,9 @@ final class AppCoordinator {
         case .serial:
             service = SerialConnectionService()
         case .bluetooth:
-            service = BluetoothConnectionService()
+            // Reuse the persistent BLE service so the already-scanned peripherals are available
+            stopBLEScanning()
+            service = bleService
         case .tcp:
             service = TcpConnectionService()
         }

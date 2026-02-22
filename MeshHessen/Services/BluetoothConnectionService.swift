@@ -23,13 +23,18 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
     private var fromNumChar: CBCharacteristic?
 
     private var connectContinuation: CheckedContinuation<Void, Error>?
+    /// Protects `connectContinuation` from simultaneous access by the BLE delegate queue and MainActor
+    private let continuationLock = NSLock()
+    private var connectTimeoutTask: Task<Void, Never>?
     private var targetDeviceName: String = ""
     private var targetDeviceAddress: String = ""
     private var pollingTask: Task<Void, Never>?
     private var pendingWriteData: Data?
     private var writeContinuation: CheckedContinuation<Void, Error>?
 
-    // Discovered peripherals during scan
+    // Discovered peripherals during scan (keyed by UUID for fast lookup)
+    private var knownPeripherals: [UUID: CBPeripheral] = [:]
+    // Legacy array kept for external observers
     var discoveredPeripherals: [(peripheral: CBPeripheral, rssi: NSNumber)] = []
     var onPeripheralDiscovered: ((CBPeripheral, NSNumber) -> Void)?
 
@@ -47,21 +52,44 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
         targetDeviceName = name
         AppLogger.shared.log("[BLE] Connecting to device: \(name) (address: \(address))", debug: SettingsService.shared.debugBluetooth)
 
+        // If we already know this peripheral (e.g. from a prior scan), connect directly
+        if let uuid = UUID(uuidString: address), let known = knownPeripherals[uuid] {
+            AppLogger.shared.log("[BLE] Peripheral already known – connecting directly to \(known.name ?? uuid.uuidString)", debug: SettingsService.shared.debugBluetooth)
+            centralManager.stopScan()
+            self.peripheral = known
+            known.delegate = self
+            return try await withCheckedThrowingContinuation { cont in
+                self.connectContinuation = cont
+                centralManager.connect(known, options: nil)
+                self.startConnectTimeout()
+            }
+        }
+
+        // Unknown UUID – scan for up to 20 s
+        AppLogger.shared.log("[BLE] Peripheral unknown – starting scan (20 s timeout)", debug: SettingsService.shared.debugBluetooth)
         return try await withCheckedThrowingContinuation { cont in
             self.connectContinuation = cont
-            // Scan for the target device
             centralManager.scanForPeripherals(
                 withServices: [BluetoothConnectionService.serviceUUID],
                 options: nil
             )
+            self.startConnectTimeout()
             AppLogger.shared.log("[BLE] Scanning for peripherals...", debug: SettingsService.shared.debugBluetooth)
         }
     }
 
     func disconnect() {
         AppLogger.shared.log("[BLE] Disconnecting...", debug: SettingsService.shared.debugBluetooth)
+        // Cancel any pending connect continuation to prevent CheckedContinuation leak/crash
+        connectTimeoutTask?.cancel()
+        connectTimeoutTask = nil
+        if let cont = connectContinuation {
+            connectContinuation = nil
+            cont.resume(throwing: ConnectionError.cancelled)
+        }
         pollingTask?.cancel()
         pollingTask = nil
+        centralManager.stopScan()
         if let p = peripheral {
             centralManager.cancelPeripheralConnection(p)
         }
@@ -99,6 +127,7 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
 
     func startScanning() {
         discoveredPeripherals.removeAll()
+        knownPeripherals.removeAll()
         AppLogger.shared.log("[BLE] Started scanning for peripherals", debug: SettingsService.shared.debugBluetooth)
         centralManager.scanForPeripherals(
             withServices: [BluetoothConnectionService.serviceUUID],
@@ -112,6 +141,20 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
     }
 
     // MARK: - Private
+
+    private func startConnectTimeout() {        connectTimeoutTask?.cancel()
+        connectTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(20))
+            guard let self, !Task.isCancelled else { return }
+            self.centralManager.stopScan()
+            if let cont = self.connectContinuation {
+                self.connectContinuation = nil
+                self.connectTimeoutTask = nil
+                AppLogger.shared.log("[BLE] Connect timed out", debug: true)
+                cont.resume(throwing: ConnectionError.timeout)
+            }
+        }
+    }
 
     private func startPolling() {
         AppLogger.shared.log("[BLE] Starting polling loop (100ms interval)", debug: SettingsService.shared.debugBluetooth)
@@ -165,10 +208,22 @@ extension BluetoothConnectionService: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
         let name = peripheral.name ?? "Unknown"
+        let uuid = peripheral.identifier
+
+        // Update known peripherals map (used for direct UUID-connect)
+        knownPeripherals[uuid] = peripheral
+
+        // Notify observers (e.g. AppCoordinator's scan UI)
         onPeripheralDiscovered?(peripheral, RSSI)
 
-        // Check if this is our target
-        if !targetDeviceName.isEmpty && name.contains(targetDeviceName) {
+        // Check if this is our connection target:
+        // 1. Match by UUID (preferred – stable across sessions)
+        // 2. Fallback: match by name substring (legacy)
+        let targetUUID = UUID(uuidString: targetDeviceAddress)
+        let isUUIDMatch = targetUUID != nil && targetUUID == uuid
+        let isNameMatch = !targetDeviceName.isEmpty && name.lowercased().contains(targetDeviceName.lowercased())
+
+        if connectContinuation != nil && (isUUIDMatch || isNameMatch) {
             AppLogger.shared.log("[BLE] Found target device: \(name) (RSSI: \(RSSI))", debug: SettingsService.shared.debugBluetooth)
             centralManager.stopScan()
             self.peripheral = peripheral
@@ -176,8 +231,8 @@ extension BluetoothConnectionService: CBCentralManagerDelegate {
             centralManager.connect(peripheral, options: nil)
         }
 
-        // Also collect for scan list
-        if !discoveredPeripherals.contains(where: { $0.peripheral.identifier == peripheral.identifier }) {
+        // Collect for scan list (avoid duplicates)
+        if !discoveredPeripherals.contains(where: { $0.peripheral.identifier == uuid }) {
             discoveredPeripherals.append((peripheral, RSSI))
             AppLogger.shared.log("[BLE] Discovered: \(name) (RSSI: \(RSSI))", debug: SettingsService.shared.debugBluetooth)
         }
@@ -287,8 +342,12 @@ extension BluetoothConnectionService: CBPeripheralDelegate {
         onConnectionStateChanged?(true)
         startPolling()
         AppLogger.shared.log("[BLE] Connection ready, started polling", debug: SettingsService.shared.debugBluetooth)
-        connectContinuation?.resume()
-        connectContinuation = nil
+        connectTimeoutTask?.cancel()
+        connectTimeoutTask = nil
+        if let cont = connectContinuation {
+            connectContinuation = nil
+            cont.resume()
+        }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {

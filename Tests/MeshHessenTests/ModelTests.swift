@@ -45,8 +45,8 @@ struct NavigationStateTests {
     func messagesChannelNav() {
         let nav = MessagesNavigationState.channels(channelId: 3, messageId: 42)
         if case .channels(channelId: let ch, messageId: let msg) = nav {
-            #expect(ch == 3)
-            #expect(msg == 42)
+            #expect(ch == 3 as Int?)
+            #expect(msg == 42 as UInt32?)
         } else {
             Issue.record("Expected .channels case")
         }
@@ -55,7 +55,7 @@ struct NavigationStateTests {
     @Test("MessagesNavigationState directMessages with userId")
     func messagesDMNav() {
         let nav = MessagesNavigationState.directMessages(userNum: 12345)
-        if case .directMessages(userNum: let num) = nav {
+        if case .directMessages(userNum: let num, messageId: _) = nav {
             #expect(num == 12345)
         } else {
             Issue.record("Expected .directMessages case")

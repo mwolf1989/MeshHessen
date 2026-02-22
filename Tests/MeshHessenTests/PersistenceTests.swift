@@ -11,8 +11,10 @@ struct PersistenceTests {
     // MARK: - Helpers
 
     /// Creates an in-memory PersistenceController + MeshCoreDataStore for testing.
+    /// The model is built programmatically so tests work in SPM (no .momd needed).
     private func makeStore() -> (MeshCoreDataStore, PersistenceController) {
-        let pc = PersistenceController(inMemory: true)
+        let model = TestModelFactory.makeModel()
+        let pc = PersistenceController(managedObjectModel: model, inMemory: true)
         let store = MeshCoreDataStore(persistenceController: pc)
         return (store, pc)
     }

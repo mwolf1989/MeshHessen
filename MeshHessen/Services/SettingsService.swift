@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Persistent settings backed by UserDefaults
 @Observable
@@ -27,6 +28,31 @@ final class SettingsService {
                 defaults.set(newValue, forKey: "showEncryptedMessages")
                 AppLogger.shared.log("[Settings] showEncryptedMessages changed: \(oldValue) → \(newValue)", debug: true)
             }
+        }
+    }
+
+    /// Font size adjustment step: −3 (smallest) … 0 (default) … +3 (largest).
+    var fontSizeStep: Int {
+        get { defaults.integer(forKey: "fontSizeStep") }  // 0 is default (.large)
+        set {
+            let clamped = max(-3, min(3, newValue))
+            if defaults.integer(forKey: "fontSizeStep") != clamped {
+                defaults.set(clamped, forKey: "fontSizeStep")
+                AppLogger.shared.log("[Settings] fontSizeStep: \(clamped)", debug: true)
+            }
+        }
+    }
+
+    /// Maps `fontSizeStep` to the corresponding `DynamicTypeSize`.
+    var dynamicTypeSize: DynamicTypeSize {
+        switch fontSizeStep {
+        case ..<(-2): return .xSmall
+        case -2:      return .small
+        case -1:      return .medium
+        case 0:       return .large
+        case 1:       return .xLarge
+        case 2:       return .xxLarge
+        default:      return .xxxLarge
         }
     }
 

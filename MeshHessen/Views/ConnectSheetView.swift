@@ -11,10 +11,12 @@ struct ConnectSheetView: View {
     @State private var serialPort = ""
     @State private var tcpHost = ""
     @State private var tcpPort = ""
-    @State private var bluetoothName = ""
     @State private var availablePorts: [String] = []
     @State private var isConnecting = false
     @State private var errorMessage: String?
+    // BLE scanner state
+    @State private var selectedBLEDevice: DiscoveredBLEDevice?
+    @State private var isBleScanActive = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -58,13 +60,26 @@ struct ConnectSheetView: View {
                     Task { await connect() }
                 }
                 .keyboardShortcut(.return)
-                .disabled(isConnecting)
+                .disabled(isConnecting || (selectedType == .bluetooth && selectedBLEDevice == nil))
                 .buttonStyle(.borderedProminent)
             }
         }
         .padding(24)
         .frame(width: 420)
         .onAppear { loadDefaults() }
+        .onChange(of: selectedType) { _, newType in
+            // Auto-stop BLE scan when switching away from Bluetooth tab
+            if newType != .bluetooth && isBleScanActive {
+                coordinator.stopBLEScanning()
+                isBleScanActive = false
+            }
+        }
+        .onDisappear {
+            if isBleScanActive {
+                coordinator.stopBLEScanning()
+                isBleScanActive = false
+            }
+        }
     }
 
     // MARK: - Field groups
@@ -100,14 +115,75 @@ struct ConnectSheetView: View {
 
     private var bluetoothFields: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Bluetooth Device Name")
+            Text("Bluetooth Device")
                 .font(.headline)
-            TextField("e.g. Meshtastic_1234 or T-Deck", text: $bluetoothName)
-                .textFieldStyle(.roundedBorder)
-            Text("The app will scan for a device whose name contains the text above.")
+
+            if coordinator.discoveredBLEDevices.isEmpty {
+                ContentUnavailableView {
+                    Label(isBleScanActive ? "Scanning…" : "No Devices", systemImage: isBleScanActive ? "antenna.radiowaves.left.and.right" : "dot.radiowaves.left.and.right")
+                } description: {
+                    Text(isBleScanActive
+                         ? "Searching for nearby Meshtastic nodes via Bluetooth."
+                         : "Press \"Scan\" to search for nearby Meshtastic nodes.")
+                }
+                .frame(height: 100)
+            } else {
+                List(coordinator.discoveredBLEDevices) { device in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(device.name)
+                                .fontWeight(selectedBLEDevice?.id == device.id ? .bold : .regular)
+                            Text(device.id.uuidString.prefix(18) + "…")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("\(device.rssi) dBm")
+                            .font(.caption)
+                            .foregroundStyle(rssiColor(device.rssi))
+                        if selectedBLEDevice?.id == device.id {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.accent)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { selectedBLEDevice = device }
+                }
+                .listStyle(.bordered(alternatesRowBackgrounds: true))
+                .frame(height: 176)
+            }
+
+            HStack {
+                Button(isBleScanActive ? "Stop Scan" : "Scan for Devices") {
+                    if isBleScanActive {
+                        coordinator.stopBLEScanning()
+                        isBleScanActive = false
+                    } else {
+                        selectedBLEDevice = nil
+                        coordinator.startBLEScanning()
+                        isBleScanActive = true
+                    }
+                }
+                .buttonStyle(.bordered)
+
+                if let dev = selectedBLEDevice {
+                    Spacer()
+                    Label(dev.name, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                }
+            }
+
+            Text("Make sure Bluetooth is enabled and the Meshtastic node is powered on.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private func rssiColor(_ rssi: Int) -> Color {
+        if rssi > -60 { return .green }
+        if rssi > -80 { return .orange }
+        return .red
     }
 
     private var tcpFields: some View {
@@ -148,8 +224,18 @@ struct ConnectSheetView: View {
             params = .serial(portName: serialPort)
             AppLogger.shared.log("[UI] Connecting via Serial: \(serialPort)", debug: true)
         case .bluetooth:
-            params = .bluetooth(deviceAddress: bluetoothName, deviceName: bluetoothName)
-            AppLogger.shared.log("[UI] Connecting via Bluetooth: \(bluetoothName)", debug: true)
+            guard let device = selectedBLEDevice else {
+                errorMessage = String(localized: "Please select a Bluetooth device from the list. Press \"Scan\" to search.")
+                isConnecting = false
+                return
+            }
+            // Stop scanning before connecting
+            if isBleScanActive {
+                coordinator.stopBLEScanning()
+                isBleScanActive = false
+            }
+            params = .bluetooth(deviceAddress: device.id.uuidString, deviceName: device.name)
+            AppLogger.shared.log("[UI] Connecting via Bluetooth: \(device.name) (\(device.id))", debug: true)
         case .tcp:
             let port = Int(tcpPort) ?? 4403
             settings.lastTcpHost = tcpHost

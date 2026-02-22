@@ -24,7 +24,7 @@ struct NodesTabView: View {
             }
             .width(min: 120, ideal: 160)
 
-            TableColumn("Node ID") { node in
+            TableColumn("Node ID", value: \.nodeId) { node in
                 Text(node.nodeId)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -38,7 +38,7 @@ struct NodesTabView: View {
             }
             .width(50)
 
-            TableColumn("Battery") { node in
+            TableColumn("Battery", value: \.batteryLevel) { node in
                 if node.batteryLevel > 0 {
                     HStack(spacing: 4) {
                         Image(systemName: batteryIcon(Int(node.batteryLevel)))
@@ -51,7 +51,7 @@ struct NodesTabView: View {
             }
             .width(60)
 
-            TableColumn("SNR") { node in
+            TableColumn("SNR", value: \.snrFloat) { node in
                 if node.snrFloat != 0 {
                     Text(String(format: "%.1f", node.snrFloat))
                         .font(.caption)
@@ -61,7 +61,7 @@ struct NodesTabView: View {
             }
             .width(50)
 
-            TableColumn("Distance") { node in
+            TableColumn("Distance", value: \.distanceMeters) { node in
                 if node.distanceMeters > 0 {
                     let km = node.distanceMeters / 1000
                     Text(km >= 1
@@ -74,7 +74,7 @@ struct NodesTabView: View {
             }
             .width(70)
 
-            TableColumn("Last Heard") { node in
+            TableColumn("Last Heard", value: \.lastHeard) { node in
                 if node.lastHeard > 0 {
                     let date = Date(timeIntervalSince1970: TimeInterval(node.lastHeard))
                     Text(date, style: .relative)
@@ -85,6 +85,19 @@ struct NodesTabView: View {
                 }
             }
             .width(80)
+
+            TableColumn("Note", value: \.note) { node in
+                TextField("Notiz…", text: Binding(
+                    get: { node.note },
+                    set: { newVal in
+                        node.note = newVal
+                        SettingsService.shared.setNote(newVal, for: node.id)
+                    }
+                ))
+                .textFieldStyle(.plain)
+                .font(.caption)
+            }
+            .width(min: 80, ideal: 130)
         }
         .contextMenu(forSelectionType: UInt32.self) { ids in
             if let id = ids.first, let node = appState.node(forId: id) {

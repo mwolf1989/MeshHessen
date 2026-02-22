@@ -52,6 +52,41 @@ private struct GeneralSettingsPane: View {
                 .help("Your station name shown to other nodes")
             }
 
+            Section("Text Size") {
+                HStack {
+                    Button {
+                        settings.fontSizeStep -= 1
+                    } label: {
+                        Image(systemName: "textformat.size.smaller")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(settings.fontSizeStep <= -3)
+                    .help("Smaller text (⌘-)")
+
+                    Spacer()
+                    Text(fontSizeLabel(settings.fontSizeStep))
+                        .monospacedDigit()
+                    Spacer()
+
+                    Button {
+                        settings.fontSizeStep += 1
+                    } label: {
+                        Image(systemName: "textformat.size.larger")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(settings.fontSizeStep >= 3)
+                    .help("Larger text (⌘+)")
+                }
+                Button("Reset to default") { settings.fontSizeStep = 0 }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.accent)
+                    .font(.caption)
+                    .disabled(settings.fontSizeStep == 0)
+                Text("Shortcut: ⌘+ / ⌘- / ⌘ 0")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Messages") {
                 Toggle("Show encrypted messages", isOn: Binding(
                     get: { settings.showEncryptedMessages },
@@ -84,6 +119,18 @@ private struct GeneralSettingsPane: View {
         }
         .formStyle(.grouped)
         .padding()
+    }
+
+    private func fontSizeLabel(_ step: Int) -> String {
+        switch step {
+        case -3: return "XS"
+        case -2: return "S"
+        case -1: return "M"
+        case  0: return "Standard"
+        case  1: return "L"
+        case  2: return "XL"
+        default: return "XXL"
+        }
     }
 }
 

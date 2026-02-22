@@ -177,7 +177,7 @@ enum ConnectionError: LocalizedError {
         case .notConnected:      return String(localized: "Not connected")
         case .cancelled:         return String(localized: "Connection cancelled")
         case .timeout:           return String(localized: "Connection timed out")
-        case .notPermitted:      return String(localized: "Permission denied — check System Settings › Privacy & Security")
+        case .notPermitted:      return String(localized: "Permission denied. For serial/USB ports, make sure the app is allowed to access the port. On macOS, re-plug the device and try again. If this persists, check that no other app holds the port open.")
         }
     }
 

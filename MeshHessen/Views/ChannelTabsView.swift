@@ -39,7 +39,7 @@ struct ChannelTabsView: View {
                     ChannelChatView(channelIndex: channel.id)
                         .tabItem {
                             Label {
-                                let unread = (appState.channelMessages[channel.id] ?? []).count
+                                let unread = appState.channelUnreadCounts[channel.id] ?? 0
                                 Text(channel.displayName + (unread > 0 ? " (\(unread))" : ""))
                             } icon: {
                                 Image(systemName: channel.id == 0 ? "star.fill" : "bubble.left")

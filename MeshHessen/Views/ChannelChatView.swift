@@ -65,6 +65,13 @@ struct ChannelChatView: View {
             }
             .padding(10)
         }
+        .onAppear {
+            appState.clearChannelUnread(channelIndex)
+            appState.selectedChannelIndex = channelIndex
+        }
+        .onChange(of: channelIndex) { _, new in
+            appState.clearChannelUnread(new)
+        }
     }
 
     private func sendMessage() {

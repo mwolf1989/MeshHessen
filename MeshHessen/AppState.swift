@@ -34,6 +34,12 @@ final class AppState {
     var channelMessages: [Int: [MessageItem]] = [:]
     var allMessages: [MessageItem] = []   // unified feed
 
+    /// Number of unread messages per channel index.
+    /// Only incremented for incoming messages (not from self) while that channel is not active.
+    var channelUnreadCounts: [Int: Int] = [:]
+
+    var totalChannelUnread: Int { channelUnreadCounts.values.reduce(0, +) }
+
     // MARK: - Direct Messages
     var dmConversations: [UInt32: DirectMessageConversation] = [:]
     var dmUnreadCount: Int {
@@ -96,6 +102,18 @@ final class AppState {
 
         allMessages.append(msg)
         channelMessages[msg.channelIndex, default: []].append(msg)
+
+        // Increment unread counter for incoming messages that arrive in an inactive channel
+        let isOwn = msg.fromId != 0 && msg.fromId == myNodeInfo?.nodeId
+        let isActive = selectedTab == .messages && msg.channelIndex == selectedChannelIndex
+        if !isOwn && !isActive {
+            channelUnreadCounts[msg.channelIndex, default: 0] += 1
+        }
+    }
+
+    /// Mark all messages in `index` as read.
+    func clearChannelUnread(_ index: Int) {
+        channelUnreadCounts[index] = 0
     }
 
     func addOrUpdateDM(_ msg: MessageItem, myNodeId: UInt32) {

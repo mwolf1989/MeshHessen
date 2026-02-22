@@ -36,6 +36,7 @@ struct MeshHessenApp: App {
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environment(\.persistenceController, persistenceController)
                 .environment(coordinator)
+                .environment(\.dynamicTypeSize, SettingsService.shared.dynamicTypeSize)
                 .onReceive(NotificationCenter.default.publisher(for: .incomingDirectMessage)) { note in
                     handleIncomingDM(note)
                 }
@@ -46,6 +47,24 @@ struct MeshHessenApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))
         .defaultSize(width: 1100, height: 720)
+        .commands {
+            CommandGroup(after: .textFormatting) {
+                Button("Schrift vergrößern") {
+                    SettingsService.shared.fontSizeStep += 1
+                }
+                .keyboardShortcut("+", modifiers: .command)
+
+                Button("Schrift verkleinern") {
+                    SettingsService.shared.fontSizeStep -= 1
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button("Standardgröße") {
+                    SettingsService.shared.fontSizeStep = 0
+                }
+                .keyboardShortcut("0", modifiers: .command)
+            }
+        }
 
         // MARK: - Direct Messages Window
         Window("Direct Messages", id: "dm") {

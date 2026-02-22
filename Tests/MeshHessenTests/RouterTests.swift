@@ -76,7 +76,7 @@ struct RouterTests {
         let handled = router.route(url: url("meshhessen:///messages?channelId=3"))
         #expect(handled)
         #expect(router.navigationState.selectedTab == .messages)
-        if case .channels(channelId: let id) = router.navigationState.messages {
+        if case .channels(channelId: let id, messageId: _) = router.navigationState.messages {
             #expect(id == 3)
         } else {
             Issue.record("Expected .channels navigation state")
@@ -89,7 +89,7 @@ struct RouterTests {
         let handled = router.route(url: url("meshhessen:///messages?userNum=12345"))
         #expect(handled)
         #expect(router.navigationState.selectedTab == .messages)
-        if case .directMessages(userNum: let num) = router.navigationState.messages {
+        if case .directMessages(userNum: let num, messageId: _) = router.navigationState.messages {
             #expect(num == 12345)
         } else {
             Issue.record("Expected .directMessages navigation state")
@@ -169,7 +169,7 @@ struct RouterTests {
         let router = makeRouter()
         router.navigateToChannel(2)
         #expect(router.navigationState.selectedTab == .messages)
-        if case .channels(channelId: let id) = router.navigationState.messages {
+        if case .channels(channelId: let id, messageId: _) = router.navigationState.messages {
             #expect(id == 2)
         } else {
             Issue.record("Expected .channels state")
@@ -181,7 +181,7 @@ struct RouterTests {
         let router = makeRouter()
         router.navigateToDirectMessage(nodeNum: 42)
         #expect(router.navigationState.selectedTab == .messages)
-        if case .directMessages(userNum: let num) = router.navigationState.messages {
+        if case .directMessages(userNum: let num, messageId: _) = router.navigationState.messages {
             #expect(num == 42)
         } else {
             Issue.record("Expected .directMessages state")
