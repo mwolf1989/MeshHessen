@@ -1,13 +1,30 @@
 import SwiftUI
 import AppKit
 import UserNotifications
+import CoreData
+import TipKit
 
 @main
 struct MeshHessenApp: App {
-    @State private var coordinator = AppCoordinator()
+    private let persistenceController: PersistenceController
+    @State private var coordinator: AppCoordinator
     @Environment(\.openWindow) private var openWindow
 
     init() {
+        let persistenceController = PersistenceController.shared
+        self.persistenceController = persistenceController
+        let coord = AppCoordinator(persistenceController: persistenceController)
+        _coordinator = State(initialValue: coord)
+
+        // Bridge coordinator for AppIntents (Siri Shortcuts)
+        AppIntentCoordinatorProvider.shared.coordinator = coord
+
+        // Configure TipKit
+        try? Tips.configure([
+            .displayFrequency(.weekly),
+            .datastoreLocation(.applicationDefault)
+        ])
+
         AppLogger.shared.log("[App] MeshHessen starting up...", debug: true)
     }
 
@@ -16,9 +33,14 @@ struct MeshHessenApp: App {
         WindowGroup {
             MainView()
                 .environment(\.appState, coordinator.appState)
+                .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                .environment(\.persistenceController, persistenceController)
                 .environment(coordinator)
                 .onReceive(NotificationCenter.default.publisher(for: .incomingDirectMessage)) { note in
                     handleIncomingDM(note)
+                }
+                .onOpenURL { url in
+                    coordinator.router.route(url: url)
                 }
         }
         .windowStyle(.titleBar)
@@ -29,6 +51,8 @@ struct MeshHessenApp: App {
         Window("Direct Messages", id: "dm") {
             DMWindowView()
                 .environment(\.appState, coordinator.appState)
+                .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                .environment(\.persistenceController, persistenceController)
                 .environment(coordinator)
         }
         .windowStyle(.titleBar)
@@ -38,6 +62,8 @@ struct MeshHessenApp: App {
         Settings {
             SettingsView()
                 .environment(\.appState, coordinator.appState)
+                .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                .environment(\.persistenceController, persistenceController)
         }
     }
 

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import CoreData
 
 /// Coordinates the connection lifecycle and wires together the app state
 /// and protocol service with the active connection service.
@@ -7,7 +8,11 @@ import SwiftUI
 @MainActor
 final class AppCoordinator {
     let appState: AppState
+    let router: Router
     let protocol_: MeshtasticProtocolService
+    let persistenceController: PersistenceController
+    let coreDataStore: MeshCoreDataStore
+    let backgroundContext: NSManagedObjectContext
     private var activeConnection: (any ConnectionService)?
 
     // Exposed for the serial connection port refresh
@@ -36,11 +41,22 @@ final class AppCoordinator {
 
     /// Maximum backoff delay in seconds
     private let maxBackoffSeconds: Int = 30
+    private let coreDataMigrationVersionKey = "coreDataMigrationVersion"
+    private let coreDataMigrationDateKey = "coreDataMigrationDate"
+    private let currentCoreDataMigrationVersion = 2
 
-    init() {
+    init(persistenceController: PersistenceController = .shared) {
+        self.persistenceController = persistenceController
+        self.coreDataStore = MeshCoreDataStore(persistenceController: persistenceController)
+        self.backgroundContext = persistenceController.newBackgroundContext()
         appState = AppState()
+        router = Router()
+        router.appState = appState
         protocol_ = MeshtasticProtocolService()
         protocol_.appState = appState
+        protocol_.coreDataStore = coreDataStore
+
+        AppLogger.shared.log("[Coordinator] Persistence initialized", debug: true)
 
         // Listen for debug log notifications
         NotificationCenter.default.addObserver(
@@ -55,6 +71,16 @@ final class AppCoordinator {
         }
 
         refreshSerialPorts()
+
+        // Run startup maintenance tasks
+        Task.detached { [coreDataStore] in
+            // Migrate node color/note from UserDefaults to CoreData
+            coreDataStore.migrateNodeCustomizationsFromUserDefaults()
+            // Clean up stale nodes
+            coreDataStore.clearStaleNodes()
+            // Trim old messages
+            coreDataStore.trimOldMessages()
+        }
     }
 
     // MARK: - Connect
@@ -109,6 +135,10 @@ final class AppCoordinator {
         await protocol_.sendSOSAlert(customText)
     }
 
+    func updateOwner(shortName: String, longName: String) async {
+        await protocol_.setOwner(shortName: shortName, longName: longName)
+    }
+
     // MARK: - Channel management
 
     func addChannel(name: String, pskBase64: String, uplinkEnabled: Bool, downlinkEnabled: Bool) async {
@@ -145,7 +175,8 @@ final class AppCoordinator {
 
     // MARK: - Message history
 
-    /// Loads previous messages from log files into app state.
+    /// Loads previous messages from CoreData into app state.
+    /// Falls back to legacy log files only when CoreData is empty.
     /// Called after protocol initialization completes so channel info is available.
     func loadMessageHistory() {
         let logger = MessageLogger.shared
@@ -153,23 +184,33 @@ final class AppCoordinator {
         // Rotate oversized log files on launch
         logger.rotateIfNeeded()
 
-        // Load channel message history
+        // One-time import of legacy file-based history into CoreData
+        migrateLegacyHistoryIfNeeded(using: logger)
+
+        // Primary: hydrate from CoreData
+        let hydration = coreDataStore.hydrate(appState: appState)
+        let totalHydrated = hydration.nodes + hydration.channels + hydration.channelMessages + hydration.directMessages
+        if totalHydrated > 0 {
+            AppLogger.shared.log("[History] CoreData hydration: nodes=\(hydration.nodes), channels=\(hydration.channels), channelMessages=\(hydration.channelMessages), dms=\(hydration.directMessages), unread=\(hydration.conversationsWithUnread)", debug: true)
+        }
+
+        // Fallback: load from log files only for channels that still have no messages
         for channel in appState.channels {
             let existing = appState.channelMessages[channel.id]?.count ?? 0
-            if existing > 0 { continue } // Already has live messages, skip
+            if existing > 0 { continue }
             let history = logger.loadChannelMessages(channelIndex: channel.id, channelName: channel.name)
             if !history.isEmpty {
                 for msg in history {
                     appState.appendMessage(msg)
                 }
-                AppLogger.shared.log("[History] Loaded \(history.count) messages for channel \(channel.name)", debug: true)
+                AppLogger.shared.log("[History] Fallback: loaded \(history.count) log messages for channel \(channel.name)", debug: true)
             }
         }
 
-        // Load DM conversation history
+        // Fallback: load DM history from log files for conversations without messages
         for dmLog in logger.discoverDMLogFiles() {
             let existing = appState.dmConversations[dmLog.nodeId]?.messages.count ?? 0
-            if existing > 0 { continue } // Already has live messages
+            if existing > 0 { continue }
             let history = logger.loadDirectMessages(partnerNodeId: dmLog.nodeId, partnerName: dmLog.name)
             if !history.isEmpty {
                 let nodeName = appState.nodes[dmLog.nodeId]?.name ?? dmLog.name
@@ -182,9 +223,103 @@ final class AppCoordinator {
                 for msg in history {
                     appState.dmConversations[dmLog.nodeId]?.messages.append(msg)
                 }
-                AppLogger.shared.log("[History] Loaded \(history.count) DMs for \(nodeName)", debug: true)
+                AppLogger.shared.log("[History] Fallback: loaded \(history.count) log DMs for \(nodeName)", debug: true)
             }
         }
+
+        // Persist stale-node cleanup with own node ID now known
+        if let myNodeId = appState.myNodeInfo?.nodeId {
+            Task.detached { [coreDataStore] in
+                coreDataStore.clearStaleNodes(ownNodeId: myNodeId)
+            }
+        }
+    }
+
+    private func migrateLegacyHistoryIfNeeded(using logger: MessageLogger) {
+        let defaults = UserDefaults.standard
+        let migratedVersion = defaults.integer(forKey: coreDataMigrationVersionKey)
+        guard migratedVersion < currentCoreDataMigrationVersion else { return }
+
+        // Version 1: Import legacy log files into CoreData
+        if migratedVersion < 1 {
+            var importedChannelMessages = 0
+            var importedDirectMessages = 0
+
+            for channelLog in logger.discoverChannelLogFiles() {
+                let history = logger.loadChannelMessages(
+                    channelIndex: channelLog.index,
+                    channelName: channelLog.name,
+                    limit: 5_000
+                )
+
+                for (index, message) in history.enumerated() {
+                    var migrated = message
+                    migrated.packetId = legacyPacketID(
+                        namespace: "channel:\(channelLog.fileName):\(index)",
+                        message: message
+                    )
+                    migrated.channelIndex = channelLog.index
+                    migrated.channelName = channelLog.name
+                    coreDataStore.upsertMessage(migrated, isDirect: false, partnerNodeId: nil)
+                    importedChannelMessages += 1
+                }
+            }
+
+            for dmLog in logger.discoverDMLogFiles() {
+                let history = logger.loadDirectMessages(
+                    partnerNodeId: dmLog.nodeId,
+                    partnerName: dmLog.name,
+                    limit: 5_000
+                )
+
+                for (index, message) in history.enumerated() {
+                    var migrated = message
+                    migrated.packetId = legacyPacketID(
+                        namespace: "dm:\(dmLog.fileName):\(index)",
+                        message: message
+                    )
+                    if migrated.toId == 0 {
+                        migrated.toId = dmLog.nodeId
+                    }
+                    coreDataStore.upsertMessage(
+                        migrated,
+                        isDirect: true,
+                        partnerNodeId: dmLog.nodeId,
+                        partnerName: dmLog.name
+                    )
+                    importedDirectMessages += 1
+                }
+            }
+
+            AppLogger.shared.log(
+                "[Migration] v1: Legacy history imported: channels=\(importedChannelMessages), dms=\(importedDirectMessages)",
+                debug: true
+            )
+        }
+
+        // Version 2: Migrate nodeColor_* / nodeNote_* from UserDefaults → CoreData
+        if migratedVersion < 2 {
+            coreDataStore.migrateNodeCustomizationsFromUserDefaults()
+            AppLogger.shared.log("[Migration] v2: UserDefaults node customizations migrated", debug: true)
+        }
+
+        defaults.set(currentCoreDataMigrationVersion, forKey: coreDataMigrationVersionKey)
+        defaults.set(Date(), forKey: coreDataMigrationDateKey)
+
+        AppLogger.shared.log(
+            "[Migration] Completed migration to version \(currentCoreDataMigrationVersion)",
+            debug: true
+        )
+    }
+
+    private func legacyPacketID(namespace: String, message: MessageItem) -> UInt32 {
+        let seed = "\(namespace)|\(message.time)|\(message.from)|\(message.message)|\(message.channelIndex)|\(message.channelName)"
+        var hash: UInt32 = 2166136261
+        for byte in seed.utf8 {
+            hash ^= UInt32(byte)
+            hash &*= 16777619
+        }
+        return hash == 0 ? 1 : hash
     }
 
     // MARK: - Internal: Connection with reconnect support

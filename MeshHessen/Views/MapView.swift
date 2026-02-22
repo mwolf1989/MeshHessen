@@ -44,18 +44,39 @@ final class CachedTileOverlay: MKTileOverlay {
 struct MapView: View {
     @Environment(\.appState) private var appState
     @Environment(\.openWindow) private var openWindow
-    @State private var mapStyle: MapStyle = .osm
+    @State private var mapStyle: MapStyle
     @State private var region = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 50.9, longitude: 9.5),
         span: MKCoordinateSpan(latitudeDelta: 2.0, longitudeDelta: 2.0)
     )
     @State private var showNodeInfo: NodeInfo?
 
+    init() {
+        _mapStyle = State(initialValue: MapStyle.from(settingsValue: SettingsService.shared.mapSource))
+    }
+
     enum MapStyle: String, CaseIterable, Identifiable {
         case osm = "osm"
         case topo = "opentopo"
         case dark = "dark"
         var id: String { rawValue }
+
+        static func from(settingsValue: String) -> Self {
+            switch settingsValue.lowercased() {
+            case "osmtopo", "opentopo", "topo": return .topo
+            case "osmdark", "dark":             return .dark
+            default:                                return .osm
+            }
+        }
+
+        var settingsValue: String {
+            switch self {
+            case .osm:  return "osm"
+            case .topo: return "osmtopo"
+            case .dark: return "osmdark"
+            }
+        }
+
         var label: String {
             switch self {
             case .osm: return String(localized: "Street")
@@ -97,6 +118,9 @@ struct MapView: View {
         }
         .sheet(item: $showNodeInfo) { node in
             NodeInfoSheet(node: node)
+        }
+        .onChange(of: mapStyle) { _, newStyle in
+            SettingsService.shared.mapSource = newStyle.settingsValue
         }
         .onChange(of: appState.mapFocusNodeId) { _, newValue in
             // Clear focus after MapView processes it
@@ -191,7 +215,12 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
         }
 
         func applyTileOverlay(to map: MKMapView, style: MapView.MapStyle) {
-            if let old = tileOverlay { map.removeOverlay(old) }
+            applyFallbackMapAppearance(to: map, style: style)
+
+            for overlay in map.overlays where overlay is MKTileOverlay {
+                map.removeOverlay(overlay)
+            }
+
             let settings = SettingsService.shared
             let template: String
             switch style {
@@ -203,6 +232,20 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
             overlay.canReplaceMapContent = false
             map.addOverlay(overlay, level: .aboveRoads)
             tileOverlay = overlay
+        }
+
+        private func applyFallbackMapAppearance(to map: MKMapView, style: MapView.MapStyle) {
+            switch style {
+            case .osm:
+                map.mapType = .standard
+                map.appearance = NSAppearance(named: .aqua)
+            case .topo:
+                map.mapType = .mutedStandard
+                map.appearance = NSAppearance(named: .aqua)
+            case .dark:
+                map.mapType = .standard
+                map.appearance = NSAppearance(named: .darkAqua)
+            }
         }
 
         func updateNodes(_ map: MKMapView, nodes: [NodeInfo]) {
@@ -428,8 +471,13 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             guard let nodeAnn = view.annotation as? NodeAnnotation else { return }
 
-            let settings = SettingsService.shared
-            let myLoc = CLLocation(latitude: settings.myLatitude, longitude: settings.myLongitude)
+            guard let ownCoordinate = parent.appState.effectiveOwnCoordinate() else {
+                let nodeIdStr = parent.appState.node(forId: nodeAnn.nodeId)?.nodeId ?? ""
+                nodeAnn.subtitle = nodeIdStr
+                return
+            }
+
+            let myLoc = CLLocation(latitude: ownCoordinate.latitude, longitude: ownCoordinate.longitude)
             let nodeLoc = CLLocation(latitude: nodeAnn.coordinate.latitude,
                                      longitude: nodeAnn.coordinate.longitude)
             let distanceMeters = myLoc.distance(from: nodeLoc)

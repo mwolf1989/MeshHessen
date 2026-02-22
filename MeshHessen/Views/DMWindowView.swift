@@ -72,6 +72,8 @@ struct DMWindowView: View {
     private func markConversationRead(_ nodeId: UInt32?) {
         guard let nodeId, let conv = appState.dmConversations[nodeId] else { return }
         conv.hasUnread = false
+        // Persist unread state to CoreData
+        coordinator.coreDataStore.setConversationUnread(partnerNodeId: nodeId, hasUnread: false)
     }
 }
 
@@ -120,6 +122,7 @@ private struct DMConversationView: View {
         .navigationTitle("DM: \(conversation.nodeName)")
         .onAppear {
             conversation.hasUnread = false
+            coordinator.coreDataStore.setConversationUnread(partnerNodeId: conversation.id, hasUnread: false)
         }
     }
 
@@ -165,7 +168,34 @@ private struct DMMessageBubble: View {
                 .padding(.vertical, 6)
                 .background(isMine ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            if isMine {
+                DMDeliveryStateLabel(state: message.deliveryState)
+            }
         }
         .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
+    }
+}
+
+private struct DMDeliveryStateLabel: View {
+    let state: MessageDeliveryState
+
+    var body: some View {
+        switch state {
+        case .none:
+            EmptyView()
+        case .pending:
+            Text("Warte auf ACK…")
+                .font(.caption2)
+                .foregroundStyle(.orange)
+        case .acknowledged:
+            Text("Zugestellt")
+                .font(.caption2)
+                .foregroundStyle(.green)
+        case .failed(let reason):
+            Text(reason)
+                .font(.caption2)
+                .foregroundStyle(.red)
+        }
     }
 }

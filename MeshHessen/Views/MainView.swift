@@ -1,4 +1,6 @@
 import SwiftUI
+import TipKit
+import UniformTypeIdentifiers
 
 /// Root view — toolbar + tab-based detail area with alert bell overlay
 struct MainView: View {
@@ -9,12 +11,29 @@ struct MainView: View {
     @State private var selectedNodeId: UInt32?
     @Environment(\.openWindow) private var openWindow
 
+    // Export state
+    @State private var exportDocument: CsvDocument?
+    @State private var exportFileName: String = "export.csv"
+    @State private var showExporter = false
+
+    // Tips
+    private let connectionTip = ConnectionTip()
+    private let messagesTip = MessagesTip()
+
     var body: some View {
         ZStack(alignment: .top) {
             NavigationSplitView {
                 // Sidebar: node list
-                NodeListView(selectedNodeId: $selectedNodeId)
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 300)
+                VStack(spacing: 0) {
+                    // Connection tip when disconnected
+                    if !appState.connectionState.isConnected {
+                        TipView(connectionTip)
+                            .padding(.horizontal, 8)
+                            .padding(.top, 4)
+                    }
+                    NodeListView(selectedNodeId: $selectedNodeId)
+                }
+                .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 300)
             } detail: {
                 // Detail: tab view
                 VStack(spacing: 0) {
@@ -44,6 +63,16 @@ struct MainView: View {
         }
         .sheet(isPresented: $showConnectSheet) {
             ConnectSheetView()
+        }
+        .fileExporter(
+            isPresented: $showExporter,
+            document: exportDocument,
+            contentType: .commaSeparatedText,
+            defaultFilename: exportFileName
+        ) { result in
+            if case .failure(let error) = result {
+                AppLogger.shared.log("[Export] Failed: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -144,6 +173,39 @@ struct MainView: View {
                         .offset(x: 6, y: -6)
                 }
             }
+        }
+
+        // Export menu
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                Button("Export Nodes (CSV)") {
+                    let csv = MeshExport.nodesToCsv(Array(appState.nodes.values))
+                    exportDocument = CsvDocument(csvData: csv)
+                    exportFileName = "meshhessen_nodes.csv"
+                    showExporter = true
+                }
+                Button("Export Messages (CSV)") {
+                    let csv = MeshExport.messagesToCsv(appState.allMessages)
+                    exportDocument = CsvDocument(csvData: csv)
+                    exportFileName = "meshhessen_messages.csv"
+                    showExporter = true
+                }
+                Button("Export Channels (CSV)") {
+                    let csv = MeshExport.channelsToCsv(appState.channels)
+                    exportDocument = CsvDocument(csvData: csv)
+                    exportFileName = "meshhessen_channels.csv"
+                    showExporter = true
+                }
+                Button("Export Positions (CSV)") {
+                    let csv = MeshExport.positionsToCsv(Array(appState.nodes.values))
+                    exportDocument = CsvDocument(csvData: csv)
+                    exportFileName = "meshhessen_positions.csv"
+                    showExporter = true
+                }
+            } label: {
+                Label("Export", systemImage: "square.and.arrow.up")
+            }
+            .help("Export mesh data as CSV")
         }
     }
 

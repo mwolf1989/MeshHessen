@@ -15,11 +15,19 @@ let nodeColorPresets: [(name: String, hex: String)] = [
 /// Sheet showing detailed info for a single node with color/note editing.
 struct NodeInfoSheet: View {
     @Environment(\.appState) private var appState
+    @Environment(AppCoordinator.self) private var coordinator
     @Environment(\.dismiss) private var dismiss
 
     let node: NodeInfo
     @State private var colorHex: String = ""
     @State private var note: String = ""
+    @State private var ownerShortName: String = ""
+    @State private var ownerLongName: String = ""
+    @State private var isSavingOwner = false
+
+    private var isOwnNode: Bool {
+        appState.myNodeInfo?.nodeId == node.id
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -87,6 +95,48 @@ struct NodeInfoSheet: View {
             }
 
             Divider()
+
+            if isOwnNode {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Node Settings")
+                        .font(.headline)
+
+                    HStack {
+                        Text("Short Name")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 90, alignment: .leading)
+                        TextField("ABCD", text: $ownerShortName)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 180)
+                    }
+
+                    HStack {
+                        Text("Long Name")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 90, alignment: .leading)
+                        TextField("My Node", text: $ownerLongName)
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    HStack {
+                        Spacer()
+                        Button {
+                            saveOwnerSettings()
+                        } label: {
+                            if isSavingOwner {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Text("Save to Node")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isSavingOwner || ownerShortName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+
+                Divider()
+            }
 
             // Color + note editing
             HStack(spacing: 12) {
@@ -156,15 +206,40 @@ struct NodeInfoSheet: View {
             colorHex = savedColor.isEmpty ? node.colorHex : savedColor
             let savedNote = SettingsService.shared.note(for: node.id)
             note = savedNote.isEmpty ? node.note : savedNote
+
+            ownerShortName = appState.myNodeInfo?.shortName.isEmpty == false
+                ? (appState.myNodeInfo?.shortName ?? node.shortName)
+                : node.shortName
+            ownerLongName = appState.myNodeInfo?.longName.isEmpty == false
+                ? (appState.myNodeInfo?.longName ?? node.longName)
+                : node.longName
         }
     }
 
     private func saveAndDismiss() {
         node.colorHex = colorHex
         node.note = note
-        // Persist via UserDefaults
+        // Persist via UserDefaults (legacy) + CoreData (primary)
         SettingsService.shared.setColorHex(colorHex, for: node.id)
         SettingsService.shared.setNote(note, for: node.id)
+        coordinator.coreDataStore.updateNodeCustomization(nodeId: node.id, colorHex: colorHex, note: note)
         dismiss()
+    }
+
+    private func saveOwnerSettings() {
+        let short = ownerShortName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let long = ownerLongName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !short.isEmpty else { return }
+
+        isSavingOwner = true
+        Task { @MainActor in
+            await coordinator.updateOwner(shortName: short, longName: long)
+            node.shortName = short
+            node.longName = long
+            node.name = long.isEmpty ? short : long
+            appState.myNodeInfo?.shortName = short
+            appState.myNodeInfo?.longName = long
+            isSavingOwner = false
+        }
     }
 }

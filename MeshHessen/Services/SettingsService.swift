@@ -93,6 +93,10 @@ final class SettingsService {
         }
     }
 
+    var hasExplicitOwnPosition: Bool {
+        defaults.object(forKey: "myLatitude") != nil && defaults.object(forKey: "myLongitude") != nil
+    }
+
     var mapSource: String {
         get { defaults.string(forKey: "mapSource") ?? "osm" }
         set {

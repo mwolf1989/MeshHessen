@@ -22,7 +22,15 @@ let package = Package(
             dependencies: [
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
-            ]
+            ],
+            path: "MeshHessen",
+            exclude: ["Assets.xcassets", "MeshHessen.entitlements", "MeshHessen.xcdatamodeld",
+                       "Proto", "Resources"]
+        ),
+        .testTarget(
+            name: "MeshHessenTests",
+            dependencies: ["MeshHessen"],
+            path: "Tests/MeshHessenTests"
         ),
     ]
 )

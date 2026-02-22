@@ -125,13 +125,23 @@ struct ChannelBrowserSheet: View {
 
     private func parseCSV(_ text: String) -> [CSVChannel] {
         let lines = text.components(separatedBy: .newlines)
-        // CSV format: Bundesland;Name;PSK;MQTT_enabled;Bemerkung
+        // Detect separator: try semicolon first, fall back to comma
+        let separator: String = {
+            guard let firstDataLine = lines.dropFirst().first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else {
+                return ";"
+            }
+            return firstDataLine.contains(";") ? ";" : ","
+        }()
+
         return lines.dropFirst().compactMap { line -> CSVChannel? in
-            let parts = line.components(separatedBy: ";")
-            guard parts.count >= 3 else { return nil }
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            let parts = trimmed.components(separatedBy: separator)
+            // Accept 2 columns (no PSK) or 3+ columns
+            guard parts.count >= 2 else { return nil }
             let bundesland = parts[0].trimmingCharacters(in: .whitespaces)
             let name = parts[1].trimmingCharacters(in: .whitespaces)
-            let psk = parts[2].trimmingCharacters(in: .whitespaces)
+            let psk = parts.count >= 3 ? parts[2].trimmingCharacters(in: .whitespaces) : ""
             guard !name.isEmpty else { return nil }
             return CSVChannel(name: name, psk: psk, bundesland: bundesland)
         }

@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23647" systemVersion="24A335" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
+	<entity name="MHNodeEntity" representedClassName="MHNodeEntity" syncable="YES" codeGenerationType="class">
+		<attribute name="nodeNum" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="nodeId" optional="YES" attributeType="String"/>
+		<attribute name="shortName" optional="YES" attributeType="String"/>
+		<attribute name="longName" optional="YES" attributeType="String"/>
+		<attribute name="displayName" optional="YES" attributeType="String"/>
+		<attribute name="distanceText" optional="YES" attributeType="String"/>
+		<attribute name="snrText" optional="YES" attributeType="String"/>
+		<attribute name="rssiText" optional="YES" attributeType="String"/>
+		<attribute name="batteryText" optional="YES" attributeType="String"/>
+		<attribute name="lastSeenText" optional="YES" attributeType="String"/>
+		<attribute name="latitude" optional="YES" attributeType="Double" usesScalarValueType="YES"/>
+		<attribute name="longitude" optional="YES" attributeType="Double" usesScalarValueType="YES"/>
+		<attribute name="altitude" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="colorHex" optional="YES" attributeType="String"/>
+		<attribute name="note" optional="YES" attributeType="String"/>
+		<attribute name="lastHeard" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="snrFloat" optional="YES" attributeType="Float" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="rssiInt" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="batteryLevel" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="voltage" optional="YES" attributeType="Float" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="channelUtilization" optional="YES" attributeType="Float" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="airUtilTx" optional="YES" attributeType="Float" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="distanceMeters" optional="YES" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="viaMqtt" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+		<uniquenessConstraints>
+			<uniquenessConstraint>
+				<constraint value="nodeNum"/>
+			</uniquenessConstraint>
+		</uniquenessConstraints>
+	</entity>
+	<entity name="MHChannelEntity" representedClassName="MHChannelEntity" syncable="YES" codeGenerationType="class">
+		<attribute name="channelIndex" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="name" optional="YES" attributeType="String"/>
+		<attribute name="psk" optional="YES" attributeType="String"/>
+		<attribute name="role" optional="YES" attributeType="String"/>
+		<attribute name="uplinkEnabled" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+		<attribute name="downlinkEnabled" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+		<uniquenessConstraints>
+			<uniquenessConstraint>
+				<constraint value="channelIndex"/>
+			</uniquenessConstraint>
+		</uniquenessConstraints>
+	</entity>
+	<entity name="MHConversationEntity" representedClassName="MHConversationEntity" syncable="YES" codeGenerationType="class">
+		<attribute name="partnerNodeId" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="nodeName" optional="YES" attributeType="String"/>
+		<attribute name="colorHex" optional="YES" attributeType="String"/>
+		<attribute name="hasUnread" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+		<attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+		<uniquenessConstraints>
+			<uniquenessConstraint>
+				<constraint value="partnerNodeId"/>
+			</uniquenessConstraint>
+		</uniquenessConstraints>
+	</entity>
+	<entity name="MHMessageEntity" representedClassName="MHMessageEntity" syncable="YES" codeGenerationType="class">
+		<attribute name="packetId" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+		<attribute name="timeText" optional="YES" attributeType="String"/>
+		<attribute name="fromName" optional="YES" attributeType="String"/>
+		<attribute name="fromId" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="toId" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="messageText" optional="YES" attributeType="String"/>
+		<attribute name="channelIndex" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+		<attribute name="channelName" optional="YES" attributeType="String"/>
+		<attribute name="isEncrypted" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+		<attribute name="isViaMqtt" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+		<attribute name="senderShortName" optional="YES" attributeType="String"/>
+		<attribute name="senderColorHex" optional="YES" attributeType="String"/>
+		<attribute name="senderNote" optional="YES" attributeType="String"/>
+		<attribute name="hasAlertBell" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+		<attribute name="deliveryState" optional="YES" attributeType="String"/>
+		<attribute name="deliveryError" optional="YES" attributeType="String"/>
+		<attribute name="isDirect" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+		<attribute name="partnerNodeId" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+		<uniquenessConstraints>
+			<uniquenessConstraint>
+				<constraint value="packetId"/>
+			</uniquenessConstraint>
+		</uniquenessConstraints>
+	</entity>
+	<elements>
+		<element name="MHNodeEntity" positionX="-54" positionY="-18" width="128" height="64"/>
+		<element name="MHChannelEntity" positionX="126" positionY="-18" width="128" height="64"/>
+		<element name="MHConversationEntity" positionX="306" positionY="-18" width="128" height="64"/>
+		<element name="MHMessageEntity" positionX="486" positionY="-18" width="128" height="64"/>
+	</elements>
+</model>

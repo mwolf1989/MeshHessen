@@ -82,6 +82,18 @@ final class AppState {
     // MARK: - Message helpers
 
     func appendMessage(_ msg: MessageItem) {
+        if let packetId = msg.packetId {
+            if let allIndex = allMessages.firstIndex(where: { $0.packetId == packetId }) {
+                allMessages[allIndex] = mergeMessage(existing: allMessages[allIndex], incoming: msg)
+
+                let existingChannel = allMessages[allIndex].channelIndex
+                if let channelIndex = channelMessages[existingChannel]?.firstIndex(where: { $0.packetId == packetId }) {
+                    channelMessages[existingChannel]?[channelIndex] = allMessages[allIndex]
+                }
+                return
+            }
+        }
+
         allMessages.append(msg)
         channelMessages[msg.channelIndex, default: []].append(msg)
     }
@@ -96,11 +108,60 @@ final class AppState {
                 nodeId: partnerId, nodeName: partnerName, colorHex: colorHex
             )
         }
-        dmConversations[partnerId]?.messages.append(msg)
+        if let packetId = msg.packetId,
+           let existing = dmConversations[partnerId]?.messages.firstIndex(where: { $0.packetId == packetId }) {
+            if let current = dmConversations[partnerId]?.messages[existing] {
+                dmConversations[partnerId]?.messages[existing] = mergeMessage(existing: current, incoming: msg)
+            }
+        } else {
+            dmConversations[partnerId]?.messages.append(msg)
+        }
         // Only mark unread for incoming messages, not our own
         if msg.fromId != myNodeId {
             dmConversations[partnerId]?.hasUnread = true
         }
+    }
+
+    func updateDeliveryState(requestId: UInt32, state: MessageDeliveryState) {
+        if let allIndex = allMessages.firstIndex(where: { $0.packetId == requestId }) {
+            allMessages[allIndex].deliveryState = state
+            let channelIndex = allMessages[allIndex].channelIndex
+            if let channelMessageIndex = channelMessages[channelIndex]?.firstIndex(where: { $0.packetId == requestId }) {
+                channelMessages[channelIndex]?[channelMessageIndex].deliveryState = state
+            }
+        }
+
+        for key in dmConversations.keys {
+            guard let msgIndex = dmConversations[key]?.messages.firstIndex(where: { $0.packetId == requestId }) else {
+                continue
+            }
+            dmConversations[key]?.messages[msgIndex].deliveryState = state
+        }
+    }
+
+    private func mergeMessage(existing: MessageItem, incoming: MessageItem) -> MessageItem {
+        var merged = existing
+
+        if !incoming.message.isEmpty { merged.message = incoming.message }
+        if !incoming.from.isEmpty { merged.from = incoming.from }
+        if !incoming.channelName.isEmpty { merged.channelName = incoming.channelName }
+        if !incoming.senderShortName.isEmpty { merged.senderShortName = incoming.senderShortName }
+        if !incoming.senderColorHex.isEmpty { merged.senderColorHex = incoming.senderColorHex }
+        if !incoming.senderNote.isEmpty { merged.senderNote = incoming.senderNote }
+
+        merged.time = incoming.time
+        merged.fromId = incoming.fromId
+        merged.toId = incoming.toId
+        merged.channelIndex = incoming.channelIndex
+        merged.isEncrypted = incoming.isEncrypted
+        merged.isViaMqtt = incoming.isViaMqtt
+        merged.hasAlertBell = incoming.hasAlertBell
+
+        if incoming.deliveryState != .none {
+            merged.deliveryState = incoming.deliveryState
+        }
+
+        return merged
     }
 
     // MARK: - Node helpers
@@ -132,9 +193,13 @@ final class AppState {
               let nLat = node.latitude, let nLon = node.longitude
         else { return }
 
-        let settings = SettingsService.shared
-        let myLat = settings.myLatitude
-        let myLon = settings.myLongitude
+        guard let myCoordinate = effectiveOwnCoordinate() else {
+            node.distanceMeters = 0
+            node.distance = "-"
+            return
+        }
+        let myLat = myCoordinate.latitude
+        let myLon = myCoordinate.longitude
 
         // Haversine
         let R = 6371000.0
@@ -154,13 +219,43 @@ final class AppState {
         }
     }
 
+    func effectiveOwnCoordinate() -> (latitude: Double, longitude: Double)? {
+        let settings = SettingsService.shared
+        if settings.hasExplicitOwnPosition {
+            return (settings.myLatitude, settings.myLongitude)
+        }
+
+        if let myNodeId = myNodeInfo?.nodeId,
+           let myNode = nodes[myNodeId],
+           let lat = myNode.latitude,
+           let lon = myNode.longitude {
+            return (lat, lon)
+        }
+
+        return nil
+    }
+
     func recalculateAllDistances() {
         for id in nodes.keys { recalculateDistance(for: id) }
     }
 
     // MARK: - Reset on disconnect
 
+    /// Resets transient connection state. CoreData-backed data (nodes, channels,
+    /// messages) is preserved so it can be rehydrated on reconnect.
     func resetForDisconnect() {
+        protocolReady = false
+        protocolStatusMessage = nil
+        myNodeInfo = nil
+        // Keep nodes, channels, and messages — they live in CoreData
+        // and will be re-merged on next connect.
+        activeAlertBell = nil
+        showAlertBell = false
+    }
+
+    /// Full reset: clears everything including in-memory caches.
+    /// Used after a "Clear All Data" action.
+    func resetAll() {
         protocolReady = false
         protocolStatusMessage = nil
         myNodeInfo = nil
@@ -168,6 +263,7 @@ final class AppState {
         channels.removeAll()
         channelMessages.removeAll()
         allMessages.removeAll()
+        dmConversations.removeAll()
         activeAlertBell = nil
         showAlertBell = false
     }

@@ -143,7 +143,34 @@ private struct MessageBubble: View {
                     : (isMine ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12))
             )
             .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            if isMine {
+                DeliveryStateLabel(state: message.deliveryState)
+            }
         }
         .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
+    }
+}
+
+private struct DeliveryStateLabel: View {
+    let state: MessageDeliveryState
+
+    var body: some View {
+        switch state {
+        case .none:
+            EmptyView()
+        case .pending:
+            Text("Warte auf ACK…")
+                .font(.caption2)
+                .foregroundStyle(.orange)
+        case .acknowledged:
+            Text("Zugestellt")
+                .font(.caption2)
+                .foregroundStyle(.green)
+        case .failed(let reason):
+            Text(reason)
+                .font(.caption2)
+                .foregroundStyle(.red)
+        }
     }
 }

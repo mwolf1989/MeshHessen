@@ -14,6 +14,7 @@ import SwiftProtobuf
 final class MeshtasticProtocolService {
     // MARK: - Singleton / State
     weak var appState: AppState?
+    var coreDataStore: MeshCoreDataStore?
 
     var connectionService: (any ConnectionService)?
 
@@ -350,9 +351,16 @@ final class MeshtasticProtocolService {
             case 1:  handleTextMessage(data: data, packet: packet)   // TEXT_MESSAGE_APP
             case 3:  handlePosition(data: data, packet: packet)      // POSITION_APP
             case 4:  handleNodeInfoPacket(data: data, packet: packet)// NODEINFO_APP
+            case 5:  handleRoutingPacket(data: data, packet: packet) // ROUTING_APP
             case 6:  handleAdminPacket(data: data, packet: packet)   // ADMIN_APP
+            case 8:  handleWaypointPacket(data: data, packet: packet)// WAYPOINT_APP
             case 67: handleTelemetry(data: data, packet: packet)     // TELEMETRY_APP
-            default: break
+            case 70: handleTraceroutePacket(data: data, packet: packet)  // TRACEROUTE_APP
+            case 71: handleNeighborInfoPacket(data: data, packet: packet)// NEIGHBORINFO_APP
+            default:
+                if SettingsService.shared.debugDevice {
+                    AppLogger.shared.log("[Protocol] Unhandled portnum \(portnum) from \(String(format: "!%08x", packet.from))", debug: true)
+                }
             }
         case .encrypted:
             // Encrypted message we can't decode
@@ -362,6 +370,7 @@ final class MeshtasticProtocolService {
                 let chIndex = resolvedChannelIndex(for: packet.channel)
                 let chName = channelName(for: Int(packet.channel))
                 let msg = MessageItem(
+                    packetId: packet.id,
                     time: ts, from: from, fromId: packet.from, toId: packet.to,
                     message: String(localized: "[Encrypted message — PSK required]"),
                     channelIndex: chIndex >= 0 ? chIndex : 0,
@@ -396,12 +405,13 @@ final class MeshtasticProtocolService {
         let node = appState?.node(forId: packet.from)
 
         let msg = MessageItem(
+            packetId: packet.id,
             time: ts,
             from: from,
             fromId: packet.from,
             toId: packet.to,
             message: text,
-            channelIndex: Int(packet.channel),
+            channelIndex: max(0, resolvedChannelIndex(for: packet.channel)),
             channelName: channelName(for: Int(packet.channel)),
             isViaMqtt: packet.viaMqtt,
             senderShortName: node?.shortName ?? "",
@@ -419,6 +429,8 @@ final class MeshtasticProtocolService {
         if !isBroadcast && (packet.to == myNodeId || packet.from == myNodeId) {
             // Direct message
             appState?.addOrUpdateDM(msg, myNodeId: myNodeId)
+            let partnerNodeId = packet.from == myNodeId ? packet.to : packet.from
+            coreDataStore?.upsertMessage(msg, isDirect: true, partnerNodeId: partnerNodeId, partnerName: nodeDisplayName(partnerNodeId))
             MessageLogger.shared.logDirectMessage(msg, partnerName: from,
                 partnerNodeId: packet.from == myNodeId ? packet.to : packet.from)
             if hasAlertBell { triggerAlertBell(msg) }
@@ -437,6 +449,101 @@ final class MeshtasticProtocolService {
             deliver(msg)
             if hasAlertBell { triggerAlertBell(msg) }
         }
+    }
+
+    // MARK: - Routing / ACK
+
+    private func handleRoutingPacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
+        guard data.requestID != 0 else { return }
+
+        // The official Meshtastic Routing message includes an error_reason field
+        // (field number 3, varint type) that isn't in our slim proto.
+        // Parse it from the raw payload to determine success vs. error code.
+        let errorCode = parseRoutingErrorReason(from: data.payload)
+        let routingError = RoutingError(rawValue: errorCode) ?? .none
+
+        let deliveryState: MessageDeliveryState
+        if routingError == .none {
+            deliveryState = .acknowledged
+        } else {
+            deliveryState = .failed(routingError.display)
+        }
+
+        appState?.updateDeliveryState(requestId: data.requestID, state: deliveryState)
+        coreDataStore?.updateDeliveryState(requestId: data.requestID, state: deliveryState)
+
+        if routingError == .none {
+            AppLogger.shared.log(
+                "[ACK] Routing ACK for requestId=\(data.requestID) from \(String(format: "!%08x", packet.from))",
+                debug: SettingsService.shared.debugMessages
+            )
+        } else {
+            AppLogger.shared.log(
+                "[ACK] Routing NACK for requestId=\(data.requestID): \(routingError.display) (canRetry=\(routingError.canRetry))",
+                debug: SettingsService.shared.debugMessages
+            )
+        }
+    }
+
+    /// Parses the `error_reason` (field 3, varint) from a Routing protobuf payload.
+    /// Returns 0 (none/success) if the field is absent or the payload is empty.
+    private func parseRoutingErrorReason(from payload: Data) -> Int {
+        // Quick path: if payload is the Routing message with just
+        // error_reason (field 3, wire type 0 = varint), the tag byte is 0x18.
+        // We scan for this tag and read the varint value.
+        var idx = payload.startIndex
+        while idx < payload.endIndex {
+            // Read tag
+            let (tag, tagBytes) = decodeVarint(payload, from: idx)
+            guard tagBytes > 0 else { return 0 }
+            idx += tagBytes
+
+            let fieldNumber = tag >> 3
+            let wireType = tag & 0x07
+
+            if fieldNumber == 3 && wireType == 0 {
+                // Varint — this is error_reason
+                let (value, _) = decodeVarint(payload, from: idx)
+                return Int(value)
+            }
+
+            // Skip other fields
+            switch wireType {
+            case 0: // varint
+                let (_, vBytes) = decodeVarint(payload, from: idx)
+                guard vBytes > 0 else { return 0 }
+                idx += vBytes
+            case 1: // 64-bit
+                idx += 8
+            case 2: // length-delimited
+                let (length, lBytes) = decodeVarint(payload, from: idx)
+                guard lBytes > 0 else { return 0 }
+                idx += lBytes + Int(length)
+            case 5: // 32-bit
+                idx += 4
+            default:
+                return 0 // Unknown wire type
+            }
+        }
+        return 0
+    }
+
+    /// Decodes a protobuf varint at the given index. Returns (value, bytesConsumed).
+    private func decodeVarint(_ data: Data, from start: Data.Index) -> (UInt64, Int) {
+        var result: UInt64 = 0
+        var shift: UInt64 = 0
+        var idx = start
+        while idx < data.endIndex {
+            let byte = data[idx]
+            result |= UInt64(byte & 0x7F) << shift
+            idx += 1
+            if byte & 0x80 == 0 {
+                return (result, idx - start)
+            }
+            shift += 7
+            if shift >= 64 { return (0, 0) }
+        }
+        return (0, 0)
     }
 
     // MARK: - Position
@@ -482,6 +589,7 @@ final class MeshtasticProtocolService {
         let nodeId = packet.from
         let node = makeNodeInfo(from: user, num: nodeId)
         appState?.upsertNode(node)
+        coreDataStore?.upsertNode(node)
     }
 
     // MARK: - NodeInfo (from NodeInfo message)
@@ -523,6 +631,7 @@ final class MeshtasticProtocolService {
         }
 
         appState?.upsertNode(node)
+        coreDataStore?.upsertNode(node)
 
         AppLogger.shared.log("[Protocol] NodeInfo: \(node.name) (\(node.nodeId))", debug: SettingsService.shared.debugDevice)
     }
@@ -550,6 +659,7 @@ final class MeshtasticProtocolService {
             appState?.channels.append(info)
         }
         appState?.channels.sort { $0.id < $1.id }
+        coreDataStore?.upsertChannel(info)
 
         receivedChannelResponses.insert(Int(channel.index))
         AppLogger.shared.log("[Protocol] Channel \(channel.index): \(name) [\(info.role)]", debug: SettingsService.shared.debugDevice)
@@ -602,6 +712,16 @@ final class MeshtasticProtocolService {
         switch admin.payloadVariant {
         case .getChannelResponse(let channel):
             handleChannel(channel)
+        case .getOwnerResponse(let owner):
+            if packet.from == myNodeId {
+                appState?.myNodeInfo?.shortName = owner.shortName
+                appState?.myNodeInfo?.longName = owner.longName
+                if let node = appState?.node(forId: packet.from) {
+                    node.shortName = owner.shortName
+                    node.longName = owner.longName
+                    node.name = owner.longName.isEmpty ? owner.shortName : owner.longName
+                }
+            }
         case .none:
             // Session passkey in admin response
             if !admin.sessionPasskey.isEmpty {
@@ -611,6 +731,186 @@ final class MeshtasticProtocolService {
         default:
             break
         }
+    }
+
+    // MARK: - Waypoint (portnum 8)
+
+    private func handleWaypointPacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
+        // Waypoint protobuf is not in our slim proto schema, so parse raw fields:
+        // field 1 (fixed32): id, field 2 (sfixed32): latitudeI, field 3 (sfixed32): longitudeI,
+        // field 4 (int32): expire, field 5 (uint32): locked_to, field 6 (string): name,
+        // field 7 (string): description, field 8 (fixed32): icon
+        let from = nodeDisplayName(packet.from)
+        let waypointId = parseFixed32(data.payload, fieldNumber: 1)
+        let latI = parseSFixed32(data.payload, fieldNumber: 2)
+        let lonI = parseSFixed32(data.payload, fieldNumber: 3)
+        let name = parseString(data.payload, fieldNumber: 6) ?? "Waypoint"
+
+        let lat = Double(latI) / 1e7
+        let lon = Double(lonI) / 1e7
+
+        AppLogger.shared.log(
+            "[Waypoint] From \(from): \"\(name)\" id=\(waypointId) at (\(String(format: "%.5f", lat)), \(String(format: "%.5f", lon)))",
+            debug: SettingsService.shared.debugDevice
+        )
+
+        // Inject as a channel message so the user sees it
+        let ts = formatTime()
+        let chIndex = resolvedChannelIndex(for: packet.channel)
+        let chName = channelName(for: Int(packet.channel))
+        let node = appState?.node(forId: packet.from)
+        let msg = MessageItem(
+            packetId: packet.id,
+            time: ts, from: from, fromId: packet.from, toId: packet.to,
+            message: String(localized: "📍 Waypoint: \(name) (\(String(format: "%.5f", lat)), \(String(format: "%.5f", lon)))"),
+            channelIndex: chIndex >= 0 ? chIndex : 0,
+            channelName: chName,
+            isViaMqtt: packet.viaMqtt,
+            senderShortName: node?.shortName ?? "",
+            senderColorHex: node?.colorHex ?? "",
+            senderNote: node?.note ?? ""
+        )
+        deliver(msg)
+    }
+
+    // MARK: - Traceroute (portnum 70)
+
+    private func handleTraceroutePacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
+        guard let route = try? Meshtastic_RouteDiscovery(serializedBytes: data.payload) else {
+            AppLogger.shared.log("[Protocol] Traceroute parse failed from \(String(format: "!%08x", packet.from))", debug: SettingsService.shared.debugDevice)
+            return
+        }
+
+        let from = nodeDisplayName(packet.from)
+        let hops = route.route.map { nodeDisplayName($0) }
+        let hopStr = hops.isEmpty ? "(direct)" : hops.joined(separator: " → ")
+
+        AppLogger.shared.log(
+            "[Traceroute] From \(from): route = \(hopStr) (\(hops.count) hops)",
+            debug: SettingsService.shared.debugDevice
+        )
+
+        // Inject as a channel message for visibility
+        let ts = formatTime()
+        let chIndex = resolvedChannelIndex(for: packet.channel)
+        let chName = channelName(for: Int(packet.channel))
+        let node = appState?.node(forId: packet.from)
+        let msg = MessageItem(
+            packetId: packet.id,
+            time: ts, from: from, fromId: packet.from, toId: packet.to,
+            message: String(localized: "🔀 Traceroute: \(hopStr)"),
+            channelIndex: chIndex >= 0 ? chIndex : 0,
+            channelName: chName,
+            isViaMqtt: packet.viaMqtt,
+            senderShortName: node?.shortName ?? "",
+            senderColorHex: node?.colorHex ?? "",
+            senderNote: node?.note ?? ""
+        )
+        deliver(msg)
+    }
+
+    // MARK: - NeighborInfo (portnum 71)
+
+    private func handleNeighborInfoPacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
+        // NeighborInfo proto: field 1 (uint32): node_id, field 2 (repeated Neighbor): neighbors
+        // Neighbor: field 1 (uint32): node_id, field 2 (float): snr
+        // Since we don't have a generated NeighborInfo message, we log the raw info
+        let from = nodeDisplayName(packet.from)
+
+        // Parse neighbor count from the payload
+        // Each neighbor is a length-delimited sub-message (field 2, wire type 2)
+        var neighborCount = 0
+        var idx = data.payload.startIndex
+        while idx < data.payload.endIndex {
+            let (tag, tagBytes) = decodeVarint(data.payload, from: idx)
+            guard tagBytes > 0 else { break }
+            idx += tagBytes
+            let fieldNumber = tag >> 3
+            let wireType = tag & 0x07
+
+            if fieldNumber == 2 && wireType == 2 {
+                neighborCount += 1
+            }
+
+            // Skip field value
+            switch wireType {
+            case 0: // varint
+                let (_, vBytes) = decodeVarint(data.payload, from: idx)
+                guard vBytes > 0 else { return }
+                idx += vBytes
+            case 1: idx += 8
+            case 2:
+                let (length, lBytes) = decodeVarint(data.payload, from: idx)
+                guard lBytes > 0 else { return }
+                idx += lBytes + Int(length)
+            case 5: idx += 4
+            default: return
+            }
+        }
+
+        AppLogger.shared.log(
+            "[NeighborInfo] From \(from): \(neighborCount) neighbor(s) reported",
+            debug: SettingsService.shared.debugDevice
+        )
+    }
+
+    // MARK: - Raw Protobuf Field Parsers (for messages not in our generated code)
+
+    /// Parse a fixed32 (wire type 5) at the given field number.
+    private func parseFixed32(_ data: Data, fieldNumber: UInt64) -> UInt32 {
+        var idx = data.startIndex
+        while idx < data.endIndex {
+            let (tag, tagBytes) = decodeVarint(data, from: idx)
+            guard tagBytes > 0 else { return 0 }
+            idx += tagBytes
+            let fn = tag >> 3
+            let wt = tag & 0x07
+            if fn == fieldNumber && wt == 5 {
+                guard idx + 4 <= data.endIndex else { return 0 }
+                return data[idx...].withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
+            }
+            switch wt {
+            case 0: let (_, vb) = decodeVarint(data, from: idx); idx += max(vb, 1)
+            case 1: idx += 8
+            case 2: let (len, lb) = decodeVarint(data, from: idx); idx += lb + Int(len)
+            case 5: idx += 4
+            default: return 0
+            }
+        }
+        return 0
+    }
+
+    /// Parse a sfixed32 (wire type 5) at the given field number.
+    private func parseSFixed32(_ data: Data, fieldNumber: UInt64) -> Int32 {
+        Int32(bitPattern: parseFixed32(data, fieldNumber: fieldNumber))
+    }
+
+    /// Parse a string (wire type 2) at the given field number.
+    private func parseString(_ data: Data, fieldNumber: UInt64) -> String? {
+        var idx = data.startIndex
+        while idx < data.endIndex {
+            let (tag, tagBytes) = decodeVarint(data, from: idx)
+            guard tagBytes > 0 else { return nil }
+            idx += tagBytes
+            let fn = tag >> 3
+            let wt = tag & 0x07
+            if fn == fieldNumber && wt == 2 {
+                let (length, lb) = decodeVarint(data, from: idx)
+                guard lb > 0 else { return nil }
+                idx += lb
+                let end = idx + Int(length)
+                guard end <= data.endIndex else { return nil }
+                return String(data: data[idx..<end], encoding: .utf8)
+            }
+            switch wt {
+            case 0: let (_, vb) = decodeVarint(data, from: idx); idx += max(vb, 1)
+            case 1: idx += 8
+            case 2: let (len, lb) = decodeVarint(data, from: idx); idx += lb + Int(len)
+            case 5: idx += 4
+            default: return nil
+            }
+        }
+        return nil
     }
 
     // MARK: - Telemetry
@@ -682,17 +982,66 @@ final class MeshtasticProtocolService {
     // MARK: - Send Methods
 
     func sendTextMessage(_ text: String, toNodeId: UInt32 = 0xFFFFFFFF, channelIndex: Int = 0) async {
+        let packetId = UInt32.random(in: UInt32(UInt8.max)..<UInt32.max)
+
         var packet = Meshtastic_MeshPacket()
+        packet.id = packetId
         packet.to = toNodeId
         packet.channel = UInt32(channelIndex)
         packet.hopLimit = 7
-        packet.wantAck = false
+        packet.wantAck = true
         var data = Meshtastic_Data()
         data.portnum = 1   // TEXT_MESSAGE_APP
         data.payload = text.data(using: .utf8) ?? Data()
         packet.decoded = data
 
+        // Optimistic local message so the sender sees it immediately.
+        let ts = formatTime()
+        let myId = myNodeId
+        let myName = appState?.myNodeInfo?.longName.isEmpty == false
+            ? (appState?.myNodeInfo?.longName ?? String(localized: "Me"))
+            : (appState?.myNodeInfo?.shortName.isEmpty == false
+                ? (appState?.myNodeInfo?.shortName ?? String(localized: "Me"))
+                : String(localized: "Me"))
+
+        let outgoing = MessageItem(
+            packetId: packetId,
+            time: ts,
+            from: myName,
+            fromId: myId,
+            toId: toNodeId,
+            message: text,
+            channelIndex: channelIndex,
+            channelName: channelName(for: channelIndex),
+            deliveryState: .pending
+        )
+
+        let isBroadcast = toNodeId == 0xFFFFFFFF || toNodeId == 0
+        if isBroadcast {
+            appState?.appendMessage(outgoing)
+            coreDataStore?.upsertMessage(outgoing, isDirect: false, partnerNodeId: nil)
+            MessageLogger.shared.logChannelMessage(outgoing)
+        } else {
+            appState?.addOrUpdateDM(outgoing, myNodeId: myId)
+            coreDataStore?.upsertMessage(outgoing, isDirect: true, partnerNodeId: toNodeId, partnerName: nodeDisplayName(toNodeId))
+            MessageLogger.shared.logDirectMessage(outgoing, partnerName: nodeDisplayName(toNodeId), partnerNodeId: toNodeId)
+        }
+
         await sendToRadio(packet: packet)
+    }
+
+    func setOwner(shortName: String, longName: String) async {
+        await ensureSessionKey()
+
+        var owner = Meshtastic_User()
+        owner.shortName = shortName
+        owner.longName = longName
+        owner.id = String(format: "!%08x", myNodeId)
+
+        var admin = Meshtastic_AdminMessage()
+        admin.setOwner = owner
+        admin.sessionPasskey = sessionPasskey
+        await sendAdminMessage(admin)
     }
 
     func sendSOSAlert(_ customText: String? = nil) async {
@@ -895,6 +1244,7 @@ final class MeshtasticProtocolService {
 
     private func deliver(_ msg: MessageItem) {
         appState?.appendMessage(msg)
+        coreDataStore?.upsertMessage(msg, isDirect: false, partnerNodeId: nil)
     }
 
     private func formatTime() -> String {
