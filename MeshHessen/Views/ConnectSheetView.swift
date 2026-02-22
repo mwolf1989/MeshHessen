@@ -164,13 +164,13 @@ struct ConnectSheetView: View {
         if case .error(let e) = appState.connectionState {
             AppLogger.shared.log("[UI] Connection failed: \(e)", debug: true)
             errorMessage = e
-        } else if !appState.protocolReady {
-            let initMessage = appState.protocolStatusMessage ?? String(localized: "Initialization incomplete (no config complete)")
-            AppLogger.shared.log("[UI] Connection transport established but protocol not ready: \(initMessage)", debug: true)
-            errorMessage = initMessage
-        } else {
-            AppLogger.shared.log("[UI] Connection established successfully", debug: true)
+        } else if appState.connectionState.isConnected {
+            AppLogger.shared.log("[UI] Transport connected; protocol sync continues in background", debug: true)
             dismiss()
+        } else {
+            let message = appState.protocolStatusMessage ?? String(localized: "Connection still in progress…")
+            AppLogger.shared.log("[UI] Connection status unresolved: \(message)", debug: true)
+            errorMessage = message
         }
     }
 }

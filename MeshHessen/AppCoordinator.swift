@@ -31,6 +31,9 @@ final class AppCoordinator {
     /// Active reconnect task (cancelled on explicit disconnect or successful connect)
     private var reconnectTask: Task<Void, Never>?
 
+    /// Active protocol initialization task (cancelled on disconnect/reconnect)
+    private var protocolInitializationTask: Task<Void, Never>?
+
     /// Maximum backoff delay in seconds
     private let maxBackoffSeconds: Int = 30
 
@@ -59,6 +62,7 @@ final class AppCoordinator {
     func connect(type: ConnectionType, parameters: ConnectionParameters) async {
         // Cancel any pending reconnect before starting a fresh connection
         cancelReconnect()
+        cancelProtocolInitialization()
         await teardownActiveConnection()
 
         userRequestedDisconnect = false
@@ -75,6 +79,7 @@ final class AppCoordinator {
         AppLogger.shared.log("[Coordinator] User requested disconnect", debug: true)
         userRequestedDisconnect = true
         cancelReconnect()
+        cancelProtocolInitialization()
 
         protocol_.disconnect()
         activeConnection?.disconnect()
@@ -228,18 +233,36 @@ final class AppCoordinator {
             appState.protocolStatusMessage = String(localized: "Initializing mesh…")
             reconnectAttempt = 0
             cancelReconnect()
+            cancelProtocolInitialization()
             AppLogger.shared.log("[Coordinator] Connected via \(type.rawValue)", debug: true)
-            // Finish protocol initialization before reporting ready state to UI
-            let ready = await self.protocol_.initialize()
-            self.appState.protocolReady = ready
-            self.appState.protocolStatusMessage = ready ? nil : String(localized: "Initialization incomplete (no config complete)")
-            if !ready {
-                AppLogger.shared.log("[Coordinator] Protocol initialization incomplete; keeping connection but marking not ready")
+
+            let serviceID = ObjectIdentifier(service)
+            protocolInitializationTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+
+                let ready = await self.protocol_.initialize()
+
+                guard let active = self.activeConnection,
+                      ObjectIdentifier(active) == serviceID,
+                      self.appState.connectionState.isConnected
+                else { return }
+
+                self.appState.protocolReady = ready
+                self.appState.protocolStatusMessage = ready
+                    ? nil
+                    : (self.appState.protocolStatusMessage ?? String(localized: "Connected, still syncing mesh data…"))
+
+                if !ready {
+                    AppLogger.shared.log("[Coordinator] Protocol initialization incomplete; connection stays active")
+                }
+
+                self.loadMessageHistory()
+                self.protocolInitializationTask = nil
             }
-            self.loadMessageHistory()
         } catch {
             activeConnection = nil
             protocol_.connectionService = nil
+            cancelProtocolInitialization()
 
             let isPermanent = (error as? ConnectionError)?.isPermanent == true
 
@@ -337,10 +360,16 @@ final class AppCoordinator {
         reconnectTask = nil
     }
 
+    private func cancelProtocolInitialization() {
+        protocolInitializationTask?.cancel()
+        protocolInitializationTask = nil
+    }
+
     /// Tears down the active connection without triggering reconnect.
     private func teardownActiveConnection() async {
         let wasAutoReconnect = userRequestedDisconnect
         userRequestedDisconnect = true  // Suppress reconnect during teardown
+        cancelProtocolInitialization()
         protocol_.disconnect()
         activeConnection?.disconnect()
         activeConnection = nil

@@ -6,11 +6,22 @@ struct ChannelTabsView: View {
 
     var body: some View {
         if appState.channels.isEmpty {
-            ContentUnavailableView(
-                "No Channels",
-                systemImage: "antenna.radiowaves.left.and.right",
-                description: Text("Connect to a node to load channels.")
-            )
+            if appState.connectionState.isConnected && !appState.protocolReady {
+                VStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.large)
+                    Text(appState.protocolStatusMessage ?? String(localized: "Loading mesh data…"))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ContentUnavailableView(
+                    "No Channels",
+                    systemImage: "antenna.radiowaves.left.and.right",
+                    description: Text("Connect to a node to load channels.")
+                )
+            }
         } else {
             TabView(selection: Binding(
                 get: {

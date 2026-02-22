@@ -27,6 +27,20 @@ struct MainView: View {
 
             // Alert Bell Overlay (ZStack over entire window)
             AlertBellOverlay()
+
+            if appState.connectionState.isConnected && !appState.protocolReady {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(appState.protocolStatusMessage ?? String(localized: "Loading mesh data…"))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: Capsule())
+                .padding(.top, 10)
+            }
         }
         .sheet(isPresented: $showConnectSheet) {
             ConnectSheetView()

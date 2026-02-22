@@ -200,8 +200,8 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
             case .dark: template = settings.osmDarkTileUrl
             }
             let overlay = CachedTileOverlay(urlTemplate: template, layer: style.rawValue)
-            overlay.canReplaceMapContent = true
-            map.addOverlay(overlay, level: .aboveLabels)
+            overlay.canReplaceMapContent = false
+            map.addOverlay(overlay, level: .aboveRoads)
             tileOverlay = overlay
         }
 

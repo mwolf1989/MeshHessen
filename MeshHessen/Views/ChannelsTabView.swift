@@ -33,11 +33,22 @@ struct ChannelsTabView: View {
             Divider()
 
             if appState.channels.isEmpty {
-                ContentUnavailableView(
-                    "No Channels",
-                    systemImage: "antenna.radiowaves.left.and.right",
-                    description: Text("Connect to a node to load channel configuration.")
-                )
+                if appState.connectionState.isConnected && !appState.protocolReady {
+                    VStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.large)
+                        Text(appState.protocolStatusMessage ?? String(localized: "Loading channel configuration…"))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ContentUnavailableView(
+                        "No Channels",
+                        systemImage: "antenna.radiowaves.left.and.right",
+                        description: Text("Connect to a node to load channel configuration.")
+                    )
+                }
             } else {
                 List {
                     ForEach(appState.channels) { channel in

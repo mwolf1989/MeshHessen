@@ -29,9 +29,6 @@ final class MeshtasticProtocolService {
 
     private var tempChannels: [Int32: Meshtastic_Channel] = [:]
     private var receivedChannelResponses = Set<Int>()
-    private var pendingChannelNodes: [NodeInfo] = []
-    private var pendingChannelInfos: [ChannelInfo] = []
-    private var pendingMessages: [MessageItem] = []
 
     // Text-mode recovery
     private var lastValidPacketTime = Date()
@@ -61,9 +58,6 @@ final class MeshtasticProtocolService {
         sessionPasskey = Data()
         tempChannels.removeAll()
         receivedChannelResponses.removeAll()
-        pendingChannelNodes.removeAll()
-        pendingChannelInfos.removeAll()
-        pendingMessages.removeAll()
         receiveBuffer = Data()
         myNodeId = 0
         consecutiveTextChunks = 0
@@ -83,6 +77,7 @@ final class MeshtasticProtocolService {
         }
 
         // 3. Send WantConfigId
+        appState?.protocolStatusMessage = String(localized: "Syncing mesh config…")
         await sendWantConfig()
 
         // 4. Wait up to 15s for configComplete
@@ -92,51 +87,18 @@ final class MeshtasticProtocolService {
         }
         AppLogger.shared.log("[Protocol] configComplete=\(configComplete)", debug: true)
 
-        // 5. Wait for data stream to stabilize (3s no new nodes, max 30s)
-        var lastNodeCount = 0
-        var stableCount = 0
-        let streamDeadline = Date().addingTimeInterval(30)
-        while Date() < streamDeadline {
-            let currentCount = pendingChannelNodes.count
-            if currentCount == lastNodeCount {
-                stableCount += 1
-                if stableCount >= 15 { break }  // 15 × 200ms = 3s stable
-            } else {
-                stableCount = 0
-            }
-            lastNodeCount = currentCount
-            try? await Task.sleep(for: .milliseconds(200))
-        }
-
-        // 6. Flush pending events
-        isInitializing = false
-        for node in pendingChannelNodes { appState?.upsertNode(node) }
-        for channel in pendingChannelInfos {
-            if !appState!.channels.contains(where: { $0.id == channel.id }) {
-                appState?.channels.append(channel)
-            }
-        }
-        for msg in pendingMessages {
-            appState?.appendMessage(msg)
-            // Log pending messages that were queued during init
-            if msg.isDirect {
-                let partnerId = msg.fromId == myNodeId ? msg.toId : msg.fromId
-                let partnerName = appState?.node(forId: partnerId)?.name ?? msg.from
-                MessageLogger.shared.logDirectMessage(msg, partnerName: partnerName, partnerNodeId: partnerId)
-            } else {
-                MessageLogger.shared.logChannelMessage(msg)
-            }
-        }
-        pendingChannelNodes.removeAll()
-        pendingChannelInfos.removeAll()
-        pendingMessages.removeAll()
-
-        // 7. Request channels only if protocol session is ready
+        // 5. Request channels only if protocol session is ready
         if configComplete, myNodeId != 0 {
+            appState?.protocolStatusMessage = String(localized: "Loading channels…")
             await requestAllChannels()
+            appState?.protocolStatusMessage = String(localized: "Finalizing sync…")
         } else {
             AppLogger.shared.log("[Protocol] Skipping channel request (configComplete=\(configComplete), myNodeId=\(String(format: "!%08x", myNodeId)))", debug: true)
+            appState?.protocolStatusMessage = String(localized: "Connected, waiting for mesh data…")
         }
+
+        // 6. Finish init; data continues to stream in live
+        isInitializing = false
 
         AppLogger.shared.log("[Protocol] Initialization complete. Nodes: \(appState?.nodes.count ?? 0), Channels: \(appState?.channels.count ?? 0)", debug: true)
         return configComplete
@@ -456,22 +418,18 @@ final class MeshtasticProtocolService {
         let isBroadcast = packet.to == 0xFFFFFFFF || packet.to == 0
         if !isBroadcast && (packet.to == myNodeId || packet.from == myNodeId) {
             // Direct message
-            if isInitializing {
-                pendingMessages.append(msg)
-            } else {
-                appState?.addOrUpdateDM(msg, myNodeId: myNodeId)
-                MessageLogger.shared.logDirectMessage(msg, partnerName: from,
-                    partnerNodeId: packet.from == myNodeId ? packet.to : packet.from)
-                if hasAlertBell { triggerAlertBell(msg) }
-                // Notify for incoming DMs (not self-sent)
-                if packet.from != myNodeId {
-                    let partnerId = packet.from
-                    NotificationCenter.default.post(
-                        name: .incomingDirectMessage,
-                        object: nil,
-                        userInfo: ["partnerId": partnerId, "message": msg]
-                    )
-                }
+            appState?.addOrUpdateDM(msg, myNodeId: myNodeId)
+            MessageLogger.shared.logDirectMessage(msg, partnerName: from,
+                partnerNodeId: packet.from == myNodeId ? packet.to : packet.from)
+            if hasAlertBell { triggerAlertBell(msg) }
+            // Notify for incoming DMs (not self-sent)
+            if packet.from != myNodeId {
+                let partnerId = packet.from
+                NotificationCenter.default.post(
+                    name: .incomingDirectMessage,
+                    object: nil,
+                    userInfo: ["partnerId": partnerId, "message": msg]
+                )
             }
         } else {
             // Broadcast / channel message
@@ -523,13 +481,7 @@ final class MeshtasticProtocolService {
 
         let nodeId = packet.from
         let node = makeNodeInfo(from: user, num: nodeId)
-        if isInitializing {
-            if !pendingChannelNodes.contains(where: { $0.id == nodeId }) {
-                pendingChannelNodes.append(node)
-            }
-        } else {
-            appState?.upsertNode(node)
-        }
+        appState?.upsertNode(node)
     }
 
     // MARK: - NodeInfo (from NodeInfo message)
@@ -570,13 +522,7 @@ final class MeshtasticProtocolService {
             )
         }
 
-        if isInitializing {
-            if !pendingChannelNodes.contains(where: { $0.id == info.num }) {
-                pendingChannelNodes.append(node)
-            }
-        } else {
-            appState?.upsertNode(node)
-        }
+        appState?.upsertNode(node)
 
         AppLogger.shared.log("[Protocol] NodeInfo: \(node.name) (\(node.nodeId))", debug: SettingsService.shared.debugDevice)
     }
@@ -598,18 +544,12 @@ final class MeshtasticProtocolService {
             downlinkEnabled: s.downlinkEnabled
         )
 
-        if isInitializing {
-            if !pendingChannelInfos.contains(where: { $0.id == info.id }) {
-                pendingChannelInfos.append(info)
-            }
+        if let idx = appState?.channels.firstIndex(where: { $0.id == info.id }) {
+            appState?.channels[idx] = info
         } else {
-            if let idx = appState?.channels.firstIndex(where: { $0.id == info.id }) {
-                appState?.channels[idx] = info
-            } else {
-                appState?.channels.append(info)
-            }
-            appState?.channels.sort { $0.id < $1.id }
+            appState?.channels.append(info)
         }
+        appState?.channels.sort { $0.id < $1.id }
 
         receivedChannelResponses.insert(Int(channel.index))
         AppLogger.shared.log("[Protocol] Channel \(channel.index): \(name) [\(info.role)]", debug: SettingsService.shared.debugDevice)
@@ -954,11 +894,7 @@ final class MeshtasticProtocolService {
     }
 
     private func deliver(_ msg: MessageItem) {
-        if isInitializing {
-            pendingMessages.append(msg)
-        } else {
-            appState?.appendMessage(msg)
-        }
+        appState?.appendMessage(msg)
     }
 
     private func formatTime() -> String {
