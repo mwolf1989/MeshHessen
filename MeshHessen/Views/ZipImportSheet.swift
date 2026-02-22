@@ -111,6 +111,10 @@ struct ZipImportSheet: View {
         statusText = String(localized: "Extracting archive…")
         resultMessage = nil
 
+        // Capture the static dictionary before entering the detached task so it
+        // is not accessed from outside the main actor.
+        let folderToLayer = Self.folderToLayer
+
         Task.detached {
             guard url.startAccessingSecurityScopedResource() else {
                 await MainActor.run {
@@ -174,7 +178,7 @@ struct ZipImportSheet: View {
                     guard isDir else { continue }
 
                     let name = item.lastPathComponent.lowercased()
-                    if let layer = Self.folderToLayer[name] {
+                    if let layer = folderToLayer[name] {
                         sourceFolders.append((url: item, folderName: item.lastPathComponent, layer: layer))
                     } else {
                         unknownFolders.append(item.lastPathComponent)
@@ -290,15 +294,15 @@ struct ZipImportSheet: View {
                 }
                 let summary = String(localized: "Imported \(done - errors) tiles: \(parts.joined(separator: ", "))")
                 let errorNote = errors > 0 ? String(localized: " (\(errors) failed)") : ""
+                // Capture the unknown-folder note before crossing the actor boundary
+                let unknownNote = unknownFolders.isEmpty
+                    ? ""
+                    : "\n" + String(localized: "Skipped unknown folders: \(unknownFolders.joined(separator: ", "))")
 
                 await MainActor.run {
                     isProcessing = false
                     progress = 1.0
-                    resultMessage = summary + errorNote
-
-                    if !unknownFolders.isEmpty {
-                        resultMessage! += "\n" + String(localized: "Skipped unknown folders: \(unknownFolders.joined(separator: ", "))")
-                    }
+                    resultMessage = summary + errorNote + unknownNote
                 }
             } catch {
                 await MainActor.run {

@@ -2,10 +2,9 @@ syntax = "proto3";
 
 package meshtastic;
 
-import "mesh.proto";
+option csharp_namespace = "Meshtastic.Protobufs";
 
-option java_package = "com.geeksville.mesh";
-option optimize_for = LITE_RUNTIME;
+import "mesh.proto";
 
 // Admin message for device management
 message AdminMessage {

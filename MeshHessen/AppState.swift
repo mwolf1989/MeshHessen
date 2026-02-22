@@ -7,6 +7,8 @@ import SwiftUI
 final class AppState {
     // MARK: - Connection
     var connectionState: ConnectionState = .disconnected
+    var protocolReady: Bool = false
+    var protocolStatusMessage: String?
     var myNodeInfo: MyNodeInfo?
 
     // MARK: - Nodes
@@ -159,6 +161,8 @@ final class AppState {
     // MARK: - Reset on disconnect
 
     func resetForDisconnect() {
+        protocolReady = false
+        protocolStatusMessage = nil
         myNodeInfo = nil
         nodes.removeAll()
         channels.removeAll()

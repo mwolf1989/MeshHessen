@@ -44,8 +44,10 @@ final class AppCoordinator {
             forName: .appLogLine, object: nil, queue: .main
         ) { [weak self] note in
             guard let line = note.userInfo?["line"] as? String else { return }
+            // Capture 'self' as a let constant before crossing the Sendable boundary
+            let coordinator = self
             Task { @MainActor in
-                self?.appState.appendDebugLine(line)
+                coordinator?.appState.appendDebugLine(line)
             }
         }
 
@@ -70,6 +72,7 @@ final class AppCoordinator {
     // MARK: - Disconnect
 
     func disconnect() async {
+        AppLogger.shared.log("[Coordinator] User requested disconnect", debug: true)
         userRequestedDisconnect = true
         cancelReconnect()
 
@@ -78,10 +81,13 @@ final class AppCoordinator {
         activeConnection = nil
         protocol_.connectionService = nil
         appState.connectionState = .disconnected
+        appState.protocolReady = false
+        appState.protocolStatusMessage = nil
         appState.resetForDisconnect()
 
         lastConnectionType = nil
         lastConnectionParameters = nil
+        AppLogger.shared.log("[Coordinator] Disconnect complete", debug: true)
     }
 
     // MARK: - Send messages
@@ -92,21 +98,6 @@ final class AppCoordinator {
 
     func sendDirectMessage(_ text: String, toNodeId: UInt32) async {
         await protocol_.sendTextMessage(text, toNodeId: toNodeId, channelIndex: 0)
-        // Echo in DM conversation
-        let ts = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
-        let me = MessageItem(
-            time: ts,
-            from: String(localized: "Me"),
-            fromId: appState.myNodeInfo?.nodeId ?? 0,
-            toId: toNodeId,
-            message: text,
-            channelIndex: 0,
-            channelName: ""
-        )
-        appState.addOrUpdateDM(me, myNodeId: appState.myNodeInfo?.nodeId ?? 0)
-        // Log outgoing DM
-        let partnerName = appState.nodes[toNodeId]?.name ?? String(format: "!%08x", toNodeId)
-        MessageLogger.shared.logDirectMessage(me, partnerName: partnerName, partnerNodeId: toNodeId)
     }
 
     func sendSOSAlert(customText: String? = nil) async {
@@ -116,7 +107,11 @@ final class AppCoordinator {
     // MARK: - Channel management
 
     func addChannel(name: String, pskBase64: String, uplinkEnabled: Bool, downlinkEnabled: Bool) async {
-        guard let psk = Data(base64Encoded: pskBase64) else { return }
+        AppLogger.shared.log("[Coordinator] Adding channel '\(name)' (index: \(appState.channels.count))", debug: true)
+        guard let psk = Data(base64Encoded: pskBase64) else {
+            AppLogger.shared.log("[Coordinator] Failed to add channel: invalid PSK", debug: true)
+            return
+        }
         let idx = appState.channels.count
         await protocol_.setChannel(
             index: idx, name: name, psk: psk,
@@ -127,10 +122,12 @@ final class AppCoordinator {
     }
 
     func deleteChannel(at index: Int) async {
+        AppLogger.shared.log("[Coordinator] Deleting channel at index \(index)", debug: true)
         await protocol_.deleteChannel(index: index)
     }
 
     func addMeshHessenChannel() async {
+        AppLogger.shared.log("[Coordinator] Adding Mesh Hessen channel...", debug: true)
         await protocol_.addMeshHessenChannel()
     }
 
@@ -138,6 +135,7 @@ final class AppCoordinator {
 
     func refreshSerialPorts() {
         availableSerialPorts = SerialConnectionService.availablePorts
+        AppLogger.shared.log("[Coordinator] Refreshed serial ports: \(availableSerialPorts.count) available", debug: true)
     }
 
     // MARK: - Message history
@@ -191,6 +189,8 @@ final class AppCoordinator {
         if !isReconnect {
             appState.connectionState = .connecting
         }
+        appState.protocolReady = false
+        appState.protocolStatusMessage = nil
 
         let service: any ConnectionService
         switch type {
@@ -224,20 +224,31 @@ final class AppCoordinator {
         do {
             try await service.connect(parameters: parameters)
             appState.connectionState = .connected
+            appState.protocolReady = false
+            appState.protocolStatusMessage = String(localized: "Initializing mesh…")
             reconnectAttempt = 0
             cancelReconnect()
             AppLogger.shared.log("[Coordinator] Connected via \(type.rawValue)", debug: true)
-            // Start the Meshtastic initialization sequence, then load history
-            Task {
-                await self.protocol_.initialize()
-                self.loadMessageHistory()
+            // Finish protocol initialization before reporting ready state to UI
+            let ready = await self.protocol_.initialize()
+            self.appState.protocolReady = ready
+            self.appState.protocolStatusMessage = ready ? nil : String(localized: "Initialization incomplete (no config complete)")
+            if !ready {
+                AppLogger.shared.log("[Coordinator] Protocol initialization incomplete; keeping connection but marking not ready")
             }
+            self.loadMessageHistory()
         } catch {
             activeConnection = nil
             protocol_.connectionService = nil
 
-            if isReconnect {
-                // Reconnect attempt failed — schedule next attempt
+            let isPermanent = (error as? ConnectionError)?.isPermanent == true
+
+            if isPermanent {
+                // Permanent failure (e.g. permission denied) — never retry, surface the error
+                appState.connectionState = .error(error.localizedDescription)
+                AppLogger.shared.log("[Coordinator] Permanent connection error (no retry): \(error.localizedDescription)")
+            } else if isReconnect {
+                // Transient reconnect attempt failed — schedule next attempt
                 AppLogger.shared.log("[Coordinator] Reconnect attempt \(reconnectAttempt) failed: \(error.localizedDescription)", debug: true)
                 scheduleReconnect()
             } else {
@@ -253,6 +264,8 @@ final class AppCoordinator {
     private func handleUnexpectedDisconnect() {
         guard !userRequestedDisconnect else {
             appState.connectionState = .disconnected
+            appState.protocolReady = false
+            appState.protocolStatusMessage = nil
             appState.resetForDisconnect()
             return
         }
@@ -266,6 +279,8 @@ final class AppCoordinator {
               lastConnectionParameters != nil
         else {
             appState.connectionState = .disconnected
+            appState.protocolReady = false
+            appState.protocolStatusMessage = nil
             appState.resetForDisconnect()
             return
         }
@@ -311,8 +326,9 @@ final class AppCoordinator {
 
     /// Exponential backoff: 1, 2, 4, 8, 16, 30, 30, 30…
     private func backoffDelay(forAttempt attempt: Int) -> Int {
-        let raw = Int(pow(2.0, Double(attempt - 1)))
-        return min(raw, maxBackoffSeconds)
+        let raw = pow(2.0, Double(attempt - 1))
+        let clamped = min(raw, Double(maxBackoffSeconds))
+        return Int(clamped)
     }
 
     /// Cancels any pending reconnect attempt.

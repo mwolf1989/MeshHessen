@@ -37,6 +37,7 @@ struct ChannelChatView: View {
 
             HStack(spacing: 8) {
                 Button {
+                    AppLogger.shared.log("[UI] User triggered SOS alert on channel \(channelIndex)", debug: true)
                     Task { await coordinator.sendSOSAlert(customText: nil) }
                 } label: {
                     Text("SOS")
@@ -71,6 +72,7 @@ struct ChannelChatView: View {
         guard !text.isEmpty else { return }
         messageText = ""
         isSending = true
+        AppLogger.shared.log("[UI] Sending message to channel \(channelIndex): \(text.prefix(50))\(text.count > 50 ? "..." : "")", debug: SettingsService.shared.debugMessages)
         Task {
             await coordinator.sendMessage(text, toChannelIndex: channelIndex)
             isSending = false

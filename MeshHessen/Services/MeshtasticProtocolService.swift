@@ -35,6 +35,10 @@ final class MeshtasticProtocolService {
 
     // Text-mode recovery
     private var lastValidPacketTime = Date()
+    private var consecutiveTextChunks = 0
+    private var recoveryInProgress = false
+    private var textLineBuffer = ""
+    private var bufferWaitingSince: Date?
 
     // Protocol constants
     private let packetStart1: UInt8 = 0x94
@@ -47,10 +51,11 @@ final class MeshtasticProtocolService {
 
     // MARK: - Initialize & Connect
 
-    func initialize() async {
-        guard let conn = connectionService else { return }
+    func initialize() async -> Bool {
+        guard let conn = connectionService else { return false }
 
         AppLogger.shared.log("[Protocol] Initializing connection type: \(conn.type.rawValue)", debug: true)
+        isDisconnecting = false
         isInitializing = true
         configComplete = false
         sessionPasskey = Data()
@@ -61,6 +66,11 @@ final class MeshtasticProtocolService {
         pendingMessages.removeAll()
         receiveBuffer = Data()
         myNodeId = 0
+        consecutiveTextChunks = 0
+        recoveryInProgress = false
+        textLineBuffer = ""
+        bufferWaitingSince = nil
+        lastValidPacketTime = .distantPast
 
         // 1. Small settle delay
         try? await Task.sleep(for: .seconds(1))
@@ -121,10 +131,15 @@ final class MeshtasticProtocolService {
         pendingChannelInfos.removeAll()
         pendingMessages.removeAll()
 
-        // 7. Request channels (up to 3 rounds, 8 channels each)
-        await requestAllChannels()
+        // 7. Request channels only if protocol session is ready
+        if configComplete, myNodeId != 0 {
+            await requestAllChannels()
+        } else {
+            AppLogger.shared.log("[Protocol] Skipping channel request (configComplete=\(configComplete), myNodeId=\(String(format: "!%08x", myNodeId)))", debug: true)
+        }
 
         AppLogger.shared.log("[Protocol] Initialization complete. Nodes: \(appState?.nodes.count ?? 0), Channels: \(appState?.channels.count ?? 0)", debug: true)
+        return configComplete
     }
 
     // MARK: - Data Received (called from connection service)
@@ -150,21 +165,29 @@ final class MeshtasticProtocolService {
         dataLock.unlock()
 
         while buf.count >= 4 {
+            if buf.startIndex != 0 {
+                buf = Data(buf)
+            }
+
             // Find magic header 0x94 0xC3
             guard let startIdx = findPacketStart(in: buf) else {
-                // No header found — discard all but last 3 bytes
-                if buf.count > 3 {
-                    buf = buf.suffix(3)
+                var bytesToProcess = buf.count
+                if buf.last == packetStart1 {
+                    bytesToProcess -= 1
                 }
+
+                if bytesToProcess > 0 {
+                    extractAndLogAsciiText(buf.prefix(bytesToProcess))
+                    buf.removeFirst(bytesToProcess)
+                }
+
+                bufferWaitingSince = nil
                 break
             }
 
             if startIdx > 0 {
-                // Skip ASCII text before header (log it)
-                let ascii = buf.prefix(startIdx)
-                if let text = String(bytes: ascii, encoding: .utf8), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    AppLogger.shared.log("[Serial] ASCII: \(text.trimmingCharacters(in: .whitespacesAndNewlines))", debug: SettingsService.shared.debugSerial)
-                }
+                // Skip bytes before header (could be ASCII device output)
+                extractAndLogAsciiText(buf.prefix(startIdx))
                 buf.removeFirst(startIdx)
             }
 
@@ -178,19 +201,33 @@ final class MeshtasticProtocolService {
             if length == 0 || length > maxPacketLength {
                 // Invalid length — skip this header
                 buf.removeFirst(2)
+                bufferWaitingSince = nil
+                AppLogger.shared.log("[Protocol] Invalid packet length \(length); skipping false start", debug: SettingsService.shared.debugSerial)
                 continue
             }
 
             let totalSize = 4 + length
             guard buf.count >= totalSize else {
                 // Incomplete — wait for more data
-                // Timeout: if incomplete for > 5s, discard
+                if let waitingSince = bufferWaitingSince {
+                    if Date().timeIntervalSince(waitingSince) > 5 {
+                        AppLogger.shared.log("[Protocol] Incomplete packet timed out (need \(totalSize), have \(buf.count)); skipping false start", debug: true)
+                        buf.removeFirst(2)
+                        bufferWaitingSince = nil
+                        continue
+                    }
+                } else {
+                    bufferWaitingSince = Date()
+                }
                 break
             }
+
+            bufferWaitingSince = nil
 
             let payload = buf.subdata(in: 4..<totalSize)
             buf.removeFirst(totalSize)
             processPacket(payload)
+            consecutiveTextChunks = 0
             lastValidPacketTime = Date()
         }
 
@@ -200,11 +237,18 @@ final class MeshtasticProtocolService {
     }
 
     private func findPacketStart(in data: Data) -> Int? {
-        for i in 0..<(data.count - 1) {
-            if data[i] == packetStart1 && data[i+1] == packetStart2 {
-                return i
+        guard data.count >= 2 else { return nil }
+        let lastComparableIndex = data.index(before: data.endIndex)
+        var currentIndex = data.startIndex
+
+        while currentIndex < lastComparableIndex {
+            let nextIndex = data.index(after: currentIndex)
+            if data[currentIndex] == packetStart1 && data[nextIndex] == packetStart2 {
+                return data.distance(from: data.startIndex, to: currentIndex)
             }
+            currentIndex = nextIndex
         }
+
         return nil
     }
 
@@ -218,6 +262,94 @@ final class MeshtasticProtocolService {
             }
         } catch {
             AppLogger.shared.log("[Protocol] Parse error: \(error.localizedDescription)", debug: SettingsService.shared.debugDevice)
+        }
+    }
+
+    private func extractAndLogAsciiText(_ bytes: Data) {
+        guard !bytes.isEmpty else { return }
+
+        let printableCount = bytes.reduce(0) { partial, byte in
+            let isPrintableAscii = (byte >= 0x20 && byte <= 0x7E)
+            let isWhitespace = (byte == 0x0A || byte == 0x0D || byte == 0x09)
+            let isAnsiEsc = (byte == 0x1B)
+            return partial + ((isPrintableAscii || isWhitespace || isAnsiEsc) ? 1 : 0)
+        }
+
+        let printableRatio = Double(printableCount) / Double(bytes.count)
+        guard printableRatio >= 0.8 else {
+            if SettingsService.shared.debugSerial {
+                AppLogger.shared.log("[Serial] Discarding \(bytes.count) non-protobuf bytes", debug: true)
+            }
+            return
+        }
+
+        textLineBuffer += String(decoding: bytes, as: UTF8.self)
+
+        while let newlineIndex = textLineBuffer.firstIndex(of: "\n") {
+            let line = String(textLineBuffer[..<newlineIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+            textLineBuffer.removeSubrange(...newlineIndex)
+
+            guard !line.isEmpty else { continue }
+            let cleanedLine = stripANSICodes(from: line)
+            guard !cleanedLine.isEmpty else { continue }
+
+            checkForCriticalDeviceErrors(cleanedLine)
+            if SettingsService.shared.debugDevice {
+                AppLogger.shared.log("[DEVICE] \(cleanedLine)", debug: true)
+            }
+        }
+
+        consecutiveTextChunks += 1
+        let hadValidPacket = lastValidPacketTime != .distantPast
+        let noProtobufForTooLong = hadValidPacket && Date().timeIntervalSince(lastValidPacketTime) > 60
+
+        if !recoveryInProgress && !isInitializing && noProtobufForTooLong {
+            AppLogger.shared.log("[Protocol] No protobuf packets for >60s while receiving device text; attempting recovery", debug: true)
+            recoveryInProgress = true
+            Task { @MainActor in
+                await recoverProtobufMode()
+            }
+        }
+    }
+
+    private func stripANSICodes(from value: String) -> String {
+        value.replacingOccurrences(
+            of: "\\u{001B}\\[[0-9;]*[A-Za-z]",
+            with: "",
+            options: .regularExpression
+        )
+    }
+
+    private func checkForCriticalDeviceErrors(_ line: String) {
+        let upper = line.uppercased()
+        if upper.contains("PANIC") || upper.contains("ASSERT") || upper.contains("FATAL") || upper.contains("ERROR") {
+            AppLogger.shared.log("[DEVICE-CRITICAL] \(line)")
+        }
+    }
+
+    private func recoverProtobufMode() async {
+        defer { recoveryInProgress = false }
+        guard let conn = connectionService, conn.type != .bluetooth, !isDisconnecting else { return }
+
+        do {
+            AppLogger.shared.log("[RECOVERY] Sending wakeup sequence...", debug: true)
+            let wakeup = Data(repeating: packetStart2, count: 32)
+            try await conn.write(wakeup)
+            try? await Task.sleep(for: .milliseconds(500))
+
+            guard !isDisconnecting else { return }
+
+            AppLogger.shared.log("[RECOVERY] Sending WantConfigId to force protobuf mode...", debug: true)
+            await sendWantConfig()
+            try? await Task.sleep(for: .seconds(3))
+
+            if consecutiveTextChunks == 0 {
+                AppLogger.shared.log("[RECOVERY] Success - protobuf mode restored", debug: true)
+            } else {
+                AppLogger.shared.log("[RECOVERY] Warning - still receiving text after recovery attempt", debug: true)
+            }
+        } catch {
+            AppLogger.shared.log("[RECOVERY] Error: \(error.localizedDescription)")
         }
     }
 
@@ -287,7 +419,10 @@ final class MeshtasticProtocolService {
     // MARK: - Text Message
 
     private func handleTextMessage(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
-        guard var text = String(bytes: data.payload, encoding: .utf8) else { return }
+        guard var text = String(bytes: data.payload, encoding: .utf8) else {
+            AppLogger.shared.log("[Protocol] Text message decode failed from \(String(format: "!%08x", packet.from))", debug: SettingsService.shared.debugDevice)
+            return
+        }
 
         // Strip BEL character (0x07) used as alert trigger
         let hasAlertBell = text.contains("\u{0007}") || text.contains("🔔")
@@ -298,7 +433,7 @@ final class MeshtasticProtocolService {
         let from = nodeDisplayName(packet.from)
         let node = appState?.node(forId: packet.from)
 
-        var msg = MessageItem(
+        let msg = MessageItem(
             time: ts,
             from: from,
             fromId: packet.from,
@@ -349,7 +484,10 @@ final class MeshtasticProtocolService {
     // MARK: - Position
 
     private func handlePosition(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
-        guard let pos = try? Meshtastic_Position(serializedBytes: data.payload) else { return }
+        guard let pos = try? Meshtastic_Position(serializedBytes: data.payload) else {
+            AppLogger.shared.log("[Protocol] Position parse failed from \(String(format: "!%08x", packet.from))", debug: SettingsService.shared.debugDevice)
+            return
+        }
         guard pos.latitudeI != 0 || pos.longitudeI != 0 else { return }
 
         let lat = Double(pos.latitudeI) / 1e7
@@ -367,7 +505,10 @@ final class MeshtasticProtocolService {
     // MARK: - NodeInfo (portnum 4)
 
     private func handleNodeInfoPacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
-        guard let user = try? Meshtastic_User(serializedBytes: data.payload) else { return }
+        guard let user = try? Meshtastic_User(serializedBytes: data.payload) else {
+            AppLogger.shared.log("[Protocol] NodeInfo(user) parse failed from \(String(format: "!%08x", packet.from))", debug: SettingsService.shared.debugDevice)
+            return
+        }
 
         // If this is our own node
         if packet.from == myNodeId || myNodeId == 0 {
@@ -375,7 +516,7 @@ final class MeshtasticProtocolService {
                 nodeId: packet.from,
                 shortName: user.shortName,
                 longName: user.longName,
-                hardwareModel: user.hwModel.name,
+                hardwareModel: hardwareModelName(user.hwModel),
                 firmwareVersion: ""
             )
         }
@@ -394,13 +535,15 @@ final class MeshtasticProtocolService {
     // MARK: - NodeInfo (from NodeInfo message)
 
     private func handleNodeInfo(_ info: Meshtastic_NodeInfo) {
-        let node = makeNodeInfo(from: info.user, num: info.num)
+        let user = info.user
+        let node = makeNodeInfo(from: user, num: info.num)
 
         // Apply GPS if present
-        if info.position.latitudeI != 0 || info.position.longitudeI != 0 {
-            node.latitude = Double(info.position.latitudeI) / 1e7
-            node.longitude = Double(info.position.longitudeI) / 1e7
-            node.altitude = Int(info.position.altitude)
+        let position = info.position
+        if position.latitudeI != 0 || position.longitudeI != 0 {
+            node.latitude = Double(position.latitudeI) / 1e7
+            node.longitude = Double(position.longitudeI) / 1e7
+            node.altitude = Int(position.altitude)
         }
 
         // Apply telemetry
@@ -408,8 +551,9 @@ final class MeshtasticProtocolService {
         node.snr = info.snr != 0 ? String(format: "%.1f dB", info.snr) : "-"
         node.lastHeard = info.lastHeard
         node.lastSeen = info.lastHeard > 0 ? formatTimestamp(Int(info.lastHeard)) : "-"
-        node.batteryLevel = info.deviceMetrics.batteryLevel
-        node.battery = info.deviceMetrics.batteryLevel > 0 ? "\(info.deviceMetrics.batteryLevel)%" : "-"
+        let metrics = info.deviceMetrics
+        node.batteryLevel = metrics.batteryLevel
+        node.battery = metrics.batteryLevel > 0 ? "\(metrics.batteryLevel)%" : "-"
         node.viaMqtt = info.viaMqtt
 
         // Apply saved color/note from settings
@@ -419,9 +563,9 @@ final class MeshtasticProtocolService {
         if info.num == myNodeId {
             appState?.myNodeInfo = MyNodeInfo(
                 nodeId: info.num,
-                shortName: info.user.shortName,
-                longName: info.user.longName,
-                hardwareModel: info.user.hwModel.name,
+                shortName: user.shortName,
+                longName: user.longName,
+                hardwareModel: hardwareModelName(user.hwModel),
                 firmwareVersion: ""
             )
         }
@@ -443,14 +587,15 @@ final class MeshtasticProtocolService {
         guard channel.role != .disabled else { return }
 
         let name = extractChannelName(channel)
-        let pskBase64 = channel.settings.psk.base64EncodedString()
+        let s = channel.settings
+        let pskBase64 = s.psk.base64EncodedString()
         let info = ChannelInfo(
             id: Int(channel.index),
             name: name,
             psk: pskBase64,
             role: channel.role == .primary ? "PRIMARY" : "SECONDARY",
-            uplinkEnabled: channel.settings.uplinkEnabled,
-            downlinkEnabled: channel.settings.downlinkEnabled
+            uplinkEnabled: s.uplinkEnabled,
+            downlinkEnabled: s.downlinkEnabled
         )
 
         if isInitializing {
@@ -471,7 +616,8 @@ final class MeshtasticProtocolService {
     }
 
     private func extractChannelName(_ channel: Meshtastic_Channel) -> String {
-        if !channel.settings.name.isEmpty { return channel.settings.name }
+        let s = channel.settings
+        if !s.name.isEmpty { return s.name }
         if channel.role == .primary { return "Default" }
         return "Channel \(channel.index)"
     }
@@ -481,19 +627,25 @@ final class MeshtasticProtocolService {
     private func handleConfig(_ config: Meshtastic_Config) {
         switch config.payloadVariant {
         case .lora(let lora):
-            AppLogger.shared.log("[Protocol] Config: LoRa region=\(lora.region.name) modem=\(lora.modemPreset.name) hopLimit=\(lora.hopLimit) txEnabled=\(lora.txEnabled)", debug: SettingsService.shared.debugDevice)
+            AppLogger.shared.log("[Protocol] Config: LoRa region=\(lora.region.rawValue) modem=\(lora.modemPreset.rawValue) hopLimit=\(lora.hopLimit) txEnabled=\(lora.txEnabled)", debug: SettingsService.shared.debugDevice)
         case .device(let device):
-            AppLogger.shared.log("[Protocol] Config: Device role=\(device.role) serialEnabled=\(device.serialEnabled)", debug: SettingsService.shared.debugDevice)
+            _ = device
+            AppLogger.shared.log("[Protocol] Config: Device", debug: SettingsService.shared.debugDevice)
         case .position(let pos):
-            AppLogger.shared.log("[Protocol] Config: Position broadcastSecs=\(pos.positionBroadcastSecs) smartEnabled=\(pos.positionBroadcastSmartEnabled)", debug: SettingsService.shared.debugDevice)
+            _ = pos
+            AppLogger.shared.log("[Protocol] Config: Position", debug: SettingsService.shared.debugDevice)
         case .power(let pwr):
-            AppLogger.shared.log("[Protocol] Config: Power saving=\(pwr.isPowerSaving)", debug: SettingsService.shared.debugDevice)
+            _ = pwr
+            AppLogger.shared.log("[Protocol] Config: Power", debug: SettingsService.shared.debugDevice)
         case .network(let net):
-            AppLogger.shared.log("[Protocol] Config: Network wifiEnabled=\(net.wifiEnabled) ssid=\(net.wifiSsid)", debug: SettingsService.shared.debugDevice)
+            _ = net
+            AppLogger.shared.log("[Protocol] Config: Network", debug: SettingsService.shared.debugDevice)
         case .display(let disp):
-            AppLogger.shared.log("[Protocol] Config: Display screenOnSecs=\(disp.screenOnSecs)", debug: SettingsService.shared.debugDevice)
+            _ = disp
+            AppLogger.shared.log("[Protocol] Config: Display", debug: SettingsService.shared.debugDevice)
         case .bluetooth(let bt):
-            AppLogger.shared.log("[Protocol] Config: Bluetooth enabled=\(bt.enabled) mode=\(bt.mode)", debug: SettingsService.shared.debugDevice)
+            _ = bt
+            AppLogger.shared.log("[Protocol] Config: Bluetooth", debug: SettingsService.shared.debugDevice)
         case .none:
             AppLogger.shared.log("[Protocol] Config received (empty)", debug: SettingsService.shared.debugDevice)
         }
@@ -502,7 +654,10 @@ final class MeshtasticProtocolService {
     // MARK: - Admin
 
     private func handleAdminPacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
-        guard let admin = try? Meshtastic_AdminMessage(serializedBytes: data.payload) else { return }
+        guard let admin = try? Meshtastic_AdminMessage(serializedBytes: data.payload) else {
+            AppLogger.shared.log("[Protocol] Admin parse failed from \(String(format: "!%08x", packet.from))", debug: SettingsService.shared.debugDevice)
+            return
+        }
 
         switch admin.payloadVariant {
         case .getChannelResponse(let channel):
@@ -527,13 +682,11 @@ final class MeshtasticProtocolService {
         node.lastSeen = formatTime()
         node.lastHeard = Int32(Date().timeIntervalSince1970)
 
-        // Parse Telemetry wrapper → DeviceMetrics
-        guard let telemetry = try? Meshtastic_Telemetry(serializedBytes: data.payload) else {
+        // Parse DeviceMetrics payload (portnum 67)
+        guard let metrics = try? Meshtastic_DeviceMetrics(serializedBytes: data.payload) else {
             AppLogger.shared.log("[Protocol] Telemetry parse failed from \(nodeDisplayName(packet.from))", debug: SettingsService.shared.debugDevice)
             return
         }
-
-        guard case .deviceMetrics(let metrics) = telemetry.variant else { return }
 
         // Update battery
         if metrics.batteryLevel > 0 {
@@ -558,16 +711,31 @@ final class MeshtasticProtocolService {
     // MARK: - Channel Requests
 
     private func requestAllChannels() async {
+        guard configComplete else {
+            AppLogger.shared.log("[Protocol] requestAllChannels skipped: config not complete", debug: true)
+            return
+        }
+        guard myNodeId != 0 else {
+            AppLogger.shared.log("[Protocol] requestAllChannels skipped: myNodeId unknown", debug: true)
+            return
+        }
+
         AppLogger.shared.log("[Protocol] Requesting channels...", debug: true)
         for round in 0..<3 {
+            let before = receivedChannelResponses.count
             for idx in 0..<8 {
                 if receivedChannelResponses.contains(idx) { continue }
                 await sendGetChannelRequest(index: idx)
                 try? await Task.sleep(for: .milliseconds(150))
             }
             try? await Task.sleep(for: .seconds(5))
-            AppLogger.shared.log("[Protocol] Channel round \(round+1): received \(receivedChannelResponses.count) channels", debug: true)
-            if receivedChannelResponses.count >= (appState?.channels.count ?? 1) { break }
+            let missing = (0..<8).filter { !receivedChannelResponses.contains($0) }
+            AppLogger.shared.log("[Protocol] Channel round \(round+1): received \(receivedChannelResponses.count) channels, missing: \(missing)", debug: true)
+            if missing.isEmpty { break }
+
+            if receivedChannelResponses.count == before {
+                AppLogger.shared.log("[Protocol] Channel round \(round+1) produced no new responses", debug: true)
+            }
         }
     }
 
@@ -674,6 +842,15 @@ final class MeshtasticProtocolService {
 
     private func ensureSessionKey() async {
         guard sessionPasskey.isEmpty else { return }
+        guard configComplete else {
+            AppLogger.shared.log("[Protocol] Session key request skipped: config not complete", debug: SettingsService.shared.debugDevice)
+            return
+        }
+        guard myNodeId != 0 else {
+            AppLogger.shared.log("[Protocol] Session key request skipped: myNodeId unknown", debug: SettingsService.shared.debugDevice)
+            return
+        }
+
         var admin = Meshtastic_AdminMessage()
         admin.getConfigRequest = 8   // triggers session passkey response
         await sendAdminMessage(admin)
@@ -796,6 +973,17 @@ final class MeshtasticProtocolService {
         f.dateStyle = .short
         f.timeStyle = .short
         return f.string(from: date)
+    }
+
+    private func hardwareModelName(_ model: Meshtastic_HardwareModel) -> String {
+        switch model {
+        case .unset:
+            return "Unknown"
+        case .UNRECOGNIZED(let value):
+            return "HW(\(value))"
+        default:
+            return String(describing: model)
+        }
     }
 }
 

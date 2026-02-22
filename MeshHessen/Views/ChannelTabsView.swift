@@ -13,8 +13,16 @@ struct ChannelTabsView: View {
             )
         } else {
             TabView(selection: Binding(
-                get: { appState.selectedChannelIndex },
-                set: { appState.selectedChannelIndex = $0 }
+                get: {
+                    if appState.channels.contains(where: { $0.id == appState.selectedChannelIndex }) {
+                        return appState.selectedChannelIndex
+                    }
+                    return appState.channels.first?.id ?? 0
+                },
+                set: { newValue in
+                    guard appState.channels.contains(where: { $0.id == newValue }) else { return }
+                    appState.selectedChannelIndex = newValue
+                }
             )) {
                 ForEach(appState.channels) { channel in
                     ChannelChatView(channelIndex: channel.id)

@@ -136,6 +136,10 @@ struct MainView: View {
     // MARK: - Helpers
 
     private var statusColor: Color {
+        if appState.connectionState.isConnected && !appState.protocolReady {
+            return .yellow
+        }
+
         switch appState.connectionState {
         case .connected:    return .green
         case .connecting:   return .yellow
@@ -146,7 +150,10 @@ struct MainView: View {
     }
 
     private var statusText: String {
-        appState.connectionState.displayText
+        if appState.connectionState.isConnected && !appState.protocolReady {
+            return appState.protocolStatusMessage ?? String(localized: "Connected (initializing…)")
+        }
+        return appState.connectionState.displayText
     }
 }
 

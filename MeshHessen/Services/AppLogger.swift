@@ -38,11 +38,14 @@ final class AppLogger {
         // Post to AppState debug tab on main thread
         if debug {
             Task { @MainActor in
+                // Truncate very long log lines to prevent UI issues
+                let maxLength = 2000
+                let displayMessage = message.count > maxLength ? String(message.prefix(maxLength)) + "..." : message
                 // AppState is accessed through the shared protocol service coordinator
                 NotificationCenter.default.post(
                     name: .appLogLine,
                     object: nil,
-                    userInfo: ["line": "[\(ts)] \(message)"]
+                    userInfo: ["line": "[\(ts)] \(displayMessage)"]
                 )
             }
         }

@@ -197,9 +197,10 @@ struct TileDownloaderSheet: View {
                 }
 
                 let count = estimatedTileCount()
+                let countColor: Color = count > 50_000 ? .red : count > 5_000 ? .orange : .secondary
                 Text("Estimated tiles: ~\(count)")
                     .font(.caption)
-                    .foregroundStyle(count > 50_000 ? .red : count > 5_000 ? .orange : .secondary)
+                    .foregroundStyle(countColor)
             }
             .formStyle(.grouped)
 
@@ -280,84 +281,88 @@ struct TileDownloaderSheet: View {
         let minZ = Int(minZoom)
         let maxZ = Int(maxZoom)
         let layer = selectedLayer
+        let total = estimatedTileCount()
 
         task = Task {
-            let tileDir = FileManager.default
-                .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("MeshHessen/tiles/\(layer)")
-            try? FileManager.default.createDirectory(at: tileDir, withIntermediateDirectories: true)
+            await performDownload(bbox: bbox, urlTemplate: urlTemplate, minZ: minZ, maxZ: maxZ, layer: layer, total: total)
+        }
+    }
 
-            var downloaded = 0
-            var skipped = 0
-            let total = estimatedTileCount()
-            guard total > 0 else {
-                await MainActor.run { isDownloading = false; statusText = String(localized: "No tiles to download.") }
-                return
-            }
+    private func performDownload(bbox: BoundingBox, urlTemplate: String, minZ: Int, maxZ: Int, layer: String, total: Int) async {
+        let tileDir = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MeshHessen/tiles/\(layer)")
+        try? FileManager.default.createDirectory(at: tileDir, withIntermediateDirectories: true)
 
-            for z in minZ...maxZ {
-                let tileCount = 1 << z
-                let xMin = Int(floor((bbox.west + 180) / 360 * Double(tileCount)))
-                let xMax = Int(floor((bbox.east + 180) / 360 * Double(tileCount)))
-                let latRad = bbox.north * .pi / 180
-                let yMin = Int(floor((1 - log(tan(latRad) + 1/cos(latRad)) / .pi) / 2 * Double(tileCount)))
-                let latRad2 = bbox.south * .pi / 180
-                let yMax = Int(floor((1 - log(tan(latRad2) + 1/cos(latRad2)) / .pi) / 2 * Double(tileCount)))
+        var downloaded = 0
+        var skipped = 0
+        guard total > 0 else {
+            await MainActor.run { isDownloading = false; statusText = String(localized: "No tiles to download.") }
+            return
+        }
 
-                for x in xMin...xMax {
-                    for y in yMin...yMax {
-                        if Task.isCancelled {
-                            await MainActor.run { isDownloading = false; statusText = String(localized: "Cancelled.") }
-                            return
-                        }
+        for z in minZ...maxZ {
+            let tileCount: Int = 1 << z
+            let xMin: Int = Int(floor((bbox.west + 180) / 360 * Double(tileCount)))
+            let xMax: Int = Int(floor((bbox.east + 180) / 360 * Double(tileCount)))
+            let latRad: Double = bbox.north * .pi / 180
+            let yMin: Int = Int(floor((1 - log(tan(latRad) + 1/cos(latRad)) / .pi) / 2 * Double(tileCount)))
+            let latRad2: Double = bbox.south * .pi / 180
+            let yMax: Int = Int(floor((1 - log(tan(latRad2) + 1/cos(latRad2)) / .pi) / 2 * Double(tileCount)))
 
-                        let file = tileDir.appendingPathComponent("\(z)_\(x)_\(y).png")
+            for x in xMin...xMax {
+                for y in yMin...yMax {
+                    if Task.isCancelled {
+                        await MainActor.run { isDownloading = false; statusText = String(localized: "Cancelled.") }
+                        return
+                    }
 
-                        // Skip tiles that already exist locally
-                        if FileManager.default.fileExists(atPath: file.path) {
-                            skipped += 1
-                            downloaded += 1
-                            let p = Double(downloaded) / Double(total)
-                            await MainActor.run {
-                                progress = p
-                                statusText = "z=\(z) x=\(x) y=\(y) — skipped (\(downloaded)/\(total))"
-                            }
-                            continue
-                        }
+                    let file = tileDir.appendingPathComponent("\(z)_\(x)_\(y).png")
 
-                        // Build tile URL from template
-                        let urlStr = urlTemplate
-                            .replacingOccurrences(of: "{z}", with: "\(z)")
-                            .replacingOccurrences(of: "{x}", with: "\(x)")
-                            .replacingOccurrences(of: "{y}", with: "\(y)")
-
-                        if let url = URL(string: urlStr),
-                           let data = try? await URLSession.shared.data(from: url).0 {
-                            try? data.write(to: file)
-                        }
-
-                        // Rate limiting: delay for external servers only
-                        if !Self.isOwnServer(url: urlStr) {
-                            try? await Task.sleep(nanoseconds: Self.externalDelayMs * 1_000_000)
-                        }
-
+                    // Skip tiles that already exist locally
+                    if FileManager.default.fileExists(atPath: file.path) {
+                        skipped += 1
                         downloaded += 1
                         let p = Double(downloaded) / Double(total)
                         await MainActor.run {
                             progress = p
-                            statusText = "z=\(z) x=\(x) y=\(y) (\(downloaded)/\(total))"
+                            statusText = "z=\(z) x=\(x) y=\(y) — skipped (\(downloaded)/\(total))"
                         }
+                        continue
+                    }
+
+                    // Build tile URL from template
+                    let urlStr = urlTemplate
+                        .replacingOccurrences(of: "{z}", with: "\(z)")
+                        .replacingOccurrences(of: "{x}", with: "\(x)")
+                        .replacingOccurrences(of: "{y}", with: "\(y)")
+
+                    if let url = URL(string: urlStr),
+                       let data = try? await URLSession.shared.data(from: url).0 {
+                        try? data.write(to: file)
+                    }
+
+                    // Rate limiting: delay for external servers only
+                    if !Self.isOwnServer(url: urlStr) {
+                        try? await Task.sleep(nanoseconds: Self.externalDelayMs * 1_000_000)
+                    }
+
+                    downloaded += 1
+                    let p = Double(downloaded) / Double(total)
+                    await MainActor.run {
+                        progress = p
+                        statusText = "z=\(z) x=\(x) y=\(y) (\(downloaded)/\(total))"
                     }
                 }
             }
-            let finalSkipped = skipped
-            await MainActor.run {
-                isDownloading = false
-                if finalSkipped > 0 {
-                    statusText = String(localized: "Done — \(downloaded) tiles (\(finalSkipped) already cached).")
-                } else {
-                    statusText = String(localized: "Done — \(downloaded) tiles downloaded.")
-                }
+        }
+        let finalSkipped = skipped
+        await MainActor.run {
+            isDownloading = false
+            if finalSkipped > 0 {
+                statusText = String(localized: "Done — \(downloaded) tiles (\(finalSkipped) already cached).")
+            } else {
+                statusText = String(localized: "Done — \(downloaded) tiles downloaded.")
             }
         }
     }

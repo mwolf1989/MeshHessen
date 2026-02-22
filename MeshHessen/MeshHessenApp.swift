@@ -7,6 +7,10 @@ struct MeshHessenApp: App {
     @State private var coordinator = AppCoordinator()
     @Environment(\.openWindow) private var openWindow
 
+    init() {
+        AppLogger.shared.log("[App] MeshHessen starting up...", debug: true)
+    }
+
     var body: some Scene {
         // MARK: - Main Window
         WindowGroup {
@@ -42,6 +46,9 @@ struct MeshHessenApp: App {
     private func handleIncomingDM(_ notification: Notification) {
         guard let partnerId = notification.userInfo?["partnerId"] as? UInt32 else { return }
         let msg = notification.userInfo?["message"] as? MessageItem
+        let senderName = msg?.from ?? "Node \(partnerId)"
+
+        AppLogger.shared.log("[App] Incoming DM from \(senderName) (\(partnerId))", debug: true)
 
         // Set target node so DMWindowView auto-selects the conversation
         coordinator.appState.dmTargetNodeId = partnerId
@@ -63,8 +70,14 @@ struct MeshHessenApp: App {
 
     private func postSystemNotification(for message: MessageItem?, partnerId: UInt32) {
         let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
-            guard granted else { return }
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error {
+                AppLogger.shared.log("[App] Notification authorization error: \(error.localizedDescription)", debug: true)
+            }
+            guard granted else {
+                AppLogger.shared.log("[App] Notification authorization denied", debug: true)
+                return
+            }
 
             let content = UNMutableNotificationContent()
             let senderName = message?.from ?? "Node \(partnerId)"
@@ -78,7 +91,11 @@ struct MeshHessenApp: App {
                 content: content,
                 trigger: nil  // deliver immediately
             )
-            center.add(request)
+            center.add(request) { error in
+                if let error {
+                    AppLogger.shared.log("[App] Failed to post notification: \(error.localizedDescription)", debug: true)
+                }
+            }
         }
     }
 }

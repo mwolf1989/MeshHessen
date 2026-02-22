@@ -64,6 +64,15 @@ final class SerialConnectionService: NSObject, ConnectionService {
 
     // MARK: - Private
 
+    private static func mapSerialError(_ error: Error) -> Error {
+        let nsErr = error as NSError
+        // POSIX EPERM (1) or EACCES (13) from IOKit = sandbox or OS permission denial
+        if nsErr.domain == NSPOSIXErrorDomain && (nsErr.code == 1 || nsErr.code == 13) {
+            return ConnectionError.notPermitted
+        }
+        return error
+    }
+
     private func startWatchdog() {
         watchdogTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             guard let self, self.isConnected else { return }
@@ -87,8 +96,9 @@ extension SerialConnectionService: ORSSerialPortDelegate {
     }
 
     func serialPort(_ serialPort: ORSSerialPort, didEncounterError error: Error) {
+        let mapped = Self.mapSerialError(error)
         if let cont = connectContinuation {
-            cont.resume(throwing: error)
+            cont.resume(throwing: mapped)
             connectContinuation = nil
         }
         disconnect()

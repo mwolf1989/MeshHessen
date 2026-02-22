@@ -122,10 +122,6 @@ struct NodesTabView: View {
         .sheet(item: $showNodeInfo) { node in
             NodeInfoSheet(node: node)
         }
-        .searchable(text: Binding(
-            get: { appState.nodeFilter },
-            set: { appState.nodeFilter = $0 }
-        ), prompt: "Filter nodes")
         .navigationTitle("Nodes")
     }
 

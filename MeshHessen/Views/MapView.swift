@@ -425,8 +425,8 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
 
         /// When a node annotation is selected (left-click), show distance from
         /// "my position" in the callout subtitle using CLLocation.distance(from:).
-        func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
-            guard let nodeAnn = annotation as? NodeAnnotation else { return }
+        func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
+            guard let nodeAnn = view.annotation as? NodeAnnotation else { return }
 
             let settings = SettingsService.shared
             let myLoc = CLLocation(latitude: settings.myLatitude, longitude: settings.myLongitude)

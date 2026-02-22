@@ -83,6 +83,7 @@ struct ConnectSheetView: View {
 
                 Button {
                     availablePorts = SerialConnectionService.availablePorts
+                    AppLogger.shared.log("[UI] Refreshed serial ports: \(availablePorts.count) found", debug: true)
                     if !availablePorts.contains(serialPort) {
                         serialPort = availablePorts.first ?? ""
                     }
@@ -145,21 +146,30 @@ struct ConnectSheetView: View {
         case .serial:
             settings.lastComPort = serialPort
             params = .serial(portName: serialPort)
+            AppLogger.shared.log("[UI] Connecting via Serial: \(serialPort)", debug: true)
         case .bluetooth:
             params = .bluetooth(deviceAddress: bluetoothName, deviceName: bluetoothName)
+            AppLogger.shared.log("[UI] Connecting via Bluetooth: \(bluetoothName)", debug: true)
         case .tcp:
             let port = Int(tcpPort) ?? 4403
             settings.lastTcpHost = tcpHost
             settings.lastTcpPort = port
             params = .tcp(hostname: tcpHost, port: port)
+            AppLogger.shared.log("[UI] Connecting via TCP: \(tcpHost):\(port)", debug: true)
         }
 
         await coordinator.connect(type: selectedType, parameters: params)
 
         isConnecting = false
         if case .error(let e) = appState.connectionState {
+            AppLogger.shared.log("[UI] Connection failed: \(e)", debug: true)
             errorMessage = e
+        } else if !appState.protocolReady {
+            let initMessage = appState.protocolStatusMessage ?? String(localized: "Initialization incomplete (no config complete)")
+            AppLogger.shared.log("[UI] Connection transport established but protocol not ready: \(initMessage)", debug: true)
+            errorMessage = initMessage
         } else {
+            AppLogger.shared.log("[UI] Connection established successfully", debug: true)
             dismiss()
         }
     }

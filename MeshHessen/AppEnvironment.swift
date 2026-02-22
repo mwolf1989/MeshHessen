@@ -3,7 +3,11 @@ import SwiftUI
 // MARK: - Environment Key for AppState
 
 private struct AppStateKey: EnvironmentKey {
-    static let defaultValue = AppState()
+    static var defaultValue: AppState {
+        MainActor.assumeIsolated {
+            AppState()
+        }
+    }
 }
 
 extension EnvironmentValues {
