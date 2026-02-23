@@ -32,6 +32,7 @@ struct MeshHessenApp: App {
         // MARK: - Main Window
         WindowGroup {
             MainView()
+                .frame(minWidth: 800, minHeight: 500)
                 .environment(\.appState, coordinator.appState)
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environment(\.persistenceController, persistenceController)
@@ -47,6 +48,7 @@ struct MeshHessenApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))
         .defaultSize(width: 1100, height: 720)
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(after: .textFormatting) {
                 Button("Schrift vergrößern") {
