@@ -43,6 +43,41 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
         centralManager = CBCentralManager(delegate: self, queue: .global(qos: .userInitiated))
     }
 
+    // MARK: - Thread-safe continuation helpers
+
+    /// Atomically stores a new connect continuation under the lock.
+    private func storeConnectContinuation(_ cont: CheckedContinuation<Void, Error>) {
+        continuationLock.withLock { connectContinuation = cont }
+    }
+
+    /// Atomically extracts and nils the connect continuation so it can only be resumed once.
+    private func takeConnectContinuation() -> CheckedContinuation<Void, Error>? {
+        continuationLock.withLock {
+            let c = connectContinuation
+            connectContinuation = nil
+            return c
+        }
+    }
+
+    /// Thread-safe check whether a connect continuation is pending.
+    private var hasConnectContinuation: Bool {
+        continuationLock.withLock { connectContinuation != nil }
+    }
+
+    /// Atomically stores a new write continuation under the lock.
+    private func storeWriteContinuation(_ cont: CheckedContinuation<Void, Error>) {
+        continuationLock.withLock { writeContinuation = cont }
+    }
+
+    /// Atomically extracts and nils the write continuation so it can only be resumed once.
+    private func takeWriteContinuation() -> CheckedContinuation<Void, Error>? {
+        continuationLock.withLock {
+            let c = writeContinuation
+            writeContinuation = nil
+            return c
+        }
+    }
+
     func connect(parameters: ConnectionParameters) async throws {
         guard case .bluetooth(let address, let name) = parameters else {
             AppLogger.shared.log("[BLE] Invalid connection parameters", debug: true)
@@ -59,7 +94,7 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
             self.peripheral = known
             known.delegate = self
             return try await withCheckedThrowingContinuation { cont in
-                self.connectContinuation = cont
+                self.storeConnectContinuation(cont)
                 centralManager.connect(known, options: nil)
                 self.startConnectTimeout()
             }
@@ -68,7 +103,7 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
         // Unknown UUID – scan for up to 20 s
         AppLogger.shared.log("[BLE] Peripheral unknown – starting scan (20 s timeout)", debug: SettingsService.shared.debugBluetooth)
         return try await withCheckedThrowingContinuation { cont in
-            self.connectContinuation = cont
+            self.storeConnectContinuation(cont)
             centralManager.scanForPeripherals(
                 withServices: [BluetoothConnectionService.serviceUUID],
                 options: nil
@@ -83,10 +118,7 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
         // Cancel any pending connect continuation to prevent CheckedContinuation leak/crash
         connectTimeoutTask?.cancel()
         connectTimeoutTask = nil
-        if let cont = connectContinuation {
-            connectContinuation = nil
-            cont.resume(throwing: ConnectionError.cancelled)
-        }
+        takeConnectContinuation()?.resume(throwing: ConnectionError.cancelled)
         pollingTask?.cancel()
         pollingTask = nil
         centralManager.stopScan()
@@ -118,7 +150,7 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
             Task { await self.drainFromRadio() }
         } else {
             return try await withCheckedThrowingContinuation { cont in
-                self.writeContinuation = cont
+                self.storeWriteContinuation(cont)
                 self.pendingWriteData = data
                 p.writeValue(data, for: char, type: .withResponse)
             }
@@ -147,9 +179,8 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
             try? await Task.sleep(for: .seconds(20))
             guard let self, !Task.isCancelled else { return }
             self.centralManager.stopScan()
-            if let cont = self.connectContinuation {
-                self.connectContinuation = nil
-                self.connectTimeoutTask = nil
+            self.connectTimeoutTask = nil
+            if let cont = self.takeConnectContinuation() {
                 AppLogger.shared.log("[BLE] Connect timed out", debug: true)
                 cont.resume(throwing: ConnectionError.timeout)
             }
@@ -200,8 +231,7 @@ extension BluetoothConnectionService: CBCentralManagerDelegate {
         let stateName = centralStateName(central.state)
         AppLogger.shared.log("[BLE] Central manager state: \(stateName)", debug: SettingsService.shared.debugBluetooth)
         if central.state != .poweredOn {
-            connectContinuation?.resume(throwing: ConnectionError.cancelled)
-            connectContinuation = nil
+            takeConnectContinuation()?.resume(throwing: ConnectionError.cancelled)
         }
     }
 
@@ -223,7 +253,7 @@ extension BluetoothConnectionService: CBCentralManagerDelegate {
         let isUUIDMatch = targetUUID != nil && targetUUID == uuid
         let isNameMatch = !targetDeviceName.isEmpty && name.lowercased().contains(targetDeviceName.lowercased())
 
-        if connectContinuation != nil && (isUUIDMatch || isNameMatch) {
+        if hasConnectContinuation && (isUUIDMatch || isNameMatch) {
             AppLogger.shared.log("[BLE] Found target device: \(name) (RSSI: \(RSSI))", debug: SettingsService.shared.debugBluetooth)
             centralManager.stopScan()
             self.peripheral = peripheral
@@ -247,8 +277,7 @@ extension BluetoothConnectionService: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         let name = peripheral.name ?? "Unknown"
         AppLogger.shared.log("[BLE] Failed to connect to \(name): \(error?.localizedDescription ?? "unknown error")", debug: true)
-        connectContinuation?.resume(throwing: error ?? ConnectionError.cancelled)
-        connectContinuation = nil
+        takeConnectContinuation()?.resume(throwing: error ?? ConnectionError.cancelled)
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
@@ -281,15 +310,13 @@ extension BluetoothConnectionService: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         if let error {
             AppLogger.shared.log("[BLE] Service discovery failed: \(error.localizedDescription)", debug: true)
-            connectContinuation?.resume(throwing: error)
-            connectContinuation = nil
+            takeConnectContinuation()?.resume(throwing: error)
             return
         }
         guard let service = peripheral.services?.first(where: { $0.uuid == BluetoothConnectionService.serviceUUID })
         else {
             AppLogger.shared.log("[BLE] Meshtastic service not found", debug: true)
-            connectContinuation?.resume(throwing: ConnectionError.cancelled)
-            connectContinuation = nil
+            takeConnectContinuation()?.resume(throwing: ConnectionError.cancelled)
             return
         }
         AppLogger.shared.log("[BLE] Discovered service, discovering characteristics...", debug: SettingsService.shared.debugBluetooth)
@@ -303,8 +330,7 @@ extension BluetoothConnectionService: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         if let error {
             AppLogger.shared.log("[BLE] Characteristic discovery failed: \(error.localizedDescription)", debug: true)
-            connectContinuation?.resume(throwing: error)
-            connectContinuation = nil
+            takeConnectContinuation()?.resume(throwing: error)
             return
         }
 
@@ -333,8 +359,7 @@ extension BluetoothConnectionService: CBPeripheralDelegate {
 
         guard toRadioChar != nil, fromRadioChar != nil else {
             AppLogger.shared.log("[BLE] Missing required characteristics (toRadio/fromRadio)", debug: true)
-            connectContinuation?.resume(throwing: ConnectionError.cancelled)
-            connectContinuation = nil
+            takeConnectContinuation()?.resume(throwing: ConnectionError.cancelled)
             return
         }
 
@@ -344,10 +369,7 @@ extension BluetoothConnectionService: CBPeripheralDelegate {
         AppLogger.shared.log("[BLE] Connection ready, started polling", debug: SettingsService.shared.debugBluetooth)
         connectTimeoutTask?.cancel()
         connectTimeoutTask = nil
-        if let cont = connectContinuation {
-            connectContinuation = nil
-            cont.resume()
-        }
+        takeConnectContinuation()?.resume()
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
@@ -364,7 +386,7 @@ extension BluetoothConnectionService: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
-        if let cont = writeContinuation {
+        if let cont = takeWriteContinuation() {
             if let error {
                 AppLogger.shared.log("[BLE] Write error: \(error.localizedDescription)", debug: true)
                 cont.resume(throwing: error)
@@ -374,7 +396,6 @@ extension BluetoothConnectionService: CBPeripheralDelegate {
                 // Trigger drain after write
                 Task { await self.drainFromRadio() }
             }
-            writeContinuation = nil
         }
     }
 
