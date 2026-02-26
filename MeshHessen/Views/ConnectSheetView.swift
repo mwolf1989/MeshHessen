@@ -143,7 +143,7 @@ struct ConnectSheetView: View {
                             .foregroundStyle(rssiColor(device.rssi))
                         if selectedBLEDevice?.id == device.id {
                             Image(systemName: "checkmark")
-                                .foregroundStyle(.accent)
+                                .foregroundStyle(Color.accentColor)
                         }
                     }
                     .contentShape(Rectangle())

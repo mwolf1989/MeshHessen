@@ -521,7 +521,7 @@ final class MeshCoreDataStore {
 
                 let isDirect = object.value(forKey: "isDirect") as? Bool ?? false
                 if isDirect {
-                    let partnerNodeId = UInt32((object.value(forKey: "partnerNodeId") as? Int64) ?? Int64(message.fromId))
+                    _ = UInt32((object.value(forKey: "partnerNodeId") as? Int64) ?? Int64(message.fromId))
                     appState.addOrUpdateDM(message, myNodeId: appState.myNodeInfo?.nodeId ?? 0)
                     // Preserve unread state from conversation entity (already loaded above)
                     stats.directMessages += 1

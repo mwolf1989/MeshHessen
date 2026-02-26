@@ -79,7 +79,7 @@ private struct GeneralSettingsPane: View {
                 }
                 Button("Reset to default") { settings.fontSizeStep = 0 }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.accent)
+                    .foregroundStyle(Color.accentColor)
                     .font(.caption)
                     .disabled(settings.fontSizeStep == 0)
                 Text("Shortcut: ⌘+ / ⌘- / ⌘ 0")
