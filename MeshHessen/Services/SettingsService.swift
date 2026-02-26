@@ -56,6 +56,14 @@ final class SettingsService {
         }
     }
 
+    /// Scaled default body font for macOS, where `DynamicTypeSize` is often ignored.
+    /// Base size 13 pt (macOS system body) ± 2 pt per step.
+    var scaledBodyFont: Font {
+        let baseSize: CGFloat = 13
+        let pointSize = baseSize + CGFloat(fontSizeStep) * 2
+        return .system(size: max(9, pointSize))
+    }
+
     // MARK: - Connection
     var lastComPort: String {
         get { defaults.string(forKey: "lastComPort") ?? "" }
