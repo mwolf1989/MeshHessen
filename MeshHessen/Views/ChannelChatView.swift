@@ -8,6 +8,7 @@ struct ChannelChatView: View {
     let channelIndex: Int
     @State private var messageText = ""
     @State private var isSending = false
+    @State private var showDeleteConfirmation = false
     @FocusState private var inputFocused: Bool
 
     private var messages: [MessageItem] {
@@ -16,6 +17,22 @@ struct ChannelChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button {
+                    showDeleteConfirmation = true
+                } label: {
+                    Label("Nachrichten löschen", systemImage: "trash")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .disabled(messages.isEmpty)
+                .help("Alle Nachrichten in diesem Kanal löschen")
+                .padding(.trailing, 12)
+                .padding(.top, 4)
+            }
+
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
@@ -71,6 +88,15 @@ struct ChannelChatView: View {
         }
         .onChange(of: channelIndex) { _, new in
             appState.clearChannelUnread(new)
+        }
+        .alert("Nachrichten löschen?", isPresented: $showDeleteConfirmation) {
+            Button("Löschen", role: .destructive) {
+                appState.clearChannelMessages(channelIndex)
+                coordinator.coreDataStore.deleteChannelMessages(channelIndex: channelIndex)
+            }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            Text("Alle Nachrichten in diesem Kanal werden unwiderruflich gelöscht.")
         }
     }
 

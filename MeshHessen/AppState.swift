@@ -116,6 +116,18 @@ final class AppState {
         channelUnreadCounts[index] = 0
     }
 
+    /// Remove all in-memory messages for a given channel.
+    func clearChannelMessages(_ index: Int) {
+        channelMessages[index]?.removeAll()
+        allMessages.removeAll { $0.channelIndex == index }
+        channelUnreadCounts[index] = 0
+    }
+
+    /// Remove all in-memory messages for a DM conversation.
+    func clearDMMessages(for nodeId: UInt32) {
+        dmConversations[nodeId]?.messages.removeAll()
+    }
+
     func addOrUpdateDM(_ msg: MessageItem, myNodeId: UInt32) {
         let partnerId = msg.fromId == myNodeId ? msg.toId : msg.fromId
         let partnerName = nodes[partnerId]?.name ?? msg.from
