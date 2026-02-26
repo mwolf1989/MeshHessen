@@ -28,6 +28,12 @@ struct MeshHessenApp: App {
         AppLogger.shared.log("[App] MeshHessen starting up...", debug: true)
     }
 
+    /// Compute a safe default window height that never exceeds the primary screen.
+    private var safeDefaultHeight: CGFloat {
+        let screenHeight = NSScreen.main?.visibleFrame.height ?? 800
+        return min(720, screenHeight - 40)
+    }
+
     var body: some Scene {
         // MARK: - Main Window
         WindowGroup {
@@ -44,10 +50,11 @@ struct MeshHessenApp: App {
                 .onOpenURL { url in
                     coordinator.router.route(url: url)
                 }
+                .background(WindowConstrainer())
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))
-        .defaultSize(width: 1100, height: 720)
+        .defaultSize(width: 1100, height: safeDefaultHeight)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(after: .textFormatting) {
@@ -145,4 +152,39 @@ struct MeshHessenApp: App {
             }
         }
     }
+}
+
+// MARK: - Window Constrainer
+
+/// Constrains the window frame to not exceed the screen's visible area on multi-monitor setups.
+private struct WindowConstrainer: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            guard let screen = window.screen ?? NSScreen.main else { return }
+            let visibleFrame = screen.visibleFrame
+            var frame = window.frame
+
+            // If the window is taller than the screen, shrink it to fit
+            if frame.height > visibleFrame.height {
+                frame.size.height = visibleFrame.height
+                frame.origin.y = visibleFrame.origin.y
+            }
+
+            // Ensure window stays within the visible screen bounds
+            if frame.origin.y < visibleFrame.origin.y {
+                frame.origin.y = visibleFrame.origin.y
+            }
+            let maxY = visibleFrame.origin.y + visibleFrame.height
+            if frame.origin.y + frame.height > maxY {
+                frame.origin.y = maxY - frame.height
+            }
+
+            window.setFrame(frame, display: true, animate: false)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
