@@ -462,6 +462,19 @@ final class MeshtasticProtocolService {
         let errorCode = parseRoutingErrorReason(from: data.payload)
         let routingError = RoutingError(rawValue: errorCode) ?? .none
 
+        // For DMs (unicast): ignore the local ACK from our own node — only
+        // mark as acknowledged when the actual destination node responds.
+        // The firmware sends a local routing ACK when it accepts the ToRadio
+        // packet, but that doesn't mean the recipient received it.
+        let isFromSelf = packet.from == myNodeId
+        if isFromSelf && routingError == .none {
+            AppLogger.shared.log(
+                "[ACK] Local ACK for requestId=\(data.requestID) (ignoring — waiting for destination ACK)",
+                debug: SettingsService.shared.debugMessages
+            )
+            return
+        }
+
         let deliveryState: MessageDeliveryState
         if routingError == .none {
             deliveryState = .acknowledged
