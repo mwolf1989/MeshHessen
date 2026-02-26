@@ -64,9 +64,21 @@ final class SerialConnectionService: NSObject, ConnectionService {
 
     // MARK: - Private
 
+    /// Maps low-level serial errors to ``ConnectionError``.
+    ///
+    /// On macOS, `/dev/cu.*` devices are protected by TCC (Transparency, Consent,
+    /// and Control). The ORSSerial adapter accesses serial ports through IOKit which
+    /// surfaces POSIX `EPERM` (1) or `EACCES` (13) when TCC blocks the call.
+    ///
+    /// There is no dedicated Privacy key (like `NSCameraUsageDescription`) for serial
+    /// ports — macOS Gatekeeper / TCC manages access by path. Re-plugging the USB
+    /// adapter triggers a fresh TCC consent dialog.
+    ///
+    /// The entitlements file must include `com.apple.security.device.usb` (for USB
+    /// serial adapters) and/or `com.apple.security.device.serial`.
     private static func mapSerialError(_ error: Error) -> Error {
         let nsErr = error as NSError
-        // POSIX EPERM (1) or EACCES (13) from IOKit = sandbox or OS permission denial
+        // POSIX EPERM (1) or EACCES (13) from IOKit = sandbox or TCC permission denial
         if nsErr.domain == NSPOSIXErrorDomain && (nsErr.code == 1 || nsErr.code == 13) {
             return ConnectionError.notPermitted
         }
