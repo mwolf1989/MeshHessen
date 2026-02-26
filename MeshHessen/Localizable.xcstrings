@@ -42,12 +42,12 @@
         }
       }
     },
-    "[Encrypted message — PSK required]" : {
+    "[Encrypted — channel key not configured on this device]" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "[Verschlüsselte Nachricht — PSK erforderlich]"
+            "value" : "[Verschlüsselt — Kanalschlüssel auf diesem Gerät nicht konfiguriert]"
           }
         }
       }
