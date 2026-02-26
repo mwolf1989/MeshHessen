@@ -122,6 +122,13 @@ struct MapView: View {
         .onChange(of: mapStyle) { _, newStyle in
             SettingsService.shared.mapSource = newStyle.settingsValue
         }
+        .onAppear {
+            // Sync with settings in case it was changed from the Settings pane
+            let fromSettings = MapStyle.from(settingsValue: SettingsService.shared.mapSource)
+            if mapStyle != fromSettings {
+                mapStyle = fromSettings
+            }
+        }
         .onChange(of: appState.mapFocusNodeId) { _, newValue in
             // Clear focus after MapView processes it
             if let nodeId = newValue,
@@ -229,7 +236,7 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
             case .dark: template = settings.osmDarkTileUrl
             }
             let overlay = CachedTileOverlay(urlTemplate: template, layer: style.rawValue)
-            overlay.canReplaceMapContent = false
+            overlay.canReplaceMapContent = true
             map.addOverlay(overlay, level: .aboveRoads)
             tileOverlay = overlay
         }
