@@ -188,7 +188,7 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
     }
 
     private func startPolling() {
-        AppLogger.shared.log("[BLE] Starting polling loop (100ms interval)", debug: SettingsService.shared.debugBluetooth)
+        AppLogger.shared.log("[BLE] Starting polling loop (35ms interval)", debug: SettingsService.shared.debugBluetooth)
         pollingTask = Task { [weak self] in
             var iteration = 0
             while !Task.isCancelled {
@@ -197,9 +197,9 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
                     break
                 }
                 await self.drainFromRadio()
-                try? await Task.sleep(for: .milliseconds(100))
+                try? await Task.sleep(for: .milliseconds(35))
                 iteration += 1
-                if iteration % 50 == 0 { // Log every 5 seconds
+                if iteration % 150 == 0 { // Log every ~5 seconds
                     AppLogger.shared.log("[BLE] Polling active (iteration \(iteration))", debug: SettingsService.shared.debugBluetooth)
                 }
             }
@@ -207,20 +207,20 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
         }
     }
 
+    /// Triggers an immediate drain outside the polling loop (e.g. on fromNum notification).
+    private func triggerImmediateDrain() {
+        Task { await drainFromRadio() }
+    }
+
     private func drainFromRadio() async {
-        guard let p = peripheral, let char = fromRadioChar else {
-            AppLogger.shared.log("[BLE] Drain skipped: no peripheral or fromRadio characteristic", debug: SettingsService.shared.debugBluetooth)
-            return
-        }
-        // Read repeatedly until empty (0 bytes)
-        while isConnected {
+        guard let p = peripheral, let char = fromRadioChar else { return }
+        // Read multiple packets in a burst until no data is returned.
+        // Each readValue triggers didUpdateValueFor asynchronously;
+        // we read up to 32 times per drain to pull all queued packets.
+        for _ in 0..<32 {
+            guard isConnected else { break }
             p.readValue(for: char)
-            AppLogger.shared.log("[BLE] Draining fromRadio...", debug: SettingsService.shared.debugBluetooth)
-            // Small delay to allow delegate to fire
-            try? await Task.sleep(for: .milliseconds(20))
-            // The delegate fires onDataReceived; we just keep looping
-            // Stop condition handled by empty-data check in delegate
-            break // CoreBluetooth is event-driven; one read per drain cycle
+            try? await Task.sleep(for: .milliseconds(10))
         }
     }
 }
@@ -377,6 +377,13 @@ extension BluetoothConnectionService: CBPeripheralDelegate {
             AppLogger.shared.log("[BLE] Characteristic update error: \(error.localizedDescription)", debug: true)
             return
         }
+
+        if characteristic.uuid == BluetoothConnectionService.fromNumUUID {
+            // fromNum notification: new data is available — trigger immediate drain
+            triggerImmediateDrain()
+            return
+        }
+
         guard characteristic.uuid == BluetoothConnectionService.fromRadioUUID,
               let data = characteristic.value, !data.isEmpty
         else { return }
