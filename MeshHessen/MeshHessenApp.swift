@@ -39,6 +39,7 @@ struct MeshHessenApp: App {
         WindowGroup {
             MainView()
                 .frame(minWidth: 800, minHeight: 500)
+                .font(SettingsService.shared.scaledBodyFont)
                 .environment(\.appState, coordinator.appState)
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environment(\.persistenceController, persistenceController)
@@ -78,6 +79,7 @@ struct MeshHessenApp: App {
         // MARK: - Direct Messages Window
         Window("Direct Messages", id: "dm") {
             DMWindowView()
+                .font(SettingsService.shared.scaledBodyFont)
                 .environment(\.appState, coordinator.appState)
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environment(\.persistenceController, persistenceController)
