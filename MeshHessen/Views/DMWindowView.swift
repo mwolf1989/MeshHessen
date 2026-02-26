@@ -80,12 +80,30 @@ struct DMWindowView: View {
 private struct DMConversationView: View {
     let conversation: DirectMessageConversation
     let coordinator: AppCoordinator
+    @Environment(\.appState) private var appState
     @State private var messageText = ""
     @State private var isSending = false
+    @State private var showDeleteConfirmation = false
     @FocusState private var inputFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button {
+                    showDeleteConfirmation = true
+                } label: {
+                    Label("Nachrichten löschen", systemImage: "trash")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .disabled(conversation.messages.isEmpty)
+                .help("Alle Nachrichten in dieser Konversation löschen")
+                .padding(.trailing, 12)
+                .padding(.top, 4)
+            }
+
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
@@ -123,6 +141,15 @@ private struct DMConversationView: View {
         .onAppear {
             conversation.hasUnread = false
             coordinator.coreDataStore.setConversationUnread(partnerNodeId: conversation.id, hasUnread: false)
+        }
+        .alert("Nachrichten löschen?", isPresented: $showDeleteConfirmation) {
+            Button("Löschen", role: .destructive) {
+                appState.clearDMMessages(for: conversation.id)
+                coordinator.coreDataStore.deleteConversationMessages(partnerNodeId: conversation.id)
+            }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            Text("Alle Nachrichten in dieser Konversation werden unwiderruflich gelöscht.")
         }
     }
 
