@@ -372,7 +372,7 @@ final class MeshtasticProtocolService {
                 let msg = MessageItem(
                     packetId: packet.id,
                     time: ts, from: from, fromId: packet.from, toId: packet.to,
-                    message: String(localized: "[Encrypted message — PSK required]"),
+                    message: String(localized: "[Encrypted — channel key not configured on this device]"),
                     channelIndex: chIndex >= 0 ? chIndex : 0,
                     channelName: chName,
                     isEncrypted: true, isViaMqtt: packet.viaMqtt

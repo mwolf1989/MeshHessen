@@ -159,6 +159,7 @@ private struct MessageBubble: View {
                     Image(systemName: "lock.fill")
                         .foregroundStyle(.secondary)
                         .font(.caption)
+                        .help("Verschlüsselt — Kanalschlüssel (PSK) nicht konfiguriert")
                     Text(message.message)
                         .italic()
                         .foregroundStyle(.secondary)
