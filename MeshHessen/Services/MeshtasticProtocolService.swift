@@ -92,6 +92,9 @@ final class MeshtasticProtocolService {
         if configComplete, myNodeId != 0 {
             appState?.protocolStatusMessage = String(localized: "Loading channels…")
             await requestAllChannels()
+
+            // Auch wenn nicht alle 8 Slots geladen wurden, gilt die Verbindung
+            // als bereit — nicht geladene Slots sind typischerweise DISABLED.
             appState?.protocolStatusMessage = String(localized: "Finalizing sync…")
         } else {
             AppLogger.shared.log("[Protocol] Skipping channel request (configComplete=\(configComplete), myNodeId=\(String(format: "!%08x", myNodeId)))", debug: true)
@@ -101,7 +104,11 @@ final class MeshtasticProtocolService {
         // 6. Finish init; data continues to stream in live
         isInitializing = false
 
-        AppLogger.shared.log("[Protocol] Initialization complete. Nodes: \(appState?.nodes.count ?? 0), Channels: \(appState?.channels.count ?? 0)", debug: true)
+        let channelCount = appState?.channels.count ?? 0
+        AppLogger.shared.log("[Protocol] Initialization complete. Nodes: \(appState?.nodes.count ?? 0), Channels: \(channelCount)", debug: true)
+
+        // Verbindung als bereit melden, sobald configComplete und mindestens
+        // ein Kanal geladen wurde — verhindert endloses Hängen bei BLE.
         return configComplete
     }
 
@@ -973,23 +980,33 @@ final class MeshtasticProtocolService {
             return
         }
 
-        AppLogger.shared.log("[Protocol] Requesting channels...", debug: true)
+        // BLE braucht mehr Zeit zwischen Requests als Serial/TCP
+        let isBLE = connectionService?.type == .bluetooth
+        let delayBetweenRequests: UInt64 = isBLE ? 300 : 150
+        let delayBetweenRounds: UInt64 = isBLE ? 3 : 5
+
+        AppLogger.shared.log("[Protocol] Requesting channels (BLE=\(isBLE))...", debug: true)
         for round in 0..<3 {
             let before = receivedChannelResponses.count
             for idx in 0..<8 {
                 if receivedChannelResponses.contains(idx) { continue }
                 await sendGetChannelRequest(index: idx)
-                try? await Task.sleep(for: .milliseconds(150))
+                try? await Task.sleep(for: .milliseconds(delayBetweenRequests))
             }
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(delayBetweenRounds))
             let missing = (0..<8).filter { !receivedChannelResponses.contains($0) }
             AppLogger.shared.log("[Protocol] Channel round \(round+1): received \(receivedChannelResponses.count) channels, missing: \(missing)", debug: true)
             if missing.isEmpty { break }
 
+            // Wenn in dieser Runde keine neuen Antworten kamen und wir mindestens
+            // den Primary-Kanal haben, brechen wir ab — die fehlenden Kanäle
+            // sind wahrscheinlich nicht konfiguriert (DISABLED).
             if receivedChannelResponses.count == before {
-                AppLogger.shared.log("[Protocol] Channel round \(round+1) produced no new responses", debug: true)
+                AppLogger.shared.log("[Protocol] Channel round \(round+1) produced no new responses — stopping early", debug: true)
+                break
             }
         }
+        AppLogger.shared.log("[Protocol] Channel loading complete: \(receivedChannelResponses.count) channels loaded", debug: true)
     }
 
     // MARK: - Send Methods
