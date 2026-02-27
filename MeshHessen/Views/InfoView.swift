@@ -8,6 +8,10 @@ struct InfoView: View {
                     .font(.largeTitle)
                     .fontWeight(.bold)
 
+                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "–") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "–"))")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
                 Text("A native macOS client for the Meshtastic mesh radio network, focused on the Mesh Hessen community.")
                     .foregroundStyle(.secondary)
 

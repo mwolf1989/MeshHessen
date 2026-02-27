@@ -89,7 +89,12 @@ struct NodeInfoSheet: View {
                     GridRow {
                         Text("Last Heard").foregroundStyle(.secondary)
                         let date = Date(timeIntervalSince1970: TimeInterval(node.lastHeard))
-                        Text(date, style: .relative) + Text(" ago")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(date, style: .relative) + Text(" ago")
+                            Text(date, format: .dateTime.day().month().year().hour().minute().second())
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                 }
             }
