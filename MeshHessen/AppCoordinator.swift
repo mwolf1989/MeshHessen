@@ -45,20 +45,11 @@ final class AppCoordinator {
     /// Active protocol initialization task (cancelled on disconnect/reconnect)
     private var protocolInitializationTask: Task<Void, Never>?
 
-    /// Stored observer for debug log notifications
-    private nonisolated(unsafe) var debugLogObserver: Any?
-
     /// Maximum backoff delay in seconds
     private let maxBackoffSeconds: Int = 30
     private let coreDataMigrationVersionKey = "coreDataMigrationVersion"
     private let coreDataMigrationDateKey = "coreDataMigrationDate"
     private let currentCoreDataMigrationVersion = 2
-
-    deinit {
-        if let observer = debugLogObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
-    }
 
     init(persistenceController: PersistenceController = .shared) {
         self.persistenceController = persistenceController
@@ -73,8 +64,8 @@ final class AppCoordinator {
 
         AppLogger.shared.log("[Coordinator] Persistence initialized", debug: true)
 
-        // Listen for debug log notifications
-        debugLogObserver = NotificationCenter.default.addObserver(
+        // Listen for debug log notifications (lives for app lifetime, no cleanup needed)
+        NotificationCenter.default.addObserver(
             forName: .appLogLine, object: nil, queue: .main
         ) { [weak self] note in
             guard let line = note.userInfo?["line"] as? String else { return }
