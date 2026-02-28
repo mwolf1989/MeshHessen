@@ -473,13 +473,19 @@ final class MeshtasticProtocolService {
         // mark as acknowledged when the actual destination node responds.
         // The firmware sends a local routing ACK when it accepts the ToRadio
         // packet, but that doesn't mean the recipient received it.
+        // For broadcasts/channel messages: accept the local ACK since no
+        // destination node will send a separate ACK.
         let isFromSelf = packet.from == myNodeId
         if isFromSelf && routingError == .none {
-            AppLogger.shared.log(
-                "[ACK] Local ACK for requestId=\(data.requestID) (ignoring — waiting for destination ACK)",
-                debug: SettingsService.shared.debugMessages
-            )
-            return
+            let isDirect = appState?.findMessageByPacketId(data.requestID)?.isDirect ?? false
+            if isDirect {
+                AppLogger.shared.log(
+                    "[ACK] Local ACK for requestId=\(data.requestID) (ignoring — waiting for destination ACK)",
+                    debug: SettingsService.shared.debugMessages
+                )
+                return
+            }
+            // Broadcast: fall through — accept local ACK as delivery confirmation
         }
 
         let deliveryState: MessageDeliveryState

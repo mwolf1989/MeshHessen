@@ -158,6 +158,19 @@ final class AppState {
         }
     }
 
+    /// Look up a message by its packet ID, searching channel messages first, then DMs.
+    func findMessageByPacketId(_ packetId: UInt32) -> MessageItem? {
+        if let msg = allMessages.first(where: { $0.packetId == packetId }) {
+            return msg
+        }
+        for conv in dmConversations.values {
+            if let msg = conv.messages.first(where: { $0.packetId == packetId }) {
+                return msg
+            }
+        }
+        return nil
+    }
+
     func updateDeliveryState(requestId: UInt32, state: MessageDeliveryState) {
         if let allIndex = allMessages.firstIndex(where: { $0.packetId == requestId }) {
             allMessages[allIndex].deliveryState = state

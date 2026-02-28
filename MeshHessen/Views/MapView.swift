@@ -50,6 +50,7 @@ struct MapView: View {
         span: MKCoordinateSpan(latitudeDelta: 2.0, longitudeDelta: 2.0)
     )
     @State private var showNodeInfo: NodeInfo?
+    @State private var currentZoom: Int = 10
 
     init() {
         _mapStyle = State(initialValue: MapStyle.from(settingsValue: SettingsService.shared.mapSource))
@@ -90,6 +91,7 @@ struct MapView: View {
         ZStack(alignment: .topTrailing) {
             MeshMapViewRepresentable(
                 region: $region,
+                currentZoom: $currentZoom,
                 mapStyle: mapStyle,
                 nodes: appState.filteredNodes,
                 focusNodeId: appState.mapFocusNodeId,
@@ -106,14 +108,22 @@ struct MapView: View {
                 }
             )
 
-            // Style picker
-            Picker("Map style", selection: $mapStyle) {
-                ForEach(MapStyle.allCases) { style in
-                    Text(style.label).tag(style)
+            // Style picker + zoom indicator
+            HStack(spacing: 8) {
+                Text("Z\(currentZoom)")
+                    .font(.caption.monospacedDigit())
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
+
+                Picker("Map style", selection: $mapStyle) {
+                    ForEach(MapStyle.allCases) { style in
+                        Text(style.label).tag(style)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .frame(width: 180)
             }
-            .pickerStyle(.segmented)
-            .frame(width: 180)
             .padding(10)
         }
         .sheet(item: $showNodeInfo) { node in
@@ -153,6 +163,7 @@ struct MapView: View {
 /// NSViewRepresentable wrapping MKMapView with offline tile overlay.
 struct MeshMapViewRepresentable: NSViewRepresentable {
     @Binding var region: MKCoordinateRegion
+    @Binding var currentZoom: Int
     let mapStyle: MapView.MapStyle
     let nodes: [NodeInfo]
     var focusNodeId: UInt32?
@@ -488,6 +499,12 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
             // Show node ID + distance in subtitle
             let nodeIdStr = parent.appState.node(forId: nodeAnn.nodeId)?.nodeId ?? ""
             nodeAnn.subtitle = "\(nodeIdStr)  ·  \(distanceStr) \(String(localized: "away"))"
+        }
+
+        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            let span = mapView.region.span.longitudeDelta
+            let zoom = Int(round(log2(360 / span)))
+            parent.currentZoom = max(1, min(20, zoom))
         }
     }
 }

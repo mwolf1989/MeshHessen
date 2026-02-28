@@ -32,6 +32,9 @@ struct MessageBubbleView: View {
     var showColorDot: Bool = false
     var showMqttIndicator: Bool = false
 
+    @State private var pendingURL: URL?
+    @State private var showLinkConfirmation = false
+
     var body: some View {
         VStack(alignment: isMine ? .trailing : .leading, spacing: 2) {
             // Header: sender name, optional color dot, optional MQTT indicator, timestamp
@@ -77,6 +80,9 @@ struct MessageBubbleView: View {
                         .italic()
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
+                } else if let attributed = Self.detectLinks(in: message.message) {
+                    Text(attributed)
+                        .textSelection(.enabled)
                 } else {
                     Text(message.message)
                         .textSelection(.enabled)
@@ -96,5 +102,47 @@ struct MessageBubbleView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
+        .environment(\.openURL, OpenURLAction { url in
+            pendingURL = url
+            showLinkConfirmation = true
+            return .handled
+        })
+        .alert("Link öffnen?", isPresented: $showLinkConfirmation, presenting: pendingURL) { url in
+            Button("Öffnen") {
+                NSWorkspace.shared.open(url)
+            }
+            Button("Link kopieren") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(url.absoluteString, forType: .string)
+            }
+            Button("Abbrechen", role: .cancel) {}
+        } message: { url in
+            Text(url.absoluteString)
+        }
+    }
+
+    /// Detect URLs in the given string and return an AttributedString with `.link` attributes.
+    /// Returns `nil` if no links are found.
+    private static func detectLinks(in text: String) -> AttributedString? {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return nil
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        let matches = detector.matches(in: text, range: range)
+        guard !matches.isEmpty else { return nil }
+
+        var attributed = AttributedString(text)
+        for match in matches {
+            guard let matchRange = Range(match.range, in: text),
+                  let url = match.url else { continue }
+            let attrRange = AttributedString.Index(matchRange.lowerBound, within: attributed)
+                .flatMap { lower in
+                    AttributedString.Index(matchRange.upperBound, within: attributed)
+                        .map { upper in lower..<upper }
+                }
+            guard let attrRange else { continue }
+            attributed[attrRange].link = url
+        }
+        return attributed
     }
 }
