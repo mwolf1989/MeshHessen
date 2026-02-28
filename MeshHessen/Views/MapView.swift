@@ -141,7 +141,8 @@ struct MapView: View {
             }
             // Reset focus so it can be triggered again
             if newValue != nil {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(500))
                     appState.mapFocusNodeId = nil
                 }
             }
@@ -203,18 +204,6 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
         var parent: MeshMapViewRepresentable
         var currentStyle: MapView.MapStyle = .osm
         private var tileOverlay: MKTileOverlay?
-
-        /// Preset colors for the context menu color picker
-        private static let colorPresets: [(name: String, hex: String)] = [
-            (String(localized: "Red"),    "#FF0000"),
-            (String(localized: "Blue"),   "#0000FF"),
-            (String(localized: "Green"),  "#00FF00"),
-            (String(localized: "Yellow"), "#FFD700"),
-            (String(localized: "Orange"), "#FF8C00"),
-            (String(localized: "Purple"), "#800080"),
-            (String(localized: "Cyan"),   "#00CED1"),
-            (String(localized: "Gray"),   "#808080"),
-        ]
 
         init(_ parent: MeshMapViewRepresentable) {
             self.parent = parent
@@ -314,7 +303,7 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
 
             // Color picker submenu
             let colorMenu = NSMenu(title: String(localized: "Set Color"))
-            for preset in Self.colorPresets {
+            for preset in nodeColorPresets {
                 let colorItem = NSMenuItem(title: preset.name, action: #selector(contextMenuAction(_:)), keyEquivalent: "")
                 colorItem.target = self
                 colorItem.representedObject = ContextMenuAction.setColor(nodeId: nodeId, hex: preset.hex)

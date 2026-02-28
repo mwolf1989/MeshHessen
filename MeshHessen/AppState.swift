@@ -12,14 +12,20 @@ final class AppState {
     var myNodeInfo: MyNodeInfo?
 
     // MARK: - Nodes
-    var nodes: [UInt32: NodeInfo] = [:]
-    var nodeFilter: String = ""
+    var nodes: [UInt32: NodeInfo] = [:] {
+        didSet { recomputeFilteredNodes() }
+    }
+    var nodeFilter: String = "" {
+        didSet { recomputeFilteredNodes() }
+    }
 
-    var filteredNodes: [NodeInfo] {
+    private(set) var filteredNodes: [NodeInfo] = []
+
+    private func recomputeFilteredNodes() {
         let sorted = nodes.values.sorted { $0.name.lowercased() < $1.name.lowercased() }
-        guard !nodeFilter.isEmpty else { return sorted }
+        guard !nodeFilter.isEmpty else { filteredNodes = sorted; return }
         let q = nodeFilter.lowercased()
-        return sorted.filter {
+        filteredNodes = sorted.filter {
             $0.name.lowercased().contains(q) ||
             $0.shortName.lowercased().contains(q) ||
             $0.nodeId.lowercased().contains(q) ||

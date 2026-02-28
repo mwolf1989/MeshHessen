@@ -108,7 +108,11 @@ private struct DMConversationView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(conversation.messages) { msg in
-                            DMMessageBubble(message: msg)
+                            MessageBubbleView(
+                                message: msg,
+                                isMine: msg.fromId == appState.myNodeInfo?.nodeId
+                            )
+                            .id(msg.id)
                         }
                     }
                     .padding(12)
@@ -165,64 +169,3 @@ private struct DMConversationView: View {
     }
 }
 
-private struct DMMessageBubble: View {
-    let message: MessageItem
-    @Environment(\.appState) private var appState
-
-    private var isMine: Bool {
-        guard let me = appState.myNodeInfo else { return false }
-        return message.fromId == me.nodeId
-    }
-
-    var body: some View {
-        VStack(alignment: isMine ? .trailing : .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                if !isMine {
-                    Text(message.from)
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                Text(message.time)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-
-            Text(message.message)
-                .textSelection(.enabled)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(isMine ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-
-            if isMine {
-                DMDeliveryStateLabel(state: message.deliveryState)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
-    }
-}
-
-private struct DMDeliveryStateLabel: View {
-    let state: MessageDeliveryState
-
-    var body: some View {
-        switch state {
-        case .none:
-            EmptyView()
-        case .pending:
-            Text("Warte auf ACK…")
-                .font(.caption2)
-                .foregroundStyle(.orange)
-        case .acknowledged:
-            Text("Zugestellt")
-                .font(.caption2)
-                .foregroundStyle(.green)
-        case .failed(let reason):
-            Text(reason)
-                .font(.caption2)
-                .foregroundStyle(.red)
-        }
-    }
-}

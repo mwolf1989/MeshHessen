@@ -4,7 +4,8 @@ import AppKit
 /// Red flashing border + notification bar overlay triggered by alert bell in messages.
 struct AlertBellOverlay: View {
     @Environment(\.appState) private var appState
-    @State private var blinkVisible: Bool = true
+    @State private var blinkVisible = true
+    @State private var blinkTask: Task<Void, Never>?
     @State private var dismissTask: Task<Void, Never>?
     @State private var soundTask: Task<Void, Never>?
 
@@ -83,15 +84,16 @@ struct AlertBellOverlay: View {
 
     private func startBlinkAnimation() {
         blinkVisible = true
-        // 6 full on/off cycles in 3 seconds = 0.25s per half-cycle
-        withAnimation(
-            .easeInOut(duration: 0.25)
-            .repeatCount(12, autoreverses: true)
-        ) {
-            blinkVisible = false
-        }
-        // Reset to fully visible after animation completes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+        blinkTask = Task { @MainActor in
+            // 6 full on/off cycles in 3 seconds = 0.25s per half-cycle
+            for _ in 0..<6 {
+                guard !Task.isCancelled else { break }
+                blinkVisible = false
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { break }
+                blinkVisible = true
+                try? await Task.sleep(for: .milliseconds(250))
+            }
             blinkVisible = true
         }
     }
@@ -143,6 +145,8 @@ struct AlertBellOverlay: View {
     }
 
     private func cancelTimers() {
+        blinkTask?.cancel()
+        blinkTask = nil
         dismissTask?.cancel()
         dismissTask = nil
         soundTask?.cancel()

@@ -8,6 +8,7 @@ import TipKit
 struct MeshHessenApp: App {
     private let persistenceController: PersistenceController
     @State private var coordinator: AppCoordinator
+    @State private var settings = SettingsService.shared
     @Environment(\.openWindow) private var openWindow
 
     init() {
@@ -39,12 +40,12 @@ struct MeshHessenApp: App {
         WindowGroup {
             MainView()
                 .frame(minWidth: 800, minHeight: 500)
-                .font(SettingsService.shared.scaledBodyFont)
+                .font(settings.scaledBodyFont)
                 .environment(\.appState, coordinator.appState)
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environment(\.persistenceController, persistenceController)
                 .environment(coordinator)
-                .environment(\.dynamicTypeSize, SettingsService.shared.dynamicTypeSize)
+                .environment(\.dynamicTypeSize, settings.dynamicTypeSize)
                 .onReceive(NotificationCenter.default.publisher(for: .incomingDirectMessage)) { note in
                     handleIncomingDM(note)
                 }
@@ -79,7 +80,7 @@ struct MeshHessenApp: App {
         // MARK: - Direct Messages Window
         Window("Direct Messages", id: "dm") {
             DMWindowView()
-                .font(SettingsService.shared.scaledBodyFont)
+                .font(settings.scaledBodyFont)
                 .environment(\.appState, coordinator.appState)
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environment(\.persistenceController, persistenceController)
@@ -188,5 +189,26 @@ private struct WindowConstrainer: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let window = nsView.window,
+              let screen = window.screen ?? NSScreen.main else { return }
+        let visibleFrame = screen.visibleFrame
+        var frame = window.frame
+
+        if frame.height > visibleFrame.height {
+            frame.size.height = visibleFrame.height
+            frame.origin.y = visibleFrame.origin.y
+        }
+        if frame.origin.y < visibleFrame.origin.y {
+            frame.origin.y = visibleFrame.origin.y
+        }
+        let maxY = visibleFrame.origin.y + visibleFrame.height
+        if frame.origin.y + frame.height > maxY {
+            frame.origin.y = maxY - frame.height
+        }
+
+        if frame != window.frame {
+            window.setFrame(frame, display: true, animate: false)
+        }
+    }
 }

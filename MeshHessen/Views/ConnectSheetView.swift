@@ -129,25 +129,28 @@ struct ConnectSheetView: View {
                 .frame(height: 100)
             } else {
                 List(coordinator.discoveredBLEDevices) { device in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(device.name)
-                                .fontWeight(selectedBLEDevice?.id == device.id ? .bold : .regular)
-                            Text(device.id.uuidString.prefix(18) + "…")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text("\(device.rssi) dBm")
-                            .font(.caption)
-                            .foregroundStyle(rssiColor(device.rssi))
-                        if selectedBLEDevice?.id == device.id {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(Color.accentColor)
+                    Button {
+                        selectedBLEDevice = device
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(device.name)
+                                    .fontWeight(selectedBLEDevice?.id == device.id ? .bold : .regular)
+                                Text(device.id.uuidString.prefix(18) + "…")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("\(device.rssi) dBm")
+                                .font(.caption)
+                                .foregroundStyle(rssiColor(device.rssi))
+                            if selectedBLEDevice?.id == device.id {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(Color.accentColor)
+                            }
                         }
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture { selectedBLEDevice = device }
+                    .buttonStyle(.plain)
                 }
                 .listStyle(.bordered(alternatesRowBackgrounds: true))
                 .frame(height: 176)

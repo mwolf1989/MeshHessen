@@ -8,6 +8,10 @@ final class SettingsService {
 
     private let defaults = UserDefaults.standard
 
+    private init() {
+        self.fontSizeStep = defaults.integer(forKey: "fontSizeStep")
+    }
+
     // MARK: - General
     var stationName: String {
         get { defaults.string(forKey: "stationName") ?? "" }
@@ -33,9 +37,9 @@ final class SettingsService {
 
     /// Font size adjustment step: −3 (smallest) … 0 (default) … +3 (largest).
     var fontSizeStep: Int {
-        get { defaults.integer(forKey: "fontSizeStep") }  // 0 is default (.large)
-        set {
-            let clamped = max(-3, min(3, newValue))
+        didSet {
+            let clamped = max(-3, min(3, fontSizeStep))
+            if fontSizeStep != clamped { fontSizeStep = clamped }
             if defaults.integer(forKey: "fontSizeStep") != clamped {
                 defaults.set(clamped, forKey: "fontSizeStep")
                 AppLogger.shared.log("[Settings] fontSizeStep: \(clamped)", debug: true)
