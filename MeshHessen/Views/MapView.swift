@@ -1,46 +1,7 @@
 import SwiftUI
 import MapKit
 
-// MARK: - CachedTileOverlay
-
-/// MKTileOverlay subclass that serves tiles from a local cache first,
-/// falling back to the remote URL template when a cached tile is not found.
-///
-/// Cache path convention (matches TileDownloaderSheet):
-///   ~/Library/Application Support/MeshHessen/tiles/{layer}/{z}_{x}_{y}.png
-final class CachedTileOverlay: MKTileOverlay {
-    private let layerName: String
-    private let cacheBaseURL: URL
-
-    /// - Parameters:
-    ///   - urlTemplate: Remote tile URL template (e.g. "https://…/{z}/{x}/{y}.png")
-    ///   - layer: Directory name matching TileDownloaderSheet ("osm", "opentopo", "dark")
-    init(urlTemplate: String?, layer: String) {
-        self.layerName = layer
-        self.cacheBaseURL = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("MeshHessen/tiles/\(layer)")
-        super.init(urlTemplate: urlTemplate)
-    }
-
-    override func loadTile(at path: MKTileOverlayPath,
-                           result: @escaping (Data?, Error?) -> Void) {
-        // Check local cache first
-        let fileName = "\(path.z)_\(path.x)_\(path.y).png"
-        let fileURL = cacheBaseURL.appendingPathComponent(fileName)
-
-        if FileManager.default.fileExists(atPath: fileURL.path),
-           let data = try? Data(contentsOf: fileURL) {
-            result(data, nil)
-            return
-        }
-
-        // Fall back to remote tile server
-        super.loadTile(at: path, result: result)
-    }
-}
-
-/// Map tab — MKMapView with tile overlay + node annotations.
+/// Map tab — native Apple Maps with node annotations.
 struct MapView: View {
     @Environment(\.appState) private var appState
     @Environment(\.openWindow) private var openWindow
@@ -57,32 +18,34 @@ struct MapView: View {
     }
 
     enum MapStyle: String, CaseIterable, Identifiable {
-        case osm = "osm"
-        case topo = "opentopo"
-        case dark = "dark"
+        case standard = "standard"
+        case satellite = "satellite"
+        case hybrid = "hybrid"
         var id: String { rawValue }
 
         static func from(settingsValue: String) -> Self {
             switch settingsValue.lowercased() {
-            case "osmtopo", "opentopo", "topo": return .topo
-            case "osmdark", "dark":             return .dark
-            default:                                return .osm
+            case "satellite": return .satellite
+            case "hybrid":    return .hybrid
+            default:          return .standard
             }
         }
 
-        var settingsValue: String {
-            switch self {
-            case .osm:  return "osm"
-            case .topo: return "osmtopo"
-            case .dark: return "osmdark"
-            }
-        }
+        var settingsValue: String { rawValue }
 
         var label: String {
             switch self {
-            case .osm: return String(localized: "Street")
-            case .topo: return String(localized: "Topo")
-            case .dark: return String(localized: "Dark")
+            case .standard:  return String(localized: "Standard")
+            case .satellite: return String(localized: "Satellite")
+            case .hybrid:    return String(localized: "Hybrid")
+            }
+        }
+
+        var mapType: MKMapType {
+            switch self {
+            case .standard:  return .standard
+            case .satellite: return .satellite
+            case .hybrid:    return .hybrid
             }
         }
     }
@@ -122,7 +85,7 @@ struct MapView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 180)
+                .frame(width: 220)
             }
             .padding(10)
         }
@@ -133,14 +96,12 @@ struct MapView: View {
             SettingsService.shared.mapSource = newStyle.settingsValue
         }
         .onAppear {
-            // Sync with settings in case it was changed from the Settings pane
             let fromSettings = MapStyle.from(settingsValue: SettingsService.shared.mapSource)
             if mapStyle != fromSettings {
                 mapStyle = fromSettings
             }
         }
         .onChange(of: appState.mapFocusNodeId) { _, newValue in
-            // Clear focus after MapView processes it
             if let nodeId = newValue,
                let node = appState.nodes[nodeId],
                let lat = node.latitude, let lon = node.longitude {
@@ -149,7 +110,6 @@ struct MapView: View {
                     span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
                 )
             }
-            // Reset focus so it can be triggered again
             if newValue != nil {
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(500))
@@ -160,7 +120,7 @@ struct MapView: View {
     }
 }
 
-/// NSViewRepresentable wrapping MKMapView with offline tile overlay.
+/// NSViewRepresentable wrapping MKMapView with native Apple Maps + node annotations.
 struct MeshMapViewRepresentable: NSViewRepresentable {
     @Binding var region: MKCoordinateRegion
     @Binding var currentZoom: Int
@@ -177,9 +137,9 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
         let map = MKMapView()
         map.delegate = context.coordinator
         map.setRegion(region, animated: false)
+        map.mapType = mapStyle.mapType
         map.showsCompass = true
         map.showsScale = true
-        context.coordinator.applyTileOverlay(to: map, style: mapStyle)
 
         // Add right-click gesture recognizer for context menu
         let rightClick = NSClickGestureRecognizer(
@@ -195,10 +155,10 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
     func updateNSView(_ map: MKMapView, context: Context) {
         context.coordinator.parent = self
         context.coordinator.updateNodes(map, nodes: nodes)
-        // Swap tile overlay if style changed
+        // Switch map type if style changed
         if context.coordinator.currentStyle != mapStyle {
             context.coordinator.currentStyle = mapStyle
-            context.coordinator.applyTileOverlay(to: map, style: mapStyle)
+            map.mapType = mapStyle.mapType
         }
         // Center on focus node if requested
         if let focusId = focusNodeId,
@@ -213,63 +173,32 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
     @MainActor
     class Coordinator: NSObject, MKMapViewDelegate {
         var parent: MeshMapViewRepresentable
-        var currentStyle: MapView.MapStyle = .osm
-        private var tileOverlay: MKTileOverlay?
+        var currentStyle: MapView.MapStyle = .standard
 
         init(_ parent: MeshMapViewRepresentable) {
             self.parent = parent
             self.currentStyle = parent.mapStyle
         }
 
-        func applyTileOverlay(to map: MKMapView, style: MapView.MapStyle) {
-            applyFallbackMapAppearance(to: map, style: style)
-
-            for overlay in map.overlays where overlay is MKTileOverlay {
-                map.removeOverlay(overlay)
-            }
-
-            let settings = SettingsService.shared
-            let template: String
-            switch style {
-            case .osm:  template = settings.osmTileUrl
-            case .topo: template = settings.osmTopoTileUrl
-            case .dark: template = settings.osmDarkTileUrl
-            }
-            let overlay = CachedTileOverlay(urlTemplate: template, layer: style.rawValue)
-            overlay.canReplaceMapContent = true
-            map.addOverlay(overlay, level: .aboveRoads)
-            tileOverlay = overlay
-        }
-
-        private func applyFallbackMapAppearance(to map: MKMapView, style: MapView.MapStyle) {
-            switch style {
-            case .osm:
-                map.mapType = .standard
-                map.appearance = NSAppearance(named: .aqua)
-            case .topo:
-                map.mapType = .mutedStandard
-                map.appearance = NSAppearance(named: .aqua)
-            case .dark:
-                map.mapType = .standard
-                map.appearance = NSAppearance(named: .darkAqua)
-            }
-        }
-
         func updateNodes(_ map: MKMapView, nodes: [NodeInfo]) {
-            let existingIds = Set(map.annotations.compactMap { ($0 as? NodeAnnotation)?.nodeId })
+            // Build lookup of existing annotations for O(1) access
+            var existingAnnotations: [UInt32: NodeAnnotation] = [:]
+            for ann in map.annotations.compactMap({ $0 as? NodeAnnotation }) {
+                existingAnnotations[ann.nodeId] = ann
+            }
+
             let newIds = Set(nodes.compactMap { $0.latitude != nil ? $0.id : nil })
 
             // Remove stale
-            for ann in map.annotations.compactMap({ $0 as? NodeAnnotation }) {
-                if !newIds.contains(ann.nodeId) { map.removeAnnotation(ann) }
+            for (nodeId, ann) in existingAnnotations {
+                if !newIds.contains(nodeId) { map.removeAnnotation(ann) }
             }
             // Add/update
             for node in nodes {
                 guard let lat = node.latitude, let lon = node.longitude else { continue }
-                if let existing = map.annotations.first(where: { ($0 as? NodeAnnotation)?.nodeId == node.id }) as? NodeAnnotation {
+                if let existing = existingAnnotations[node.id] {
                     existing.coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
                     existing.title = node.name
-                    // Update color in case it changed
                     existing.colorHex = node.colorHex
                 } else {
                     let ann = NodeAnnotation(nodeId: node.id, coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon))
@@ -278,7 +207,6 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
                     ann.colorHex = node.colorHex
                     map.addAnnotation(ann)
                 }
-                _ = existingIds
             }
         }
 
@@ -288,23 +216,19 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
             guard let mapView = recognizer.view as? MKMapView else { return }
             let point = recognizer.location(in: mapView)
 
-            // Find which annotation view was right-clicked
             guard let annotationView = findAnnotationView(at: point, in: mapView),
                   let nodeAnn = annotationView.annotation as? NodeAnnotation else { return }
 
             let nodeId = nodeAnn.nodeId
             let nodeName = nodeAnn.title ?? String(localized: "Node")
 
-            // Build NSMenu
             let menu = NSMenu(title: nodeName)
 
-            // Send Direct Message
             let dmItem = NSMenuItem(title: String(localized: "Send Direct Message"), action: #selector(contextMenuAction(_:)), keyEquivalent: "")
             dmItem.target = self
             dmItem.representedObject = ContextMenuAction.sendDM(nodeId: nodeId)
             menu.addItem(dmItem)
 
-            // Show Node Info
             let infoItem = NSMenuItem(title: String(localized: "Show Node Info"), action: #selector(contextMenuAction(_:)), keyEquivalent: "")
             infoItem.target = self
             infoItem.representedObject = ContextMenuAction.showNodeInfo(nodeId: nodeId)
@@ -312,7 +236,6 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
 
             menu.addItem(.separator())
 
-            // Color picker submenu
             let colorMenu = NSMenu(title: String(localized: "Set Color"))
             for preset in nodeColorPresets {
                 let colorItem = NSMenuItem(title: preset.name, action: #selector(contextMenuAction(_:)), keyEquivalent: "")
@@ -321,7 +244,6 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
                 colorItem.image = createColorSwatch(hex: preset.hex)
                 colorMenu.addItem(colorItem)
             }
-            // Clear color option
             colorMenu.addItem(.separator())
             let clearColorItem = NSMenuItem(title: String(localized: "Clear Color"), action: #selector(contextMenuAction(_:)), keyEquivalent: "")
             clearColorItem.target = self
@@ -332,7 +254,6 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
             colorMenuItem.submenu = colorMenu
             menu.addItem(colorMenuItem)
 
-            // Set Note
             let noteItem = NSMenuItem(title: String(localized: "Set Note"), action: #selector(contextMenuAction(_:)), keyEquivalent: "")
             noteItem.target = self
             noteItem.representedObject = ContextMenuAction.setNote(nodeId: nodeId)
@@ -340,17 +261,14 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
 
             menu.addItem(.separator())
 
-            // Set as My Position
             let posItem = NSMenuItem(title: String(localized: "Set as My Position"), action: #selector(contextMenuAction(_:)), keyEquivalent: "")
             posItem.target = self
             posItem.representedObject = ContextMenuAction.setAsMyPosition(nodeId: nodeId)
             menu.addItem(posItem)
 
-            // Show the menu at the click location
             menu.popUp(positioning: nil, at: point, in: mapView)
         }
 
-        /// Walk the view hierarchy to find the MKAnnotationView at a given point.
         private func findAnnotationView(at point: CGPoint, in mapView: MKMapView) -> MKAnnotationView? {
             guard let hitView = mapView.hitTest(point) else { return nil }
             var current: NSView? = hitView
@@ -363,7 +281,6 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
             return nil
         }
 
-        /// Create a small color swatch NSImage for menu items.
         private func createColorSwatch(hex: String) -> NSImage {
             let size = NSSize(width: 12, height: 12)
             let image = NSImage(size: size)
@@ -401,9 +318,7 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
         }
 
         private func applyColor(_ hex: String, to nodeId: UInt32) {
-            // Persist via UserDefaults
             SettingsService.shared.setColorHex(hex, for: nodeId)
-            // Update in-memory model
             if let node = parent.appState.node(forId: nodeId) {
                 node.colorHex = hex
             }
@@ -444,18 +359,10 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
             SettingsService.shared.myLatitude = lat
             SettingsService.shared.myLongitude = lon
 
-            // Recalculate all distances from the new position
             parent.appState.recalculateAllDistances()
         }
 
         // MARK: - MKMapViewDelegate
-
-        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            if let tile = overlay as? MKTileOverlay {
-                return MKTileOverlayRenderer(tileOverlay: tile)
-            }
-            return MKOverlayRenderer(overlay: overlay)
-        }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             guard let nodeAnn = annotation as? NodeAnnotation else { return nil }
@@ -473,8 +380,6 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
             return view
         }
 
-        /// When a node annotation is selected (left-click), show distance from
-        /// "my position" in the callout subtitle using CLLocation.distance(from:).
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             guard let nodeAnn = view.annotation as? NodeAnnotation else { return }
 
@@ -496,7 +401,6 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
                 distanceStr = String(format: "%.1f km", distanceMeters / 1000)
             }
 
-            // Show node ID + distance in subtitle
             let nodeIdStr = parent.appState.node(forId: nodeAnn.nodeId)?.nodeId ?? ""
             nodeAnn.subtitle = "\(nodeIdStr)  ·  \(distanceStr) \(String(localized: "away"))"
         }
@@ -511,7 +415,6 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
 
 // MARK: - Context Menu Action
 
-/// Wrapper class for passing action data through NSMenuItem.representedObject.
 private final class ContextMenuAction: NSObject {
     let kind: Kind
 

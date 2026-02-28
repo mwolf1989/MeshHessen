@@ -123,8 +123,12 @@ struct MessageBubbleView: View {
 
     /// Detect URLs in the given string and return an AttributedString with `.link` attributes.
     /// Returns `nil` if no links are found.
+    private static let linkDetector: NSDataDetector? = {
+        try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+    }()
+
     private static func detectLinks(in text: String) -> AttributedString? {
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+        guard let detector = linkDetector else {
             return nil
         }
         let range = NSRange(text.startIndex..., in: text)

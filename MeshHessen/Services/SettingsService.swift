@@ -146,46 +146,6 @@ final class SettingsService {
         }
     }
 
-    var osmTileUrl: String {
-        get { defaults.string(forKey: "osmTileUrl") ?? "https://tile.schwarzes-seelenreich.de/osm/{z}/{x}/{y}.png" }
-        set {
-            let oldValue = defaults.string(forKey: "osmTileUrl") ?? "https://tile.schwarzes-seelenreich.de/osm/{z}/{x}/{y}.png"
-            if oldValue != newValue {
-                defaults.set(newValue, forKey: "osmTileUrl")
-                AppLogger.shared.log("[Settings] osmTileUrl changed: '\(oldValue)' → '\(newValue)'", debug: true)
-            }
-        }
-    }
-
-    var osmTopoTileUrl: String {
-        get { defaults.string(forKey: "osmTopoTileUrl") ?? "https://tile.schwarzes-seelenreich.de/opentopo/{z}/{x}/{y}.png" }
-        set {
-            let oldValue = defaults.string(forKey: "osmTopoTileUrl") ?? "https://tile.schwarzes-seelenreich.de/opentopo/{z}/{x}/{y}.png"
-            if oldValue != newValue {
-                defaults.set(newValue, forKey: "osmTopoTileUrl")
-                AppLogger.shared.log("[Settings] osmTopoTileUrl changed: '\(oldValue)' → '\(newValue)'", debug: true)
-            }
-        }
-    }
-
-    var osmDarkTileUrl: String {
-        get { defaults.string(forKey: "osmDarkTileUrl") ?? "https://tile.schwarzes-seelenreich.de/dark/{z}/{x}/{y}.png" }
-        set {
-            let oldValue = defaults.string(forKey: "osmDarkTileUrl") ?? "https://tile.schwarzes-seelenreich.de/dark/{z}/{x}/{y}.png"
-            if oldValue != newValue {
-                defaults.set(newValue, forKey: "osmDarkTileUrl")
-                AppLogger.shared.log("[Settings] osmDarkTileUrl changed: '\(oldValue)' → '\(newValue)'", debug: true)
-            }
-        }
-    }
-
-    var activeTileUrl: String {
-        switch mapSource {
-        case "osmtopo": return osmTopoTileUrl
-        case "osmdark": return osmDarkTileUrl
-        default:        return osmTileUrl
-        }
-    }
 
     // MARK: - Notifications
     var alertBellSound: Bool {
