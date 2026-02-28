@@ -28,13 +28,12 @@ struct DebugView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(Array(appState.debugLines.enumerated()), id: \.offset) { idx, line in
-                            Text(line)
+                        ForEach(appState.debugLines) { line in
+                            Text(line.text)
                                 .font(.system(.caption2, design: .monospaced))
-                                .foregroundStyle(logColor(line))
+                                .foregroundStyle(logColor(line.text))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .id(idx)
                         }
                     }
                     .padding(4)
@@ -45,9 +44,9 @@ struct DebugView: View {
                     pendingScrollTask = Task { @MainActor in
                         try? await Task.sleep(for: .milliseconds(50))
                         guard !Task.isCancelled,
-                              let last = appState.debugLines.indices.last
+                              let last = appState.debugLines.last
                         else { return }
-                        proxy.scrollTo(last, anchor: .bottom)
+                        proxy.scrollTo(last.id, anchor: .bottom)
                     }
                 }
                 .onDisappear {
@@ -61,7 +60,7 @@ struct DebugView: View {
     private func logColor(_ line: String) -> Color {
         if line.contains("[ERROR]") || line.contains("failed") || line.contains("error") { return .red }
         if line.contains("[WARN]")  { return .orange }
-        if line.contains("[BLE]") || line.contains("[Bluetooth]") || line.contains("[Bluetooth]") { return .blue }
+        if line.contains("[BLE]") || line.contains("[Bluetooth]") { return .blue }
         if line.contains("[TCP]") || line.contains("[Coordinator]") { return .cyan }
         if line.contains("[SRL]") || line.contains("[SERIAL]") || line.contains("[Serial]") { return .green }
         if line.contains("[Protocol]") { return .purple }

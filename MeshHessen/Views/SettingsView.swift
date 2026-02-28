@@ -176,59 +176,26 @@ private struct ConnectionSettingsPane: View {
 
 private struct MapSettingsPane: View {
     @State private var settings = SettingsService.shared
-    @Environment(\.appState) private var appState
-    @State private var showTileDownloader = false
 
     var body: some View {
         Form {
-            Section("Map Source") {
-                Picker("Map Source", selection: Binding(
+            Section("Map Style") {
+                Picker("Map Style", selection: Binding(
                     get: { settings.mapSource },
                     set: { settings.mapSource = $0 }
                 )) {
-                    Text("OpenStreetMap Standard").tag("osm")
-                    Text("OpenTopoMap").tag("osmtopo")
-                    Text("OSM Dark").tag("osmdark")
+                    Text("Standard").tag("standard")
+                    Text("Satellite").tag("satellite")
+                    Text("Hybrid").tag("hybrid")
                 }
                 .pickerStyle(.radioGroup)
-            }
-
-            Section("Tile Server URLs") {
-                LabeledContent("OSM Standard:") {
-                    TextField("URL", text: Binding(
-                        get: { settings.osmTileUrl },
-                        set: { settings.osmTileUrl = $0 }
-                    ))
-                    .textFieldStyle(.roundedBorder)
+                Text("Uses Apple Maps with node annotations.")
                     .font(.caption)
-                }
-                LabeledContent("OpenTopoMap:") {
-                    TextField("URL", text: Binding(
-                        get: { settings.osmTopoTileUrl },
-                        set: { settings.osmTopoTileUrl = $0 }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    .font(.caption)
-                }
-                LabeledContent("OSM Dark:") {
-                    TextField("URL", text: Binding(
-                        get: { settings.osmDarkTileUrl },
-                        set: { settings.osmDarkTileUrl = $0 }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    .font(.caption)
-                }
-            }
-
-            Section("Offline Tiles") {
-                Button("Download Tiles…") { showTileDownloader = true }
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .padding()
-        .sheet(isPresented: $showTileDownloader) {
-            TileDownloaderSheet()
-        }
     }
 }
 

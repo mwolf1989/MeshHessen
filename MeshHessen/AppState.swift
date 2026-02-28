@@ -40,6 +40,9 @@ final class AppState {
     var channelMessages: [Int: [MessageItem]] = [:]
     var allMessages: [MessageItem] = []   // unified feed
 
+    /// Fast lookup: packetId → index in allMessages for O(1) dedup and delivery updates
+    private var packetIdToAllIndex: [UInt32: Int] = [:]
+
     /// Number of unread messages per channel index.
     /// Only incremented for incoming messages (not from self) while that channel is not active.
     var channelUnreadCounts: [Int: Int] = [:]
@@ -81,11 +84,17 @@ final class AppState {
     var selectedChannelIndex: Int = 0
 
     // MARK: - Debug log
-    var debugLines: [String] = []
+    struct DebugLine: Identifiable {
+        let id: Int
+        let text: String
+    }
+    var debugLines: [DebugLine] = []
+    private var debugLineCounter: Int = 0
     let maxDebugLines = 10_000
 
     func appendDebugLine(_ line: String) {
-        debugLines.append(line)
+        debugLineCounter += 1
+        debugLines.append(DebugLine(id: debugLineCounter, text: line))
         if debugLines.count > maxDebugLines {
             debugLines.removeFirst(debugLines.count - maxDebugLines)
         }
@@ -95,19 +104,24 @@ final class AppState {
 
     func appendMessage(_ msg: MessageItem) {
         if let packetId = msg.packetId {
-            if let allIndex = allMessages.firstIndex(where: { $0.packetId == packetId }) {
-                allMessages[allIndex] = mergeMessage(existing: allMessages[allIndex], incoming: msg)
+            if let allIndex = packetIdToAllIndex[packetId] {
+                let merged = mergeMessage(existing: allMessages[allIndex], incoming: msg)
+                allMessages[allIndex] = merged
 
-                let existingChannel = allMessages[allIndex].channelIndex
+                let existingChannel = merged.channelIndex
                 if let channelIndex = channelMessages[existingChannel]?.firstIndex(where: { $0.packetId == packetId }) {
-                    channelMessages[existingChannel]?[channelIndex] = allMessages[allIndex]
+                    channelMessages[existingChannel]?[channelIndex] = merged
                 }
                 return
             }
         }
 
+        let newIndex = allMessages.count
         allMessages.append(msg)
         channelMessages[msg.channelIndex, default: []].append(msg)
+        if let packetId = msg.packetId {
+            packetIdToAllIndex[packetId] = newIndex
+        }
 
         // Increment unread counter for incoming messages that arrive in an inactive channel
         let isOwn = msg.fromId != 0 && msg.fromId == myNodeInfo?.nodeId
@@ -126,6 +140,7 @@ final class AppState {
     func clearChannelMessages(_ index: Int) {
         channelMessages[index]?.removeAll()
         allMessages.removeAll { $0.channelIndex == index }
+        rebuildPacketIdIndex()
         channelUnreadCounts[index] = 0
     }
 
@@ -160,8 +175,8 @@ final class AppState {
 
     /// Look up a message by its packet ID, searching channel messages first, then DMs.
     func findMessageByPacketId(_ packetId: UInt32) -> MessageItem? {
-        if let msg = allMessages.first(where: { $0.packetId == packetId }) {
-            return msg
+        if let idx = packetIdToAllIndex[packetId] {
+            return allMessages[idx]
         }
         for conv in dmConversations.values {
             if let msg = conv.messages.first(where: { $0.packetId == packetId }) {
@@ -172,7 +187,7 @@ final class AppState {
     }
 
     func updateDeliveryState(requestId: UInt32, state: MessageDeliveryState) {
-        if let allIndex = allMessages.firstIndex(where: { $0.packetId == requestId }) {
+        if let allIndex = packetIdToAllIndex[requestId] {
             allMessages[allIndex].deliveryState = state
             let channelIndex = allMessages[allIndex].channelIndex
             if let channelMessageIndex = channelMessages[channelIndex]?.firstIndex(where: { $0.packetId == requestId }) {
@@ -185,6 +200,16 @@ final class AppState {
                 continue
             }
             dmConversations[key]?.messages[msgIndex].deliveryState = state
+        }
+    }
+
+    /// Rebuild the packetId→index mapping after destructive array operations.
+    private func rebuildPacketIdIndex() {
+        packetIdToAllIndex.removeAll(keepingCapacity: true)
+        for (i, msg) in allMessages.enumerated() {
+            if let pid = msg.packetId {
+                packetIdToAllIndex[pid] = i
+            }
         }
     }
 
@@ -312,6 +337,7 @@ final class AppState {
         channels.removeAll()
         channelMessages.removeAll()
         allMessages.removeAll()
+        packetIdToAllIndex.removeAll()
         dmConversations.removeAll()
         activeAlertBell = nil
         showAlertBell = false
