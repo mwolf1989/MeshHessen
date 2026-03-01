@@ -21,13 +21,15 @@ struct MapView: View {
         case standard = "standard"
         case satellite = "satellite"
         case hybrid = "hybrid"
+        case topography = "topography"
         var id: String { rawValue }
 
         static func from(settingsValue: String) -> Self {
             switch settingsValue.lowercased() {
-            case "satellite": return .satellite
-            case "hybrid":    return .hybrid
-            default:          return .standard
+            case "satellite":  return .satellite
+            case "hybrid":     return .hybrid
+            case "topography": return .topography
+            default:           return .standard
             }
         }
 
@@ -35,17 +37,19 @@ struct MapView: View {
 
         var label: String {
             switch self {
-            case .standard:  return String(localized: "Standard")
-            case .satellite: return String(localized: "Satellite")
-            case .hybrid:    return String(localized: "Hybrid")
+            case .standard:   return String(localized: "Standard")
+            case .satellite:  return String(localized: "Satellite")
+            case .hybrid:     return String(localized: "Hybrid")
+            case .topography: return String(localized: "Topografie")
             }
         }
 
-        var mapType: MKMapType {
+        var preferredConfiguration: MKMapConfiguration {
             switch self {
-            case .standard:  return .standard
-            case .satellite: return .satellite
-            case .hybrid:    return .hybrid
+            case .standard:   return MKStandardMapConfiguration(elevationStyle: .flat)
+            case .satellite:  return MKImageryMapConfiguration(elevationStyle: .flat)
+            case .hybrid:     return MKHybridMapConfiguration(elevationStyle: .flat)
+            case .topography: return MKStandardMapConfiguration(elevationStyle: .realistic)
             }
         }
     }
@@ -85,7 +89,7 @@ struct MapView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 220)
+                .frame(width: 300)
             }
             .padding(10)
         }
@@ -137,7 +141,8 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
         let map = MKMapView()
         map.delegate = context.coordinator
         map.setRegion(region, animated: false)
-        map.mapType = mapStyle.mapType
+        map.preferredConfiguration = mapStyle.preferredConfiguration
+        map.isPitchEnabled = true
         map.showsCompass = true
         map.showsScale = true
 
@@ -158,7 +163,7 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
         // Switch map type if style changed
         if context.coordinator.currentStyle != mapStyle {
             context.coordinator.currentStyle = mapStyle
-            map.mapType = mapStyle.mapType
+            map.preferredConfiguration = mapStyle.preferredConfiguration
         }
         // Center on focus node if requested
         if let focusId = focusNodeId,
