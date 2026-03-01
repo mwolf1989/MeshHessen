@@ -130,6 +130,7 @@ private struct DMConversationView: View {
                 TextField("Message to \(conversation.nodeName)…", text: $messageText, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...4)
+                    .frame(maxWidth: .infinity)
                     .focused($inputFocused)
 
                 Button(action: sendMessage) {

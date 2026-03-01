@@ -77,6 +77,7 @@ struct ChannelChatView: View {
                 TextField("Message…", text: $messageText, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...4)
+                    .frame(maxWidth: .infinity)
                     .focused($inputFocused)
 
                 Button(action: sendMessage) {
