@@ -187,6 +187,7 @@ private struct MapSettingsPane: View {
                     Text("Standard").tag("standard")
                     Text("Satellite").tag("satellite")
                     Text("Hybrid").tag("hybrid")
+                    Text("Topografie").tag("topography")
                 }
                 .pickerStyle(.radioGroup)
                 Text("Uses Apple Maps with node annotations.")
