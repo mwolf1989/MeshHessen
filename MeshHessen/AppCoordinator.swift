@@ -157,6 +157,29 @@ final class AppCoordinator {
         await protocol_.setOwner(shortName: shortName, longName: longName)
     }
 
+    // MARK: - Device Configuration
+
+    func requestDeviceConfig() async {
+        await protocol_.requestAllDeviceConfigs()
+    }
+
+    func saveDeviceConfig(
+        device: Meshtastic_DeviceConfig,
+        position: Meshtastic_PositionConfig,
+        lora: Meshtastic_LoRaConfig,
+        bluetooth: Meshtastic_BluetoothConfig,
+        network: Meshtastic_NetworkConfig,
+        display: Meshtastic_DisplayConfig,
+        power: Meshtastic_PowerConfig,
+        mqtt: Meshtastic_MQTTConfig
+    ) async {
+        await protocol_.saveDeviceConfigs(
+            device: device, position: position, lora: lora,
+            bluetooth: bluetooth, network: network, display: display,
+            power: power, mqtt: mqtt
+        )
+    }
+
     // MARK: - Channel management
 
     func addChannel(name: String, pskBase64: String, uplinkEnabled: Bool, downlinkEnabled: Bool) async {

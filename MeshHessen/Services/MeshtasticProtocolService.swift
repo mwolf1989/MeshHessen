@@ -31,6 +31,11 @@ final class MeshtasticProtocolService {
     private var tempChannels: [Int32: Meshtastic_Channel] = [:]
     private var receivedChannelResponses = Set<Int>()
 
+    // Device config storage (populated by admin getConfigResponse / getModuleConfigResponse)
+    enum ConfigCategory: String { case device, position, power, network, display, lora, bluetooth }
+    var receivedConfigs: [ConfigCategory: Meshtastic_Config] = [:]
+    var receivedModuleConfigs: [String: Meshtastic_ModuleConfig] = [:]
+
     // Text-mode recovery
     private var lastValidPacketTime = Date()
     private var consecutiveTextChunks = 0
@@ -759,28 +764,45 @@ final class MeshtasticProtocolService {
 
     private func handleConfig(_ config: Meshtastic_Config) {
         switch config.payloadVariant {
-        case .lora(let lora):
-            AppLogger.shared.log("[Protocol] Config: LoRa region=\(lora.region.rawValue) modem=\(lora.modemPreset.rawValue) hopLimit=\(lora.hopLimit) txEnabled=\(lora.txEnabled)", debug: SettingsService.shared.debugDevice)
-        case .device(let device):
-            _ = device
+        case .lora:
+            receivedConfigs[.lora] = config
+            AppLogger.shared.log("[Protocol] Config: LoRa region=\(config.lora.region.rawValue) modem=\(config.lora.modemPreset.rawValue) hopLimit=\(config.lora.hopLimit) txEnabled=\(config.lora.txEnabled)", debug: SettingsService.shared.debugDevice)
+        case .device:
+            receivedConfigs[.device] = config
             AppLogger.shared.log("[Protocol] Config: Device", debug: SettingsService.shared.debugDevice)
-        case .position(let pos):
-            _ = pos
+        case .position:
+            receivedConfigs[.position] = config
             AppLogger.shared.log("[Protocol] Config: Position", debug: SettingsService.shared.debugDevice)
-        case .power(let pwr):
-            _ = pwr
+        case .power:
+            receivedConfigs[.power] = config
             AppLogger.shared.log("[Protocol] Config: Power", debug: SettingsService.shared.debugDevice)
-        case .network(let net):
-            _ = net
+        case .network:
+            receivedConfigs[.network] = config
             AppLogger.shared.log("[Protocol] Config: Network", debug: SettingsService.shared.debugDevice)
-        case .display(let disp):
-            _ = disp
+        case .display:
+            receivedConfigs[.display] = config
             AppLogger.shared.log("[Protocol] Config: Display", debug: SettingsService.shared.debugDevice)
-        case .bluetooth(let bt):
-            _ = bt
+        case .bluetooth:
+            receivedConfigs[.bluetooth] = config
             AppLogger.shared.log("[Protocol] Config: Bluetooth", debug: SettingsService.shared.debugDevice)
         case .none:
             AppLogger.shared.log("[Protocol] Config received (empty)", debug: SettingsService.shared.debugDevice)
+        }
+    }
+
+    private func handleModuleConfig(_ moduleConfig: Meshtastic_ModuleConfig) {
+        switch moduleConfig.payloadVariant {
+        case .mqtt:
+            receivedModuleConfigs["mqtt"] = moduleConfig
+            AppLogger.shared.log("[Protocol] ModuleConfig: MQTT", debug: SettingsService.shared.debugDevice)
+        case .serial:
+            receivedModuleConfigs["serial"] = moduleConfig
+            AppLogger.shared.log("[Protocol] ModuleConfig: Serial", debug: SettingsService.shared.debugDevice)
+        case .telemetry:
+            receivedModuleConfigs["telemetry"] = moduleConfig
+            AppLogger.shared.log("[Protocol] ModuleConfig: Telemetry", debug: SettingsService.shared.debugDevice)
+        default:
+            AppLogger.shared.log("[Protocol] ModuleConfig received (other)", debug: SettingsService.shared.debugDevice)
         }
     }
 
@@ -805,6 +827,12 @@ final class MeshtasticProtocolService {
                     node.name = owner.longName.isEmpty ? owner.shortName : owner.longName
                 }
             }
+        case .getConfigResponse(let config):
+            handleConfig(config)
+            AppLogger.shared.log("[Protocol] Admin getConfigResponse received", debug: SettingsService.shared.debugDevice)
+        case .getModuleConfigResponse(let moduleConfig):
+            handleModuleConfig(moduleConfig)
+            AppLogger.shared.log("[Protocol] Admin getModuleConfigResponse received", debug: SettingsService.shared.debugDevice)
         case .none:
             // Session passkey in admin response
             if !admin.sessionPasskey.isEmpty {
@@ -1021,6 +1049,78 @@ final class MeshtasticProtocolService {
         await sendToRadio(packet: packet)
 
         AppLogger.shared.log("[Traceroute] Request sent to \(targetName) (packetId=\(packetId))", debug: true)
+    }
+
+    // MARK: - Device Config (admin requests)
+
+    /// Request all device configs from the connected node via admin messages.
+    /// Config request field numbers: 0=Device, 1=Position, 2=Power, 3=Network, 4=Display, 5=LoRa, 6=Bluetooth
+    /// Module config request field numbers: 0=MQTT
+    func requestAllDeviceConfigs() async {
+        await ensureSessionKey()
+        // Request each config type
+        for configType: UInt32 in 0...6 {
+            var admin = Meshtastic_AdminMessage()
+            admin.getConfigRequest = configType
+            admin.sessionPasskey = sessionPasskey
+            await sendAdminMessage(admin)
+        }
+        // Request MQTT module config
+        var mqttAdmin = Meshtastic_AdminMessage()
+        mqttAdmin.getModuleConfigRequest = 0  // 0 = MQTT
+        mqttAdmin.sessionPasskey = sessionPasskey
+        await sendAdminMessage(mqttAdmin)
+        AppLogger.shared.log("[Protocol] Requested all device configs", debug: SettingsService.shared.debugDevice)
+    }
+
+    /// Save device configs back to the node.
+    func saveDeviceConfigs(
+        device: Meshtastic_DeviceConfig,
+        position: Meshtastic_PositionConfig,
+        lora: Meshtastic_LoRaConfig,
+        bluetooth: Meshtastic_BluetoothConfig,
+        network: Meshtastic_NetworkConfig,
+        display: Meshtastic_DisplayConfig,
+        power: Meshtastic_PowerConfig,
+        mqtt: Meshtastic_MQTTConfig
+    ) async {
+        await ensureSessionKey()
+
+        // Begin edit settings session
+        var beginEdit = Meshtastic_AdminMessage()
+        beginEdit.beginEditSettings = true
+        beginEdit.sessionPasskey = sessionPasskey
+        await sendAdminMessage(beginEdit)
+
+        // Save each config type
+        let configs: [(Meshtastic_Config.OneOf_PayloadVariant)] = [
+            .device(device), .position(position), .power(power),
+            .network(network), .display(display), .lora(lora), .bluetooth(bluetooth),
+        ]
+        for variant in configs {
+            var config = Meshtastic_Config()
+            config.payloadVariant = variant
+            var admin = Meshtastic_AdminMessage()
+            admin.setConfig = config
+            admin.sessionPasskey = sessionPasskey
+            await sendAdminMessage(admin)
+        }
+
+        // Save MQTT module config
+        var moduleConfig = Meshtastic_ModuleConfig()
+        moduleConfig.mqtt = mqtt
+        var mqttAdmin = Meshtastic_AdminMessage()
+        mqttAdmin.setModuleConfig = moduleConfig
+        mqttAdmin.sessionPasskey = sessionPasskey
+        await sendAdminMessage(mqttAdmin)
+
+        // Commit edit settings
+        var commitEdit = Meshtastic_AdminMessage()
+        commitEdit.commitEditSettings = true
+        commitEdit.sessionPasskey = sessionPasskey
+        await sendAdminMessage(commitEdit)
+
+        AppLogger.shared.log("[Protocol] All device configs saved", debug: SettingsService.shared.debugDevice)
     }
 
     // MARK: - NeighborInfo (portnum 71)
