@@ -24,6 +24,7 @@ struct NodeInfoSheet: View {
     @State private var ownerShortName: String = ""
     @State private var ownerLongName: String = ""
     @State private var isSavingOwner = false
+    @State private var showTraceroute = false
 
     private var isOwnNode: Bool {
         appState.myNodeInfo?.nodeId == node.id
@@ -42,6 +43,16 @@ struct NodeInfoSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                if !isOwnNode {
+                    Button {
+                        showTraceroute = true
+                    } label: {
+                        Image(systemName: "arrow.triangle.swap")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Traceroute")
+                }
                 Button {
                     node.isPinned.toggle()
                     coordinator.coreDataStore.updateNodePinState(nodeId: node.id, isPinned: node.isPinned)
@@ -214,6 +225,9 @@ struct NodeInfoSheet: View {
         }
         .padding(20)
         .frame(minWidth: 420, minHeight: 320)
+        .sheet(isPresented: $showTraceroute) {
+            TracerouteSheet(targetNodeId: node.id, targetName: node.name)
+        }
         .onAppear {
             // Load persisted values from UserDefaults, falling back to in-memory model
             let savedColor = SettingsService.shared.colorHex(for: node.id)

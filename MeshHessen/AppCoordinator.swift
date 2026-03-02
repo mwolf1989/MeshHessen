@@ -145,6 +145,14 @@ final class AppCoordinator {
         await protocol_.sendEmojiReaction(emoji, toPacketId: toPacketId, toNodeId: toNodeId, channelIndex: channelIndex)
     }
 
+    func sendTraceroute(to nodeId: UInt32) async {
+        await protocol_.sendTraceroute(to: nodeId)
+    }
+
+    var tracerouteResults: [TracerouteResult] {
+        protocol_.tracerouteResults
+    }
+
     func updateOwner(shortName: String, longName: String) async {
         await protocol_.setOwner(shortName: shortName, longName: longName)
     }

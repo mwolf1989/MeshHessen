@@ -858,6 +858,12 @@ final class MeshtasticProtocolService {
 
     // MARK: - Traceroute (portnum 70)
 
+    /// Pending traceroute requests keyed by packet ID
+    var pendingTraceroutes: [UInt32: TracerouteResult] = [:]
+
+    /// Completed traceroute results (most recent first)
+    var tracerouteResults: [TracerouteResult] = []
+
     private func handleTraceroutePacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
         guard let route = try? Meshtastic_RouteDiscovery(serializedBytes: data.payload) else {
             AppLogger.shared.log("[Protocol] Traceroute parse failed from \(String(format: "!%08x", packet.from))", debug: SettingsService.shared.debugDevice)
@@ -865,13 +871,65 @@ final class MeshtasticProtocolService {
         }
 
         let from = nodeDisplayName(packet.from)
-        let hops = route.route.map { nodeDisplayName($0) }
-        let hopStr = hops.isEmpty ? "(direct)" : hops.joined(separator: " → ")
+        let hopNodeIds = route.route
+        let hopNames = hopNodeIds.map { nodeDisplayName($0) }
+        let hopStr = hopNames.isEmpty ? "(direct)" : hopNames.joined(separator: " → ")
 
         AppLogger.shared.log(
-            "[Traceroute] From \(from): route = \(hopStr) (\(hops.count) hops)",
+            "[Traceroute] From \(from): route = \(hopStr) (\(hopNames.count) hops)",
             debug: SettingsService.shared.debugDevice
         )
+
+        // Parse extended SNR fields from raw payload (field 2: snr_towards, field 3: route_back, field 4: snr_back)
+        let snrTowards = parseRepeatedSignedInts(data.payload, fieldNumber: 2)
+
+        // Build TracerouteResult
+        var hops: [TracerouteHop] = []
+        for (i, hopNodeId) in hopNodeIds.enumerated() {
+            let hopNode = appState?.node(forId: hopNodeId)
+            let snr: Float? = i < snrTowards.count ? Float(snrTowards[i]) / 4.0 : nil
+            hops.append(TracerouteHop(
+                nodeId: hopNodeId,
+                nodeName: hopNode?.name ?? nodeDisplayName(hopNodeId),
+                snr: snr,
+                latitude: hopNode?.latitude,
+                longitude: hopNode?.longitude,
+                viaMqtt: hopNode?.viaMqtt ?? false
+            ))
+        }
+
+        // Add the target node as the final hop
+        let targetNode = appState?.node(forId: packet.from)
+        hops.append(TracerouteHop(
+            nodeId: packet.from,
+            nodeName: targetNode?.name ?? from,
+            latitude: targetNode?.latitude,
+            longitude: targetNode?.longitude,
+            viaMqtt: targetNode?.viaMqtt ?? false
+        ))
+
+        // Check if this is a response to a pending request
+        if let requestId = data.requestID != 0 ? data.requestID : nil,
+           var pending = pendingTraceroutes.removeValue(forKey: requestId) {
+            pending.responseTime = Date()
+            let completed = TracerouteResult(
+                targetNodeId: pending.targetNodeId,
+                targetName: pending.targetName,
+                hops: hops,
+                responseTime: Date()
+            )
+            tracerouteResults.insert(completed, at: 0)
+            TracerouteStore.shared.save(completed)
+        } else {
+            let result = TracerouteResult(
+                targetNodeId: packet.from,
+                targetName: from,
+                hops: hops,
+                responseTime: Date()
+            )
+            tracerouteResults.insert(result, at: 0)
+            TracerouteStore.shared.save(result)
+        }
 
         // Inject as a channel message for visibility
         let ts = formatTime()
@@ -890,6 +948,79 @@ final class MeshtasticProtocolService {
             senderNote: node?.note ?? ""
         )
         deliver(msg)
+    }
+
+    /// Parse repeated signed int (zigzag or sint32) fields from protobuf payload
+    private func parseRepeatedSignedInts(_ data: Data, fieldNumber: UInt64) -> [Int32] {
+        var results: [Int32] = []
+        var idx = data.startIndex
+        while idx < data.endIndex {
+            let (tag, tagBytes) = decodeVarint(data, from: idx)
+            guard tagBytes > 0 else { break }
+            idx += tagBytes
+            let fn = tag >> 3
+            let wt = tag & 0x07
+
+            if fn == fieldNumber && wt == 0 {
+                let (value, vBytes) = decodeVarint(data, from: idx)
+                guard vBytes > 0 else { break }
+                idx += vBytes
+                // ZigZag decode
+                results.append(Int32(bitPattern: UInt32(value >> 1) ^ (0 &- UInt32(value & 1))))
+            } else if fn == fieldNumber && wt == 2 {
+                // Packed repeated
+                let (length, lBytes) = decodeVarint(data, from: idx)
+                guard lBytes > 0 else { break }
+                idx += lBytes
+                let end = idx + Int(length)
+                while idx < end {
+                    let (value, vBytes) = decodeVarint(data, from: idx)
+                    guard vBytes > 0 else { break }
+                    idx += vBytes
+                    results.append(Int32(bitPattern: UInt32(value >> 1) ^ (0 &- UInt32(value & 1))))
+                }
+            } else {
+                switch wt {
+                case 0: let (_, vb) = decodeVarint(data, from: idx); idx += max(vb, 1)
+                case 1: idx += 8
+                case 2: let (len, lb) = decodeVarint(data, from: idx); idx += lb + Int(len)
+                case 5: idx += 4
+                default: return results
+                }
+            }
+        }
+        return results
+    }
+
+    /// Send a traceroute request to a target node
+    func sendTraceroute(to targetNodeId: UInt32) async {
+        let packetId = UInt32.random(in: UInt32(UInt8.max)..<UInt32.max)
+
+        var routeDiscovery = Meshtastic_RouteDiscovery()
+        _ = routeDiscovery // empty request
+
+        guard let payload = try? routeDiscovery.serializedData() else { return }
+
+        var data = Meshtastic_Data()
+        data.portnum = 70   // TRACEROUTE_APP
+        data.payload = payload
+        data.wantResponse = true
+
+        var packet = Meshtastic_MeshPacket()
+        packet.id = packetId
+        packet.to = targetNodeId
+        packet.hopLimit = 7
+        packet.wantAck = true
+        packet.decoded = data
+
+        // Record pending traceroute
+        let targetName = nodeDisplayName(targetNodeId)
+        let pending = TracerouteResult(targetNodeId: targetNodeId, targetName: targetName)
+        pendingTraceroutes[packetId] = pending
+
+        await sendToRadio(packet: packet)
+
+        AppLogger.shared.log("[Traceroute] Request sent to \(targetName) (packetId=\(packetId))", debug: true)
     }
 
     // MARK: - NeighborInfo (portnum 71)

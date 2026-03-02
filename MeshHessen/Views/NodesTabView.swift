@@ -8,6 +8,7 @@ struct NodesTabView: View {
     @State private var sortOrder = [KeyPathComparator(\NodeInfo.name)]
     @State private var selectedNodeId: UInt32?
     @State private var showNodeInfo: NodeInfo?
+    @State private var tracerouteTarget: NodeInfo?
 
     private var sortedNodes: [NodeInfo] {
         let sorted = appState.filteredNodes.sorted(using: sortOrder)
@@ -126,6 +127,9 @@ struct NodesTabView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(node.nodeId, forType: .string)
                 }
+                if node.id != appState.myNodeInfo?.nodeId {
+                    Button("Traceroute") { tracerouteTarget = node }
+                }
                 Divider()
                 Menu("Set Color") {
                     ForEach(nodeColorPresets, id: \.hex) { preset in
@@ -149,6 +153,9 @@ struct NodesTabView: View {
         }
         .sheet(item: $showNodeInfo) { node in
             NodeInfoSheet(node: node)
+        }
+        .sheet(item: $tracerouteTarget) { node in
+            TracerouteSheet(targetNodeId: node.id, targetName: node.name)
         }
         .navigationTitle("Nodes")
     }
