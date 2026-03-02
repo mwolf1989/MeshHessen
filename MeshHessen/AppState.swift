@@ -255,6 +255,8 @@ final class AppState {
             if let lon = info.longitude { existing.longitude = lon }
             if let alt = info.altitude  { existing.altitude = alt }
             existing.viaMqtt = info.viaMqtt
+            // Preserve pin state from existing node (don't overwrite with incoming data)
+            if info.isPinned { existing.isPinned = info.isPinned }
         } else {
             nodes[info.id] = info
         }

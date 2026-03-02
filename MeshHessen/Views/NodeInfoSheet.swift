@@ -42,6 +42,15 @@ struct NodeInfoSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button {
+                    node.isPinned.toggle()
+                    coordinator.coreDataStore.updateNodePinState(nodeId: node.id, isPinned: node.isPinned)
+                } label: {
+                    Image(systemName: node.isPinned ? "pin.fill" : "pin")
+                        .foregroundStyle(node.isPinned ? .orange : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(node.isPinned ? "Unpin node" : "Pin node")
                 Button("Done") { saveAndDismiss() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.return, modifiers: .command)

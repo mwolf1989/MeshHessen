@@ -333,6 +333,7 @@ final class MeshCoreDataStore {
             object.setValue(node.airUtilTx, forKey: "airUtilTx")
             object.setValue(node.distanceMeters, forKey: "distanceMeters")
             object.setValue(node.viaMqtt, forKey: "viaMqtt")
+            object.setValue(node.isPinned, forKey: "isPinned")
 
             self.save(context: context, label: "node")
         }
@@ -566,6 +567,7 @@ final class MeshCoreDataStore {
         node.airUtilTx = object.value(forKey: "airUtilTx") as? Float ?? 0
         node.distanceMeters = object.value(forKey: "distanceMeters") as? Double ?? 0
         node.viaMqtt = object.value(forKey: "viaMqtt") as? Bool ?? false
+        node.isPinned = object.value(forKey: "isPinned") as? Bool ?? false
         return node
     }
 
@@ -648,6 +650,27 @@ final class MeshCoreDataStore {
             object.setValue(note, forKey: "note")
 
             self.save(context: context, label: "node-customization")
+        }
+    }
+
+    /// Updates only the pin state for a specific node.
+    func updateNodePinState(nodeId: UInt32, isPinned: Bool) {
+        let context = persistenceController.newBackgroundContext()
+        context.perform {
+            let request = NSFetchRequest<NSManagedObject>(entityName: "MHNodeEntity")
+            request.fetchLimit = 1
+            request.predicate = NSPredicate(format: "nodeNum == %lld", Int64(nodeId))
+
+            let object = (try? context.fetch(request).first)
+                ?? NSEntityDescription.insertNewObject(forEntityName: "MHNodeEntity", into: context)
+
+            if (object.value(forKey: "nodeNum") as? Int64 ?? 0) == 0 {
+                object.setValue(Int64(nodeId), forKey: "nodeNum")
+                object.setValue(String(format: "!%08x", nodeId), forKey: "nodeId")
+            }
+            object.setValue(isPinned, forKey: "isPinned")
+
+            self.save(context: context, label: "node-pin")
         }
     }
 
