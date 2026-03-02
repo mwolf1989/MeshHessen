@@ -8,6 +8,7 @@ struct MainView: View {
     @Environment(AppCoordinator.self) private var coordinator
 
     @State private var showConnectSheet = false
+    @State private var showDeviceConfig = false
     @State private var selectedNodeId: UInt32?
     @Environment(\.openWindow) private var openWindow
 
@@ -63,6 +64,9 @@ struct MainView: View {
         }
         .sheet(isPresented: $showConnectSheet) {
             ConnectSheetView()
+        }
+        .sheet(isPresented: $showDeviceConfig) {
+            DeviceConfigView()
         }
         .fileExporter(
             isPresented: $showExporter,
@@ -173,6 +177,17 @@ struct MainView: View {
                         .offset(x: 6, y: -6)
                 }
             }
+        }
+
+        // Device Config
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                showDeviceConfig = true
+            } label: {
+                Label("Device Config", systemImage: "gearshape.2")
+            }
+            .help("Device Configuration")
+            .disabled(!appState.protocolReady)
         }
 
         // Export menu
