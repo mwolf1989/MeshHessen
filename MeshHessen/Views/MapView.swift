@@ -12,6 +12,7 @@ struct MapView: View {
     )
     @State private var showNodeInfo: NodeInfo?
     @State private var currentZoom: Int = 10
+    @State private var pathNodeIds: Set<UInt32> = []
 
     init() {
         _mapStyle = State(initialValue: MapStyle.from(settingsValue: SettingsService.shared.mapSource))
@@ -63,6 +64,7 @@ struct MapView: View {
                 nodes: appState.filteredNodes,
                 focusNodeId: appState.mapFocusNodeId,
                 appState: appState,
+                pathNodeIds: pathNodeIds,
                 onSendDM: { nodeId in
                     appState.ensureDMConversation(for: nodeId)
                     appState.dmTargetNodeId = nodeId
@@ -71,6 +73,13 @@ struct MapView: View {
                 onShowNodeInfo: { nodeId in
                     if let node = appState.node(forId: nodeId) {
                         showNodeInfo = node
+                    }
+                },
+                onTogglePath: { nodeId in
+                    if pathNodeIds.contains(nodeId) {
+                        pathNodeIds.remove(nodeId)
+                    } else {
+                        pathNodeIds.insert(nodeId)
                     }
                 }
             )
@@ -132,8 +141,10 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
     let nodes: [NodeInfo]
     var focusNodeId: UInt32?
     let appState: AppState
+    var pathNodeIds: Set<UInt32> = []
     var onSendDM: ((UInt32) -> Void)?
     var onShowNodeInfo: ((UInt32) -> Void)?
+    var onTogglePath: ((UInt32) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -160,6 +171,7 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
     func updateNSView(_ map: MKMapView, context: Context) {
         context.coordinator.parent = self
         context.coordinator.updateNodes(map, nodes: nodes)
+        context.coordinator.updatePaths(map, nodes: nodes, pathNodeIds: pathNodeIds)
         // Switch map type if style changed
         if context.coordinator.currentStyle != mapStyle {
             context.coordinator.currentStyle = mapStyle
@@ -271,6 +283,15 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
             posItem.representedObject = ContextMenuAction.setAsMyPosition(nodeId: nodeId)
             menu.addItem(posItem)
 
+            if LocationLogger.shared.hasPositionLog(for: nodeId) {
+                let isShowing = parent.pathNodeIds.contains(nodeId)
+                let pathTitle = isShowing ? String(localized: "Hide Path") : String(localized: "Show Path")
+                let pathItem = NSMenuItem(title: pathTitle, action: #selector(contextMenuAction(_:)), keyEquivalent: "")
+                pathItem.target = self
+                pathItem.representedObject = ContextMenuAction.togglePath(nodeId: nodeId)
+                menu.addItem(pathItem)
+            }
+
             menu.popUp(positioning: nil, at: point, in: mapView)
         }
 
@@ -319,6 +340,9 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
 
             case .setAsMyPosition(let nodeId):
                 setAsMyPosition(nodeId: nodeId)
+
+            case .togglePath(let nodeId):
+                parent.onTogglePath?(nodeId)
             }
         }
 
@@ -367,7 +391,42 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
             parent.appState.recalculateAllDistances()
         }
 
+        // MARK: - Path overlays
+
+        func updatePaths(_ map: MKMapView, nodes: [NodeInfo], pathNodeIds: Set<UInt32>) {
+            // Remove existing path overlays
+            let existingPaths = map.overlays.compactMap { $0 as? NodePathPolyline }
+            map.removeOverlays(existingPaths)
+
+            // Add paths for requested nodes
+            for nodeId in pathNodeIds {
+                let positions = LocationLogger.shared.readPositions(for: nodeId)
+                guard positions.count >= 2 else { continue }
+
+                let coords = positions.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                let polyline = NodePathPolyline(coordinates: coords, count: coords.count)
+                polyline.nodeId = nodeId
+                polyline.colorHex = nodes.first(where: { $0.id == nodeId })?.colorHex ?? ""
+                map.addOverlay(polyline)
+            }
+        }
+
         // MARK: - MKMapViewDelegate
+
+        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let polyline = overlay as? NodePathPolyline {
+                let renderer = MKPolylineRenderer(polyline: polyline)
+                if !polyline.colorHex.isEmpty, let color = Color(hex: polyline.colorHex) {
+                    renderer.strokeColor = NSColor(color)
+                } else {
+                    renderer.strokeColor = .systemBlue
+                }
+                renderer.lineWidth = 2.5
+                renderer.alpha = 0.8
+                return renderer
+            }
+            return MKOverlayRenderer(overlay: overlay)
+        }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             guard let nodeAnn = annotation as? NodeAnnotation else { return nil }
@@ -429,6 +488,7 @@ private final class ContextMenuAction: NSObject {
         case setColor(nodeId: UInt32, hex: String)
         case setNote(nodeId: UInt32)
         case setAsMyPosition(nodeId: UInt32)
+        case togglePath(nodeId: UInt32)
     }
 
     private init(_ kind: Kind) { self.kind = kind }
@@ -438,6 +498,7 @@ private final class ContextMenuAction: NSObject {
     static func setColor(nodeId: UInt32, hex: String) -> ContextMenuAction { .init(.setColor(nodeId: nodeId, hex: hex)) }
     static func setNote(nodeId: UInt32) -> ContextMenuAction { .init(.setNote(nodeId: nodeId)) }
     static func setAsMyPosition(nodeId: UInt32) -> ContextMenuAction { .init(.setAsMyPosition(nodeId: nodeId)) }
+    static func togglePath(nodeId: UInt32) -> ContextMenuAction { .init(.togglePath(nodeId: nodeId)) }
 }
 
 // MARK: - NodeAnnotation
@@ -453,4 +514,11 @@ final class NodeAnnotation: NSObject, MKAnnotation {
         self.nodeId = nodeId
         self.coordinate = coordinate
     }
+}
+
+// MARK: - NodePathPolyline
+
+final class NodePathPolyline: MKPolyline {
+    var nodeId: UInt32 = 0
+    var colorHex: String = ""
 }
