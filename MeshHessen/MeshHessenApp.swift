@@ -224,7 +224,10 @@ private struct WindowConstrainer: NSViewRepresentable {
         }
 
         if frame != window.frame {
-            window.setFrame(frame, display: true, animate: false)
+            // Defer frame change to avoid layout recursion
+            DispatchQueue.main.async {
+                window.setFrame(frame, display: true, animate: false)
+            }
         }
     }
 }

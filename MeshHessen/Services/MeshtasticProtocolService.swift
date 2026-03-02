@@ -139,7 +139,11 @@ final class MeshtasticProtocolService {
         // 7. Request channels if we have node identity
         if gotBasicInfo {
             appState?.protocolStatusMessage = String(localized: "Loading channels…")
+            // Clear stale in-memory channels before re-requesting from device
+            appState?.channels.removeAll()
             await requestAllChannels()
+            // Remove CoreData channels that the device no longer reports
+            coreDataStore?.removeChannelsNotIn(indices: receivedChannelResponses)
             appState?.protocolStatusMessage = String(localized: "Finalizing sync…")
         } else {
             AppLogger.shared.log("[Protocol] Skipping channel request (no myNodeId received)", debug: true)

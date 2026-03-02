@@ -183,8 +183,11 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
         // Switch map type if style changed
         if context.coordinator.currentStyle != mapStyle {
             context.coordinator.currentStyle = mapStyle
-            map.preferredConfiguration = mapStyle.preferredConfiguration
-            context.coordinator.updateTopoOverlay(on: map, style: mapStyle)
+            // Defer configuration change to avoid layout recursion
+            DispatchQueue.main.async {
+                map.preferredConfiguration = self.mapStyle.preferredConfiguration
+                context.coordinator.updateTopoOverlay(on: map, style: self.mapStyle)
+            }
         }
         // Center on focus node if requested
         if let focusId = focusNodeId,
@@ -192,7 +195,10 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
            let lat = node.latitude, let lon = node.longitude {
             let center = CLLocationCoordinate2D(latitude: lat, longitude: lon)
             let span = MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-            map.setRegion(MKCoordinateRegion(center: center, span: span), animated: true)
+            // Defer setRegion to avoid layout recursion and animation timing conflicts
+            DispatchQueue.main.async {
+                map.setRegion(MKCoordinateRegion(center: center, span: span), animated: true)
+            }
         }
     }
 

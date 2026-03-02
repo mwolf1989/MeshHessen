@@ -359,6 +359,22 @@ final class MeshCoreDataStore {
         }
     }
 
+    /// Removes any persisted channels whose index is NOT in the given set.
+    func removeChannelsNotIn(indices: Set<Int>) {
+        let context = persistenceController.newBackgroundContext()
+        context.perform {
+            let request = NSFetchRequest<NSManagedObject>(entityName: "MHChannelEntity")
+            guard let all = try? context.fetch(request) else { return }
+            for obj in all {
+                let idx = Int(obj.value(forKey: "channelIndex") as? Int32 ?? -1)
+                if !indices.contains(idx) {
+                    context.delete(obj)
+                }
+            }
+            self.save(context: context, label: "removeStaleChannels")
+        }
+    }
+
     func upsertMessage(_ message: MessageItem, isDirect: Bool, partnerNodeId: UInt32?, partnerName: String? = nil) {
         guard let packetId = message.packetId, packetId != 0 else { return }
 
