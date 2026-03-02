@@ -283,6 +283,25 @@ enum BluetoothMode: Int, CaseIterable, Identifiable {
 
 // MARK: - Tapback / Emoji Reactions
 
+/// Extended emoji reaction set (32 emojis in 4×8 grid)
+enum EmojiReaction {
+    /// All available reaction emojis, arranged in a 4×8 grid
+    static let allEmojis: [String] = [
+        // Row 1
+        "👍", "👎", "❤️", "😂", "😮", "😢", "😡", "🔥",
+        // Row 2
+        "👋", "🎉", "🤔", "👀", "💯", "🙏", "🤝", "💪",
+        // Row 3
+        "⚡", "✅", "❌", "⚠️", "📍", "🔔", "⭐", "💬",
+        // Row 4
+        "‼️", "❓", "💩", "🫡", "🤣", "😎", "🥳", "☠️",
+    ]
+
+    static let columns = 8
+    static let rows = 4
+}
+
+/// Legacy Tapback enum for backward compatibility
 enum Tapback: Int, CaseIterable, Identifiable {
     case wave = 0
     case heart = 1

@@ -141,6 +141,10 @@ final class AppCoordinator {
         await protocol_.sendSOSAlert(customText)
     }
 
+    func sendEmojiReaction(_ emoji: String, toPacketId: UInt32, toNodeId: UInt32 = 0xFFFFFFFF, channelIndex: Int = 0) async {
+        await protocol_.sendEmojiReaction(emoji, toPacketId: toPacketId, toNodeId: toNodeId, channelIndex: channelIndex)
+    }
+
     func updateOwner(shortName: String, longName: String) async {
         await protocol_.setOwner(shortName: shortName, longName: longName)
     }

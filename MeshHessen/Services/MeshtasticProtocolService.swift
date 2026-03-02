@@ -397,6 +397,12 @@ final class MeshtasticProtocolService {
     // MARK: - Text Message
 
     private func handleTextMessage(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
+        // Check for emoji reaction (Data.emoji field is non-empty and replyId is set)
+        if !data.emoji.isEmpty, data.replyID != 0 {
+            handleEmojiReaction(data: data, packet: packet)
+            return
+        }
+
         guard var text = String(bytes: data.payload, encoding: .utf8) else {
             AppLogger.shared.log("[Protocol] Text message decode failed from \(String(format: "!%08x", packet.from))", debug: SettingsService.shared.debugDevice)
             return
@@ -456,6 +462,51 @@ final class MeshtasticProtocolService {
             deliver(msg)
             if hasAlertBell { triggerAlertBell(msg) }
         }
+    }
+
+    // MARK: - Emoji Reaction
+
+    private func handleEmojiReaction(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
+        let targetPacketId = data.replyID
+
+        // emoji field is bytes — decode as UTF-8
+        let emojiStr: String
+        if let decoded = String(data: data.emoji, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !decoded.isEmpty {
+            emojiStr = decoded
+        } else if let textEmoji = String(bytes: data.payload, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !textEmoji.isEmpty {
+            emojiStr = textEmoji
+        } else {
+            emojiStr = "👍"
+        }
+
+        appState?.addReaction(emoji: emojiStr, from: packet.from, toPacketId: targetPacketId)
+
+        if SettingsService.shared.debugMessages {
+            AppLogger.shared.log("[Reaction] \(nodeDisplayName(packet.from)) reacted \(emojiStr) to packet \(targetPacketId)", debug: true)
+        }
+    }
+
+    func sendEmojiReaction(_ emoji: String, toPacketId: UInt32, toNodeId: UInt32 = 0xFFFFFFFF, channelIndex: Int = 0) async {
+        let packetId = UInt32.random(in: UInt32(UInt8.max)..<UInt32.max)
+
+        var packet = Meshtastic_MeshPacket()
+        packet.id = packetId
+        packet.to = toNodeId
+        packet.channel = UInt32(channelIndex)
+        packet.hopLimit = 7
+        packet.wantAck = true
+
+        var data = Meshtastic_Data()
+        data.portnum = 1   // TEXT_MESSAGE_APP
+        data.payload = emoji.data(using: .utf8) ?? Data()
+        data.replyID = toPacketId
+        data.emoji = emoji.data(using: .utf8) ?? Data()
+
+        packet.decoded = data
+        await sendToRadio(packet: packet)
+
+        // Apply reaction locally
+        appState?.addReaction(emoji: emoji, from: myNodeId, toPacketId: toPacketId)
     }
 
     // MARK: - Routing / ACK

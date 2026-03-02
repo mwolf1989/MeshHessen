@@ -43,7 +43,17 @@ struct ChannelChatView: View {
                                 isMine: msg.fromId == appState.myNodeInfo?.nodeId,
                                 protocolReady: appState.protocolReady,
                                 showColorDot: true,
-                                showMqttIndicator: true
+                                showMqttIndicator: true,
+                                onReaction: msg.packetId != nil ? { emoji in
+                                    Task {
+                                        await coordinator.sendEmojiReaction(
+                                            emoji,
+                                            toPacketId: msg.packetId!,
+                                            toNodeId: 0xFFFFFFFF,
+                                            channelIndex: channelIndex
+                                        )
+                                    }
+                                } : nil
                             )
                             .id(msg.id)
                         }
