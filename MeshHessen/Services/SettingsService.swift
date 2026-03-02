@@ -204,6 +204,16 @@ final class SettingsService {
         }
     }
 
+    // MARK: - Location Logging
+
+    var locationLoggingEnabled: Bool {
+        get { defaults.bool(forKey: "locationLoggingEnabled") }
+        set {
+            defaults.set(newValue, forKey: "locationLoggingEnabled")
+            AppLogger.shared.log("[Settings] locationLoggingEnabled changed to \(newValue)", debug: true)
+        }
+    }
+
     // MARK: - Per-node color / note
 
     func colorHex(for nodeId: UInt32) -> String {
