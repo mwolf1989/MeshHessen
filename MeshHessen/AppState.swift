@@ -186,6 +186,20 @@ final class AppState {
         return nil
     }
 
+    func addReaction(emoji: String, from senderId: UInt32, toPacketId: UInt32) {
+        if let allIndex = packetIdToAllIndex[toPacketId] {
+            allMessages[allIndex].addReaction(emoji: emoji, from: senderId)
+            let channelIndex = allMessages[allIndex].channelIndex
+            if let channelMsgIdx = channelMessages[channelIndex]?.firstIndex(where: { $0.packetId == toPacketId }) {
+                channelMessages[channelIndex]?[channelMsgIdx].addReaction(emoji: emoji, from: senderId)
+            }
+        }
+        for key in dmConversations.keys {
+            guard let msgIdx = dmConversations[key]?.messages.firstIndex(where: { $0.packetId == toPacketId }) else { continue }
+            dmConversations[key]?.messages[msgIdx].addReaction(emoji: emoji, from: senderId)
+        }
+    }
+
     func updateDeliveryState(requestId: UInt32, state: MessageDeliveryState) {
         if let allIndex = packetIdToAllIndex[requestId] {
             allMessages[allIndex].deliveryState = state

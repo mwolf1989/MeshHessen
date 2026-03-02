@@ -110,7 +110,17 @@ private struct DMConversationView: View {
                         ForEach(conversation.messages) { msg in
                             MessageBubbleView(
                                 message: msg,
-                                isMine: msg.fromId == appState.myNodeInfo?.nodeId
+                                isMine: msg.fromId == appState.myNodeInfo?.nodeId,
+                                onReaction: msg.packetId != nil ? { emoji in
+                                    Task {
+                                        await coordinator.sendEmojiReaction(
+                                            emoji,
+                                            toPacketId: msg.packetId!,
+                                            toNodeId: conversation.id,
+                                            channelIndex: 0
+                                        )
+                                    }
+                                } : nil
                             )
                             .id(msg.id)
                         }

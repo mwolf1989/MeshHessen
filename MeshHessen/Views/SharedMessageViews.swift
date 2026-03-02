@@ -24,6 +24,58 @@ struct DeliveryStateLabel: View {
     }
 }
 
+/// Emoji picker popover — 4×8 grid of 32 emojis
+struct EmojiPickerView: View {
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ForEach(0..<EmojiReaction.rows, id: \.self) { row in
+                HStack(spacing: 4) {
+                    ForEach(0..<EmojiReaction.columns, id: \.self) { col in
+                        let idx = row * EmojiReaction.columns + col
+                        if idx < EmojiReaction.allEmojis.count {
+                            let emoji = EmojiReaction.allEmojis[idx]
+                            Button(emoji) { onSelect(emoji) }
+                                .buttonStyle(.plain)
+                                .font(.title3)
+                                .frame(width: 28, height: 28)
+                                .contentShape(Rectangle())
+                        }
+                    }
+                }
+            }
+        }
+        .padding(8)
+    }
+}
+
+/// Shows reaction pills below a message bubble
+struct ReactionPillsView: View {
+    let reactions: [String: [UInt32]]
+
+    var body: some View {
+        if !reactions.isEmpty {
+            HStack(spacing: 4) {
+                ForEach(reactions.sorted(by: { $0.key < $1.key }), id: \.key) { emoji, senders in
+                    HStack(spacing: 2) {
+                        Text(emoji).font(.caption)
+                        if senders.count > 1 {
+                            Text("\(senders.count)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.15))
+                    .clipShape(Capsule())
+                }
+            }
+        }
+    }
+}
+
 /// Unified message bubble used in both channel chat and DM conversations.
 struct MessageBubbleView: View {
     let message: MessageItem
@@ -31,9 +83,11 @@ struct MessageBubbleView: View {
     var protocolReady: Bool = true
     var showColorDot: Bool = false
     var showMqttIndicator: Bool = false
+    var onReaction: ((String) -> Void)?
 
     @State private var pendingURL: URL?
     @State private var showLinkConfirmation = false
+    @State private var showEmojiPicker = false
 
     var body: some View {
         VStack(alignment: isMine ? .trailing : .leading, spacing: 2) {
@@ -96,6 +150,25 @@ struct MessageBubbleView: View {
                     : (isMine ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12))
             )
             .clipShape(RoundedRectangle(cornerRadius: 10))
+            .contextMenu {
+                if let onReaction, message.packetId != nil {
+                    // Quick reactions
+                    ForEach(["👍", "❤️", "😂", "👎"], id: \.self) { emoji in
+                        Button(emoji) { onReaction(emoji) }
+                    }
+                    Divider()
+                    Button("More Reactions…") { showEmojiPicker = true }
+                }
+            }
+            .popover(isPresented: $showEmojiPicker) {
+                EmojiPickerView { emoji in
+                    showEmojiPicker = false
+                    onReaction?(emoji)
+                }
+            }
+
+            // Reaction pills
+            ReactionPillsView(reactions: message.reactionsByEmoji)
 
             if isMine {
                 DeliveryStateLabel(state: message.deliveryState)
