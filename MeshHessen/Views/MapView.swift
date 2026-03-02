@@ -50,9 +50,12 @@ struct MapView: View {
             case .standard:   return MKStandardMapConfiguration(elevationStyle: .flat)
             case .satellite:  return MKImageryMapConfiguration(elevationStyle: .flat)
             case .hybrid:     return MKHybridMapConfiguration(elevationStyle: .flat)
-            case .topography: return MKStandardMapConfiguration(elevationStyle: .realistic)
+            case .topography: return MKStandardMapConfiguration(elevationStyle: .flat)
             }
         }
+
+        /// Whether this style uses a custom tile overlay instead of Apple Maps tiles.
+        var usesCustomTileOverlay: Bool { self == .topography }
     }
 
     var body: some View {
@@ -157,6 +160,11 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
         map.showsCompass = true
         map.showsScale = true
 
+        // Apply topographic tile overlay if needed
+        if mapStyle.usesCustomTileOverlay {
+            context.coordinator.applyTopoOverlay(to: map)
+        }
+
         // Add right-click gesture recognizer for context menu
         let rightClick = NSClickGestureRecognizer(
             target: context.coordinator,
@@ -176,6 +184,7 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
         if context.coordinator.currentStyle != mapStyle {
             context.coordinator.currentStyle = mapStyle
             map.preferredConfiguration = mapStyle.preferredConfiguration
+            context.coordinator.updateTopoOverlay(on: map, style: mapStyle)
         }
         // Center on focus node if requested
         if let focusId = focusNodeId,
@@ -192,9 +201,35 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
         var parent: MeshMapViewRepresentable
         var currentStyle: MapView.MapStyle = .standard
 
+        private var topoOverlay: MKTileOverlay?
+
         init(_ parent: MeshMapViewRepresentable) {
             self.parent = parent
             self.currentStyle = parent.mapStyle
+        }
+
+        // MARK: - Topographic tile overlay
+
+        func applyTopoOverlay(to map: MKMapView) {
+            let server = MapTileServer.openTopoMap
+            let template = server.tileUrl
+            let overlay = MKTileOverlay(urlTemplate: template)
+            overlay.canReplaceMapContent = true
+            overlay.maximumZ = server.maxZoom
+            topoOverlay = overlay
+            map.addOverlay(overlay, level: .aboveLabels)
+        }
+
+        func updateTopoOverlay(on map: MKMapView, style: MapView.MapStyle) {
+            // Remove existing topo overlay
+            if let existing = topoOverlay {
+                map.removeOverlay(existing)
+                topoOverlay = nil
+            }
+            // Add new one if topography is selected
+            if style.usesCustomTileOverlay {
+                applyTopoOverlay(to: map)
+            }
         }
 
         func updateNodes(_ map: MKMapView, nodes: [NodeInfo]) {
@@ -414,6 +449,9 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
         // MARK: - MKMapViewDelegate
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let tileOverlay = overlay as? MKTileOverlay {
+                return MKTileOverlayRenderer(overlay: tileOverlay)
+            }
             if let polyline = overlay as? NodePathPolyline {
                 let renderer = MKPolylineRenderer(polyline: polyline)
                 if !polyline.colorHex.isEmpty, let color = Color(hex: polyline.colorHex) {
