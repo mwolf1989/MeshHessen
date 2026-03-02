@@ -116,6 +116,16 @@ private struct GeneralSettingsPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section("Location Logging") {
+                Toggle("Enable Location Logging", isOn: Binding(
+                    get: { settings.locationLoggingEnabled },
+                    set: { settings.locationLoggingEnabled = $0 }
+                ))
+                Text("Log node positions to CSV files for path tracking on the map.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding()

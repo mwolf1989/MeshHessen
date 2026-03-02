@@ -642,6 +642,12 @@ final class MeshtasticProtocolService {
             node.altitude = alt
             appState?.recalculateDistance(for: packet.from)
         }
+
+        // Location logging
+        if SettingsService.shared.locationLoggingEnabled {
+            let name = appState?.node(forId: packet.from)?.name ?? String(format: "!%08x", packet.from)
+            LocationLogger.shared.logPosition(nodeId: packet.from, name: name, latitude: lat, longitude: lon, altitude: alt)
+        }
     }
 
     // MARK: - NodeInfo (portnum 4)
