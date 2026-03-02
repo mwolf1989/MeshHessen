@@ -3,19 +3,29 @@ import SwiftUI
 /// "Nodes" tab — full table view of all nodes with sortable columns.
 struct NodesTabView: View {
     @Environment(\.appState) private var appState
+    @Environment(AppCoordinator.self) private var coordinator
     @Environment(\.openWindow) private var openWindow
     @State private var sortOrder = [KeyPathComparator(\NodeInfo.name)]
     @State private var selectedNodeId: UInt32?
     @State private var showNodeInfo: NodeInfo?
 
     private var sortedNodes: [NodeInfo] {
-        appState.filteredNodes.sorted(using: sortOrder)
+        let sorted = appState.filteredNodes.sorted(using: sortOrder)
+        // Pinned nodes always appear first
+        let pinned = sorted.filter { $0.isPinned }
+        let unpinned = sorted.filter { !$0.isPinned }
+        return pinned + unpinned
     }
 
     var body: some View {
         Table(sortedNodes, selection: $selectedNodeId, sortOrder: $sortOrder) {
             TableColumn("Name", value: \.name) { node in
                 HStack(spacing: 6) {
+                    if node.isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    }
                     if !node.colorHex.isEmpty, let color = Color(hex: node.colorHex) {
                         Circle().fill(color).frame(width: 8, height: 8)
                     }
@@ -101,6 +111,11 @@ struct NodesTabView: View {
         }
         .contextMenu(forSelectionType: UInt32.self) { ids in
             if let id = ids.first, let node = appState.node(forId: id) {
+                Button(node.isPinned ? "Unpin" : "Pin") {
+                    node.isPinned.toggle()
+                    coordinator.coreDataStore.updateNodePinState(nodeId: id, isPinned: node.isPinned)
+                }
+                Divider()
                 Button("Show Info…") { showNodeInfo = node }
                 Button("Send Direct Message") {
                     appState.ensureDMConversation(for: id)

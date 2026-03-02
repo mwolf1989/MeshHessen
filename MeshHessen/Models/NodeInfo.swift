@@ -24,6 +24,7 @@ final class NodeInfo: Identifiable {
     // User customization
     var colorHex: String = ""   // "#RRGGBB" or empty
     var note: String = ""
+    var isPinned: Bool = false
 
     // Raw values for calculations
     var lastHeard: Int32 = 0
