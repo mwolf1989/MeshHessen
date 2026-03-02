@@ -201,7 +201,7 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
         var parent: MeshMapViewRepresentable
         var currentStyle: MapView.MapStyle = .standard
 
-        private var topoOverlay: MKTileOverlay?
+        private var topoOverlay: CachingTileOverlay?
 
         init(_ parent: MeshMapViewRepresentable) {
             self.parent = parent
@@ -212,8 +212,7 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
 
         func applyTopoOverlay(to map: MKMapView) {
             let server = MapTileServer.openTopoMap
-            let template = server.tileUrl
-            let overlay = MKTileOverlay(urlTemplate: template)
+            let overlay = CachingTileOverlay(urlTemplate: server.tileUrl)
             overlay.canReplaceMapContent = true
             overlay.maximumZ = server.maxZoom
             topoOverlay = overlay
@@ -509,8 +508,12 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             let span = mapView.region.span.longitudeDelta
-            let zoom = Int(round(log2(360 / span)))
-            parent.currentZoom = max(1, min(20, zoom))
+            let zoom = max(1, min(20, Int(round(log2(360 / span)))))
+            if parent.currentZoom != zoom {
+                DispatchQueue.main.async {
+                    self.parent.currentZoom = zoom
+                }
+            }
         }
     }
 }

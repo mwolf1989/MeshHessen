@@ -14,6 +14,12 @@ struct DebugView: View {
                 Toggle("Auto-scroll", isOn: $autoScroll)
                     .toggleStyle(.checkbox)
                     .font(.caption)
+                Button("Copy") {
+                    let text = appState.debugLines.map(\.text).joined(separator: "\n")
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                }
+                .buttonStyle(.bordered)
                 Button("Clear") {
                     let count = appState.debugLines.count
                     appState.debugLines.removeAll()

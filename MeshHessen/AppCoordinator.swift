@@ -45,6 +45,10 @@ final class AppCoordinator {
     /// Active protocol initialization task (cancelled on disconnect/reconnect)
     private var protocolInitializationTask: Task<Void, Never>?
 
+    /// When true, the next disconnect is expected (e.g. firmware TCP reset after channel write)
+    /// and should trigger an immediate reconnect without error UI.
+    private var expectingDisconnect: Bool = false
+
     /// Maximum backoff delay in seconds
     private let maxBackoffSeconds: Int = 30
     private let coreDataMigrationVersionKey = "coreDataMigrationVersion"
@@ -164,14 +168,14 @@ final class AppCoordinator {
     }
 
     func saveDeviceConfig(
-        device: Meshtastic_DeviceConfig,
-        position: Meshtastic_PositionConfig,
-        lora: Meshtastic_LoRaConfig,
-        bluetooth: Meshtastic_BluetoothConfig,
-        network: Meshtastic_NetworkConfig,
-        display: Meshtastic_DisplayConfig,
-        power: Meshtastic_PowerConfig,
-        mqtt: Meshtastic_MQTTConfig
+        device: Meshtastic_Config.DeviceConfig,
+        position: Meshtastic_Config.PositionConfig,
+        lora: Meshtastic_Config.LoRaConfig,
+        bluetooth: Meshtastic_Config.BluetoothConfig,
+        network: Meshtastic_Config.NetworkConfig,
+        display: Meshtastic_Config.DisplayConfig,
+        power: Meshtastic_Config.PowerConfig,
+        mqtt: Meshtastic_ModuleConfig.MQTTConfig
     ) async {
         await protocol_.saveDeviceConfigs(
             device: device, position: position, lora: lora,
@@ -189,6 +193,7 @@ final class AppCoordinator {
             return
         }
         let idx = appState.channels.count
+        expectingDisconnect = true
         await protocol_.setChannel(
             index: idx, name: name, psk: psk,
             isSecondary: idx > 0,
@@ -199,12 +204,20 @@ final class AppCoordinator {
 
     func deleteChannel(at index: Int) async {
         AppLogger.shared.log("[Coordinator] Deleting channel at index \(index)", debug: true)
+        expectingDisconnect = true
         await protocol_.deleteChannel(index: index)
     }
 
     func addMeshHessenChannel() async {
         AppLogger.shared.log("[Coordinator] Adding Mesh Hessen channel...", debug: true)
+        expectingDisconnect = true
         await protocol_.addMeshHessenChannel()
+    }
+
+    func cleanupDuplicateChannels() async {
+        AppLogger.shared.log("[Coordinator] Cleaning up duplicate channels...", debug: true)
+        expectingDisconnect = true
+        await protocol_.cleanupDuplicateChannels()
     }
 
     // MARK: - Serial ports
@@ -514,6 +527,15 @@ final class AppCoordinator {
             appState.protocolReady = false
             appState.protocolStatusMessage = nil
             appState.resetForDisconnect()
+            return
+        }
+
+        // Channel writes cause the firmware to reset TCP — reconnect immediately
+        if expectingDisconnect {
+            expectingDisconnect = false
+            AppLogger.shared.log("[Coordinator] Expected disconnect (channel write) — reconnecting immediately", debug: true)
+            reconnectAttempt = 0
+            scheduleReconnect()
             return
         }
 

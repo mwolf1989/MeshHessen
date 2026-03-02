@@ -12,14 +12,14 @@ struct DeviceConfigView: View {
     @State private var statusMessage: String?
 
     // Config state
-    @State private var deviceConfig = Meshtastic_DeviceConfig()
-    @State private var positionConfig = Meshtastic_PositionConfig()
-    @State private var loraConfig = Meshtastic_LoRaConfig()
-    @State private var bluetoothConfig = Meshtastic_BluetoothConfig()
-    @State private var networkConfig = Meshtastic_NetworkConfig()
-    @State private var displayConfig = Meshtastic_DisplayConfig()
-    @State private var powerConfig = Meshtastic_PowerConfig()
-    @State private var mqttConfig = Meshtastic_MQTTConfig()
+    @State private var deviceConfig = Meshtastic_Config.DeviceConfig()
+    @State private var positionConfig = Meshtastic_Config.PositionConfig()
+    @State private var loraConfig = Meshtastic_Config.LoRaConfig()
+    @State private var bluetoothConfig = Meshtastic_Config.BluetoothConfig()
+    @State private var networkConfig = Meshtastic_Config.NetworkConfig()
+    @State private var displayConfig = Meshtastic_Config.DisplayConfig()
+    @State private var powerConfig = Meshtastic_Config.PowerConfig()
+    @State private var mqttConfig = Meshtastic_ModuleConfig.MQTTConfig()
 
     enum ConfigTab: String, CaseIterable, Identifiable {
         case device, position, lora, bluetooth, network, display, power, mqtt
@@ -131,7 +131,7 @@ struct DeviceConfigView: View {
             Section("Device Role") {
                 Picker("Role", selection: $deviceConfig.role) {
                     ForEach(DeviceRole.allCases) { role in
-                        Text(role.name).tag(Meshtastic_Role(rawValue: role.rawValue) ?? .client)
+                        Text(role.name).tag(Meshtastic_Config.DeviceConfig.Role(rawValue: role.rawValue) ?? .client)
                     }
                 }
                 Text(DeviceRole(rawValue: deviceConfig.role.rawValue)?.description ?? "")
@@ -146,7 +146,7 @@ struct DeviceConfigView: View {
             Section("Behavior") {
                 Picker("Rebroadcast Mode", selection: $deviceConfig.rebroadcastMode) {
                     ForEach(RebroadcastMode.allCases) { mode in
-                        Text(mode.name).tag(UInt32(mode.rawValue))
+                        Text(mode.name).tag(Meshtastic_Config.DeviceConfig.RebroadcastMode(rawValue: mode.rawValue) ?? .all)
                     }
                 }
                 HStack {
@@ -197,14 +197,14 @@ struct DeviceConfigView: View {
             Section("Region & Preset") {
                 Picker("Region", selection: $loraConfig.region) {
                     ForEach(RegionCode.allCases) { region in
-                        Text(region.name).tag(Meshtastic_Region(rawValue: region.rawValue) ?? .unsetRegion)
+                        Text(region.name).tag(Meshtastic_Config.LoRaConfig.RegionCode(rawValue: region.rawValue) ?? .unset)
                     }
                 }
                 Toggle("Use Preset", isOn: $loraConfig.usePreset)
                 if loraConfig.usePreset {
                     Picker("Modem Preset", selection: $loraConfig.modemPreset) {
                         ForEach(ModemPreset.allCases) { preset in
-                            Text(preset.name).tag(Meshtastic_ModemPreset(rawValue: preset.rawValue) ?? .longFast)
+                            Text(preset.name).tag(Meshtastic_Config.LoRaConfig.ModemPreset(rawValue: preset.rawValue) ?? .longFast)
                         }
                     }
                 }
@@ -266,10 +266,10 @@ struct DeviceConfigView: View {
                 Toggle("Bluetooth Enabled", isOn: $bluetoothConfig.enabled)
                 Picker("Pairing Mode", selection: $bluetoothConfig.mode) {
                     ForEach(BluetoothMode.allCases) { mode in
-                        Text(mode.name).tag(UInt32(mode.rawValue))
+                        Text(mode.name).tag(Meshtastic_Config.BluetoothConfig.PairingMode(rawValue: mode.rawValue) ?? .randomPin)
                     }
                 }
-                if bluetoothConfig.mode == 1 { // Fixed PIN
+                if bluetoothConfig.mode == .fixedPin {
                     HStack {
                         Text("Fixed PIN")
                         Spacer()
@@ -332,16 +332,22 @@ struct DeviceConfigView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
                 }
-                Toggle("Auto Screen Carousel", isOn: $displayConfig.autoScreenCarouselSecs)
+                HStack {
+                    Text("Auto Carousel (secs, 0=off)")
+                    Spacer()
+                    TextField("0", value: $displayConfig.autoScreenCarouselSecs, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                }
                 Toggle("Compass North Top", isOn: $displayConfig.compassNorthTop)
                 Toggle("Flip Screen", isOn: $displayConfig.flipScreen)
             }
 
             Section("GPS Display") {
-                Picker("GPS Format", selection: $displayConfig.gpsFormat) {
-                    Text("Decimal").tag(Meshtastic_GpsCoordinateFormat.dec)
-                    Text("DMS").tag(Meshtastic_GpsCoordinateFormat.dms)
+                Picker("GPS Format (deprecated)", selection: $displayConfig.gpsFormat) {
+                    Text("Default").tag(Meshtastic_Config.DisplayConfig.DeprecatedGpsCoordinateFormat.unused)
                 }
+                .disabled(true)
             }
         }
         .formStyle(.grouped)

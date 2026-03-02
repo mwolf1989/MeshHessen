@@ -36,6 +36,9 @@ final class MeshtasticProtocolService {
     var receivedConfigs: [ConfigCategory: Meshtastic_Config] = [:]
     var receivedModuleConfigs: [String: Meshtastic_ModuleConfig] = [:]
 
+    // TCP heartbeat keepalive
+    private var heartbeatTask: Task<Void, Never>?
+
     // Text-mode recovery
     private var lastValidPacketTime = Date()
     private var consecutiveTextChunks = 0
@@ -80,41 +83,81 @@ final class MeshtasticProtocolService {
             let wakeup = Data(repeating: 0xC3, count: 64)
             try? await conn.write(wakeup)
             AppLogger.shared.log("[Protocol] Wakeup sent", debug: SettingsService.shared.debugSerial)
+            try? await Task.sleep(for: .milliseconds(500))
         }
 
         // 3. Send WantConfigId
         appState?.protocolStatusMessage = String(localized: "Syncing mesh config…")
         await sendWantConfig()
 
-        // 4. Wait up to 15s for configComplete
+        // 4. Wait up to 15s for configComplete (or idle-data fallback)
         let configDeadline = Date().addingTimeInterval(15)
         while !configComplete && Date() < configDeadline {
-            try? await Task.sleep(for: .milliseconds(200))
+            try? await Task.sleep(for: .milliseconds(100))
+            // Fallback: if we have myNodeId and received valid packets but
+            // no new data for 2s, treat config as complete. Some firmware
+            // versions don't send configCompleteID over TCP.
+            if !configComplete, myNodeId != 0,
+               lastValidPacketTime > .distantPast,
+               Date().timeIntervalSince(lastValidPacketTime) > 2.0 {
+                configComplete = true
+                AppLogger.shared.log("[Protocol] ConfigComplete inferred (idle timeout after valid data)", debug: true)
+            }
         }
-        AppLogger.shared.log("[Protocol] configComplete=\(configComplete)", debug: true)
+        AppLogger.shared.log("[Protocol] configComplete=\(configComplete), myNodeId=\(String(format: "!%08x", myNodeId))", debug: true)
 
-        // 5. Request channels only if protocol session is ready
-        if configComplete, myNodeId != 0 {
+        // 5. Even without configComplete, proceed if we have myNodeId.
+        //    The Windows client does the same — configCompleteID is optional.
+        let gotBasicInfo = myNodeId != 0
+        if !configComplete && gotBasicInfo {
+            configComplete = true
+            AppLogger.shared.log("[Protocol] ConfigComplete forced (myNodeId received, configCompleteID absent)", debug: true)
+        }
+
+        // 6. Wait for data stream stability — node count stable for 3s (max 30s).
+        //    Matches Windows client behavior: ensures all node info has arrived.
+        if gotBasicInfo {
+            appState?.protocolStatusMessage = String(localized: "Loading nodes…")
+            var lastNodeCount = appState?.nodes.count ?? 0
+            var stableIterations = 0
+            for _ in 0..<60 {
+                try? await Task.sleep(for: .milliseconds(500))
+                let currentNodeCount = appState?.nodes.count ?? 0
+                if currentNodeCount == lastNodeCount {
+                    stableIterations += 1
+                    if stableIterations >= 6 { // 3 seconds stable
+                        AppLogger.shared.log("[Protocol] Data stream stable (\(currentNodeCount) nodes)", debug: true)
+                        break
+                    }
+                } else {
+                    stableIterations = 0
+                    lastNodeCount = currentNodeCount
+                }
+            }
+        }
+
+        // 7. Request channels if we have node identity
+        if gotBasicInfo {
             appState?.protocolStatusMessage = String(localized: "Loading channels…")
             await requestAllChannels()
-
-            // Auch wenn nicht alle 8 Slots geladen wurden, gilt die Verbindung
-            // als bereit — nicht geladene Slots sind typischerweise DISABLED.
             appState?.protocolStatusMessage = String(localized: "Finalizing sync…")
         } else {
-            AppLogger.shared.log("[Protocol] Skipping channel request (configComplete=\(configComplete), myNodeId=\(String(format: "!%08x", myNodeId)))", debug: true)
+            AppLogger.shared.log("[Protocol] Skipping channel request (no myNodeId received)", debug: true)
             appState?.protocolStatusMessage = String(localized: "Connected, waiting for mesh data…")
         }
 
-        // 6. Finish init; data continues to stream in live
+        // 8. Finish init; data continues to stream in live
         isInitializing = false
+
+        // 9. Start TCP heartbeat to prevent idle disconnects
+        if gotBasicInfo && connectionService?.type != .bluetooth {
+            startHeartbeat()
+        }
 
         let channelCount = appState?.channels.count ?? 0
         AppLogger.shared.log("[Protocol] Initialization complete. Nodes: \(appState?.nodes.count ?? 0), Channels: \(channelCount)", debug: true)
 
-        // Verbindung als bereit melden, sobald configComplete und mindestens
-        // ein Kanal geladen wurde — verhindert endloses Hängen bei BLE.
-        return configComplete
+        return gotBasicInfo
     }
 
     // MARK: - Data Received (called from connection service)
@@ -232,11 +275,9 @@ final class MeshtasticProtocolService {
     private func processPacket(_ data: Data) {
         do {
             let fromRadio = try Meshtastic_FromRadio(serializedBytes: data)
-            Task { @MainActor in
-                self.handleFromRadio(fromRadio)
-            }
+            handleFromRadio(fromRadio)
         } catch {
-            AppLogger.shared.log("[Protocol] Parse error: \(error.localizedDescription)", debug: SettingsService.shared.debugDevice)
+            AppLogger.shared.log("[Protocol] Parse error: \(error.localizedDescription) (bytes: \(data.count))", debug: true)
         }
     }
 
@@ -331,6 +372,28 @@ final class MeshtasticProtocolService {
     // MARK: - FromRadio Dispatch
 
     private func handleFromRadio(_ fromRadio: Meshtastic_FromRadio) {
+        let variant: String
+        switch fromRadio.payloadVariant {
+        case .packet: variant = "packet"
+        case .myInfo: variant = "myInfo"
+        case .nodeInfo: variant = "nodeInfo"
+        case .channel: variant = "channel"
+        case .config: variant = "config"
+        case .configCompleteID(let id): variant = "configCompleteID(\(id))"
+        case .logRecord: variant = "logRecord"
+        case .rebooted: variant = "rebooted"
+        case .moduleConfig: variant = "moduleConfig"
+        case .queueStatus: variant = "queueStatus"
+        case .metadata: variant = "metadata"
+        case .xmodemPacket: variant = "xmodemPacket"
+        case .mqttClientProxyMessage: variant = "mqttClientProxyMessage"
+        case .fileInfo: variant = "fileInfo"
+        case .clientNotification: variant = "clientNotification"
+        case .deviceuiConfig: variant = "deviceuiConfig"
+        case .none: variant = "none"
+        }
+        AppLogger.shared.log("[Protocol] FromRadio: \(variant)", debug: true)
+
         switch fromRadio.payloadVariant {
         case .packet(let packet):
             handleMeshPacket(packet)
@@ -343,11 +406,11 @@ final class MeshtasticProtocolService {
             handleChannel(channel)
         case .config(let config):
             handleConfig(config)
+        case .moduleConfig(let moduleConfig):
+            handleModuleConfig(moduleConfig)
         case .configCompleteID:
             configComplete = true
-            AppLogger.shared.log("[Protocol] ConfigComplete received", debug: SettingsService.shared.debugDevice)
-        case .moduleconfigCompleteID:
-            configComplete = true
+            AppLogger.shared.log("[Protocol] ConfigComplete received", debug: true)
         default:
             break
         }
@@ -358,41 +421,30 @@ final class MeshtasticProtocolService {
     private func handleMeshPacket(_ packet: Meshtastic_MeshPacket) {
         switch packet.payloadVariant {
         case .decoded(let data):
-            let portnum = data.portnum
-            switch portnum {
-            case 1:  handleTextMessage(data: data, packet: packet)   // TEXT_MESSAGE_APP
-            case 3:  handlePosition(data: data, packet: packet)      // POSITION_APP
-            case 4:  handleNodeInfoPacket(data: data, packet: packet)// NODEINFO_APP
-            case 5:  handleRoutingPacket(data: data, packet: packet) // ROUTING_APP
-            case 6:  handleAdminPacket(data: data, packet: packet)   // ADMIN_APP
-            case 8:  handleWaypointPacket(data: data, packet: packet)// WAYPOINT_APP
-            case 67: handleTelemetry(data: data, packet: packet)     // TELEMETRY_APP
-            case 70: handleTraceroutePacket(data: data, packet: packet)  // TRACEROUTE_APP
-            case 71: handleNeighborInfoPacket(data: data, packet: packet)// NEIGHBORINFO_APP
+            switch data.portnum {
+            case .textMessageApp:    handleTextMessage(data: data, packet: packet)
+            case .positionApp:       handlePosition(data: data, packet: packet)
+            case .nodeinfoApp:       handleNodeInfoPacket(data: data, packet: packet)
+            case .routingApp:        handleRoutingPacket(data: data, packet: packet)
+            case .adminApp:          handleAdminPacket(data: data, packet: packet)
+            case .waypointApp:       handleWaypointPacket(data: data, packet: packet)
+            case .telemetryApp:      handleTelemetry(data: data, packet: packet)
+            case .tracerouteApp:     handleTraceroutePacket(data: data, packet: packet)
+            case .neighborinfoApp:   handleNeighborInfoPacket(data: data, packet: packet)
             default:
                 if SettingsService.shared.debugDevice {
-                    AppLogger.shared.log("[Protocol] Unhandled portnum \(portnum) from \(String(format: "!%08x", packet.from))", debug: true)
+                    AppLogger.shared.log("[Protocol] Unhandled portnum \(data.portnum) from \(String(format: "!%08x", packet.from))", debug: true)
                 }
             }
         case .encrypted:
-            // Encrypted message we can't decode
-            if SettingsService.shared.showEncryptedMessages {
-                let ts = formatTime()
+            // Encrypted message we can't decode.
+            // packet.channel is a channel HASH (not a 0–7 index) for encrypted
+            // packets, so we cannot map it to a local channel slot. Showing these
+            // on a real channel would pollute the conversation with unreadable
+            // messages, so we only log them.
+            if SettingsService.shared.debugMessages {
                 let from = nodeDisplayName(packet.from)
-                let chIndex = resolvedChannelIndex(for: packet.channel)
-                let chName = channelName(for: Int(packet.channel))
-                let msg = MessageItem(
-                    packetId: packet.id,
-                    time: ts, from: from, fromId: packet.from, toId: packet.to,
-                    message: String(localized: "[Encrypted — channel key not configured on this device]"),
-                    channelIndex: chIndex >= 0 ? chIndex : 0,
-                    channelName: chName,
-                    isEncrypted: true, isViaMqtt: packet.viaMqtt
-                )
-                deliver(msg)
-                if SettingsService.shared.debugMessages {
-                    AppLogger.shared.log("[MSG] Encrypted from \(from) CH:\(packet.channel) (resolved:\(chIndex)) MQTT:\(packet.viaMqtt)", debug: true)
-                }
+                AppLogger.shared.log("[MSG] Encrypted from \(from) CH-hash:\(packet.channel) MQTT:\(packet.viaMqtt)", debug: true)
             }
         default:
             break
@@ -402,8 +454,8 @@ final class MeshtasticProtocolService {
     // MARK: - Text Message
 
     private func handleTextMessage(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
-        // Check for emoji reaction (Data.emoji field is non-empty and replyId is set)
-        if !data.emoji.isEmpty, data.replyID != 0 {
+        // Check for emoji reaction (Data.emoji field is non-zero and replyId is set)
+        if data.emoji != 0, data.replyID != 0 {
             handleEmojiReaction(data: data, packet: packet)
             return
         }
@@ -474,10 +526,10 @@ final class MeshtasticProtocolService {
     private func handleEmojiReaction(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
         let targetPacketId = data.replyID
 
-        // emoji field is bytes — decode as UTF-8
+        // emoji field is a fixed32 Unicode scalar value
         let emojiStr: String
-        if let decoded = String(data: data.emoji, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !decoded.isEmpty {
-            emojiStr = decoded
+        if data.emoji != 0, let scalar = Unicode.Scalar(data.emoji) {
+            emojiStr = String(scalar)
         } else if let textEmoji = String(bytes: data.payload, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !textEmoji.isEmpty {
             emojiStr = textEmoji
         } else {
@@ -495,6 +547,7 @@ final class MeshtasticProtocolService {
         let packetId = UInt32.random(in: UInt32(UInt8.max)..<UInt32.max)
 
         var packet = Meshtastic_MeshPacket()
+        packet.from = myNodeId
         packet.id = packetId
         packet.to = toNodeId
         packet.channel = UInt32(channelIndex)
@@ -502,10 +555,10 @@ final class MeshtasticProtocolService {
         packet.wantAck = true
 
         var data = Meshtastic_Data()
-        data.portnum = 1   // TEXT_MESSAGE_APP
+        data.portnum = .textMessageApp
         data.payload = emoji.data(using: .utf8) ?? Data()
         data.replyID = toPacketId
-        data.emoji = emoji.data(using: .utf8) ?? Data()
+        data.emoji = emoji.unicodeScalars.first.map { UInt32($0.value) } ?? 0
 
         packet.decoded = data
         await sendToRadio(packet: packet)
@@ -697,7 +750,7 @@ final class MeshtasticProtocolService {
         // Apply telemetry
         node.snrFloat = info.snr
         node.snr = info.snr != 0 ? String(format: "%.1f dB", info.snr) : "-"
-        node.lastHeard = info.lastHeard
+        node.lastHeard = Int32(bitPattern: info.lastHeard)
         node.lastSeen = info.lastHeard > 0 ? formatTimestamp(Int(info.lastHeard)) : "-"
         let metrics = info.deviceMetrics
         node.batteryLevel = metrics.batteryLevel
@@ -778,13 +831,21 @@ final class MeshtasticProtocolService {
             AppLogger.shared.log("[Protocol] Config: Power", debug: SettingsService.shared.debugDevice)
         case .network:
             receivedConfigs[.network] = config
-            AppLogger.shared.log("[Protocol] Config: Network", debug: SettingsService.shared.debugDevice)
+            AppLogger.shared.log("[Protocol] Config: Network wifiEnabled=\(config.network.wifiEnabled) ssid='\(config.network.wifiSsid)' psk=\(config.network.wifiPsk.isEmpty ? "empty" : "set") ntp='\(config.network.ntpServer)'", debug: SettingsService.shared.debugDevice)
         case .display:
             receivedConfigs[.display] = config
             AppLogger.shared.log("[Protocol] Config: Display", debug: SettingsService.shared.debugDevice)
         case .bluetooth:
             receivedConfigs[.bluetooth] = config
             AppLogger.shared.log("[Protocol] Config: Bluetooth", debug: SettingsService.shared.debugDevice)
+        case .security:
+            AppLogger.shared.log("[Protocol] Config: Security", debug: SettingsService.shared.debugDevice)
+        case .sessionkey:
+            // SessionkeyConfig is an empty message — the actual session key
+            // comes via admin.sessionPasskey (handled in handleAdminPacket).
+            AppLogger.shared.log("[Protocol] Config: Sessionkey", debug: SettingsService.shared.debugDevice)
+        case .deviceUi:
+            AppLogger.shared.log("[Protocol] Config: DeviceUI", debug: SettingsService.shared.debugDevice)
         case .none:
             AppLogger.shared.log("[Protocol] Config received (empty)", debug: SettingsService.shared.debugDevice)
         }
@@ -810,8 +871,16 @@ final class MeshtasticProtocolService {
 
     private func handleAdminPacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
         guard let admin = try? Meshtastic_AdminMessage(serializedBytes: data.payload) else {
-            AppLogger.shared.log("[Protocol] Admin parse failed from \(String(format: "!%08x", packet.from))", debug: SettingsService.shared.debugDevice)
+            AppLogger.shared.log("[Protocol] Admin parse failed from \(String(format: "!%08x", packet.from))", debug: true)
             return
+        }
+
+        AppLogger.shared.log("[Protocol] Admin response: \(String(describing: admin.payloadVariant)), passkey=\(admin.sessionPasskey.count) bytes", debug: true)
+
+        // Extract session passkey from every admin response (matches Windows client behavior)
+        if !admin.sessionPasskey.isEmpty {
+            sessionPasskey = admin.sessionPasskey
+            AppLogger.shared.log("[Protocol] Session passkey updated (\(sessionPasskey.count) bytes)", debug: true)
         }
 
         switch admin.payloadVariant {
@@ -829,16 +898,10 @@ final class MeshtasticProtocolService {
             }
         case .getConfigResponse(let config):
             handleConfig(config)
-            AppLogger.shared.log("[Protocol] Admin getConfigResponse received", debug: SettingsService.shared.debugDevice)
+            AppLogger.shared.log("[Protocol] Admin getConfigResponse received", debug: true)
         case .getModuleConfigResponse(let moduleConfig):
             handleModuleConfig(moduleConfig)
-            AppLogger.shared.log("[Protocol] Admin getModuleConfigResponse received", debug: SettingsService.shared.debugDevice)
-        case .none:
-            // Session passkey in admin response
-            if !admin.sessionPasskey.isEmpty {
-                sessionPasskey = admin.sessionPasskey
-                AppLogger.shared.log("[Protocol] Session passkey received (\(sessionPasskey.count) bytes)", debug: SettingsService.shared.debugDevice)
-            }
+            AppLogger.shared.log("[Protocol] Admin getModuleConfigResponse received", debug: true)
         default:
             break
         }
@@ -1030,7 +1093,7 @@ final class MeshtasticProtocolService {
         guard let payload = try? routeDiscovery.serializedData() else { return }
 
         var data = Meshtastic_Data()
-        data.portnum = 70   // TRACEROUTE_APP
+        data.portnum = .tracerouteApp
         data.payload = payload
         data.wantResponse = true
 
@@ -1058,8 +1121,16 @@ final class MeshtasticProtocolService {
     /// Module config request field numbers: 0=MQTT
     func requestAllDeviceConfigs() async {
         await ensureSessionKey()
+        guard !sessionPasskey.isEmpty else {
+            AppLogger.shared.log("[Protocol] requestAllDeviceConfigs aborted: no session key", debug: true)
+            return
+        }
         // Request each config type
-        for configType: UInt32 in 0...6 {
+        let configTypes: [Meshtastic_AdminMessage.ConfigType] = [
+            .deviceConfig, .positionConfig, .powerConfig,
+            .networkConfig, .displayConfig, .loraConfig, .bluetoothConfig
+        ]
+        for configType in configTypes {
             var admin = Meshtastic_AdminMessage()
             admin.getConfigRequest = configType
             admin.sessionPasskey = sessionPasskey
@@ -1067,7 +1138,7 @@ final class MeshtasticProtocolService {
         }
         // Request MQTT module config
         var mqttAdmin = Meshtastic_AdminMessage()
-        mqttAdmin.getModuleConfigRequest = 0  // 0 = MQTT
+        mqttAdmin.getModuleConfigRequest = .mqttConfig
         mqttAdmin.sessionPasskey = sessionPasskey
         await sendAdminMessage(mqttAdmin)
         AppLogger.shared.log("[Protocol] Requested all device configs", debug: SettingsService.shared.debugDevice)
@@ -1075,16 +1146,20 @@ final class MeshtasticProtocolService {
 
     /// Save device configs back to the node.
     func saveDeviceConfigs(
-        device: Meshtastic_DeviceConfig,
-        position: Meshtastic_PositionConfig,
-        lora: Meshtastic_LoRaConfig,
-        bluetooth: Meshtastic_BluetoothConfig,
-        network: Meshtastic_NetworkConfig,
-        display: Meshtastic_DisplayConfig,
-        power: Meshtastic_PowerConfig,
-        mqtt: Meshtastic_MQTTConfig
+        device: Meshtastic_Config.DeviceConfig,
+        position: Meshtastic_Config.PositionConfig,
+        lora: Meshtastic_Config.LoRaConfig,
+        bluetooth: Meshtastic_Config.BluetoothConfig,
+        network: Meshtastic_Config.NetworkConfig,
+        display: Meshtastic_Config.DisplayConfig,
+        power: Meshtastic_Config.PowerConfig,
+        mqtt: Meshtastic_ModuleConfig.MQTTConfig
     ) async {
         await ensureSessionKey()
+        guard !sessionPasskey.isEmpty else {
+            AppLogger.shared.log("[Protocol] saveDeviceConfigs aborted: no session key", debug: true)
+            return
+        }
 
         // Begin edit settings session
         var beginEdit = Meshtastic_AdminMessage()
@@ -1104,6 +1179,7 @@ final class MeshtasticProtocolService {
             admin.setConfig = config
             admin.sessionPasskey = sessionPasskey
             await sendAdminMessage(admin)
+            try? await Task.sleep(for: .milliseconds(300))
         }
 
         // Save MQTT module config
@@ -1113,6 +1189,7 @@ final class MeshtasticProtocolService {
         mqttAdmin.setModuleConfig = moduleConfig
         mqttAdmin.sessionPasskey = sessionPasskey
         await sendAdminMessage(mqttAdmin)
+        try? await Task.sleep(for: .milliseconds(300))
 
         // Commit edit settings
         var commitEdit = Meshtastic_AdminMessage()
@@ -1306,16 +1383,21 @@ final class MeshtasticProtocolService {
     // MARK: - Send Methods
 
     func sendTextMessage(_ text: String, toNodeId: UInt32 = 0xFFFFFFFF, channelIndex: Int = 0) async {
+        guard myNodeId != 0 else {
+            AppLogger.shared.log("[Protocol] sendTextMessage skipped: protocol not ready (myNodeId=0)", debug: true)
+            return
+        }
         let packetId = UInt32.random(in: UInt32(UInt8.max)..<UInt32.max)
 
         var packet = Meshtastic_MeshPacket()
+        packet.from = myNodeId
         packet.id = packetId
         packet.to = toNodeId
         packet.channel = UInt32(channelIndex)
         packet.hopLimit = 7
         packet.wantAck = true
         var data = Meshtastic_Data()
-        data.portnum = 1   // TEXT_MESSAGE_APP
+        data.portnum = .textMessageApp
         data.payload = text.data(using: .utf8) ?? Data()
         packet.decoded = data
 
@@ -1356,6 +1438,10 @@ final class MeshtasticProtocolService {
 
     func setOwner(shortName: String, longName: String) async {
         await ensureSessionKey()
+        guard !sessionPasskey.isEmpty else {
+            AppLogger.shared.log("[Protocol] setOwner aborted: no session key", debug: true)
+            return
+        }
 
         var owner = Meshtastic_User()
         owner.shortName = shortName
@@ -1373,9 +1459,14 @@ final class MeshtasticProtocolService {
         await sendTextMessage(msg)
     }
 
+    @discardableResult
     func setChannel(index: Int, name: String, psk: Data, isSecondary: Bool,
-                    uplinkEnabled: Bool, downlinkEnabled: Bool) async {
+                    uplinkEnabled: Bool, downlinkEnabled: Bool) async -> Bool {
         await ensureSessionKey()
+        guard !sessionPasskey.isEmpty else {
+            AppLogger.shared.log("[Protocol] setChannel aborted: no session key", debug: true)
+            return false
+        }
 
         var settings = Meshtastic_ChannelSettings()
         settings.name = name
@@ -1388,15 +1479,29 @@ final class MeshtasticProtocolService {
         channel.settings = settings
         channel.role = isSecondary ? .secondary : .primary
 
+        AppLogger.shared.log("[Protocol] setChannel idx=\(index), name=\(name), role=\(channel.role), psk=\(psk.count) bytes, passkey=\(sessionPasskey.count) bytes", debug: true)
+
         var admin = Meshtastic_AdminMessage()
         admin.setChannel = channel
         admin.sessionPasskey = sessionPasskey
 
         await sendAdminMessage(admin)
+        // Give the device time to process
+        try? await Task.sleep(for: .milliseconds(500))
+
+        // Optimistic local state update — add the channel to appState immediately
+        // so the app can decrypt messages without waiting for a full re-sync.
+        handleChannel(channel)
+
+        return true
     }
 
     func deleteChannel(index: Int) async {
         await ensureSessionKey()
+        guard !sessionPasskey.isEmpty else {
+            AppLogger.shared.log("[Protocol] deleteChannel aborted: no session key", debug: true)
+            return
+        }
         // Shift channels down and disable last
         let maxIdx = (appState?.channels.count ?? 1)
         for i in index..<maxIdx {
@@ -1419,9 +1524,18 @@ final class MeshtasticProtocolService {
         await sendAdminMessage(admin)
     }
 
-    func addMeshHessenChannel() async {
-        guard let psk = Data(base64Encoded: MeshtasticProtocolService.meshHessenPSK) else { return }
-        await setChannel(
+    @discardableResult
+    func addMeshHessenChannel() async -> Bool {
+        // Don't add if a channel with this name already exists
+        if let existing = appState?.channels.first(where: {
+            $0.name.localizedCaseInsensitiveCompare(MeshtasticProtocolService.meshHessenChannelName) == .orderedSame
+        }) {
+            AppLogger.shared.log("[Protocol] Mesh Hessen channel already exists at index \(existing.id), skipping", debug: true)
+            return true
+        }
+
+        guard let psk = Data(base64Encoded: MeshtasticProtocolService.meshHessenPSK) else { return false }
+        return await setChannel(
             index: appState?.channels.count ?? 1,
             name: MeshtasticProtocolService.meshHessenChannelName,
             psk: psk,
@@ -1431,9 +1545,109 @@ final class MeshtasticProtocolService {
         )
     }
 
+    /// Removes duplicate channels from the device, keeping only the first
+    /// occurrence of each channel name. Sends all changes in rapid fire
+    /// because the firmware may reset TCP after channel writes.
+    func cleanupDuplicateChannels() async {
+        await ensureSessionKey()
+        guard !sessionPasskey.isEmpty else {
+            AppLogger.shared.log("[Protocol] cleanupDuplicateChannels aborted: no session key", debug: true)
+            return
+        }
+
+        let current = appState?.channels.sorted(by: { $0.id < $1.id }) ?? []
+        guard !current.isEmpty else { return }
+
+        // Keep first occurrence of each channel name
+        var desired: [ChannelInfo] = []
+        var seenNames = Set<String>()
+        for ch in current {
+            let key = ch.name.lowercased()
+            if ch.id == 0 || !seenNames.contains(key) {
+                seenNames.insert(key)
+                desired.append(ch)
+            }
+        }
+
+        let removed = current.count - desired.count
+        if removed == 0 {
+            AppLogger.shared.log("[Protocol] No duplicate channels found", debug: true)
+            return
+        }
+
+        AppLogger.shared.log("[Protocol] Cleaning up \(removed) duplicate channel(s): keeping \(desired.map(\.name))", debug: true)
+
+        // Write desired channels into slots 0..<desired.count
+        // Send rapidly — no sleep between writes — to get them all out
+        // before a potential TCP reset.
+        for (newIdx, ch) in desired.enumerated() {
+            var settings = Meshtastic_ChannelSettings()
+            settings.name = ch.name
+            settings.psk = Data(base64Encoded: ch.psk) ?? Data()
+            settings.uplinkEnabled = ch.uplinkEnabled
+            settings.downlinkEnabled = ch.downlinkEnabled
+
+            var channel = Meshtastic_Channel()
+            channel.index = Int32(newIdx)
+            channel.settings = settings
+            channel.role = newIdx == 0 ? .primary : .secondary
+
+            var admin = Meshtastic_AdminMessage()
+            admin.setChannel = channel
+            admin.sessionPasskey = sessionPasskey
+            await sendAdminMessage(admin)
+        }
+
+        // Disable remaining slots
+        for idx in desired.count..<8 {
+            var channel = Meshtastic_Channel()
+            channel.index = Int32(idx)
+            channel.role = .disabled
+
+            var admin = Meshtastic_AdminMessage()
+            admin.setChannel = channel
+            admin.sessionPasskey = sessionPasskey
+            await sendAdminMessage(admin)
+        }
+
+        // Update local state optimistically
+        appState?.channels = desired.enumerated().map { newIdx, ch in
+            ChannelInfo(
+                id: newIdx, name: ch.name, psk: ch.psk,
+                role: newIdx == 0 ? "PRIMARY" : "SECONDARY",
+                uplinkEnabled: ch.uplinkEnabled, downlinkEnabled: ch.downlinkEnabled
+            )
+        }
+
+        AppLogger.shared.log("[Protocol] Channel cleanup complete: \(desired.count) channels remain", debug: true)
+    }
+
     func disconnect() {
         isDisconnecting = true
+        stopHeartbeat()
         connectionService?.disconnect()
+    }
+
+    // MARK: - TCP Heartbeat
+
+    private func startHeartbeat() {
+        stopHeartbeat()
+        heartbeatTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled else { break }
+                guard let self, !self.isDisconnecting else { break }
+                var toRadio = Meshtastic_ToRadio()
+                toRadio.heartbeat = Meshtastic_Heartbeat()
+                await self.sendRaw(toRadio)
+                AppLogger.shared.log("[Protocol] Heartbeat sent", debug: SettingsService.shared.debugDevice)
+            }
+        }
+    }
+
+    private func stopHeartbeat() {
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
     }
 
     // MARK: - Private send helpers
@@ -1455,38 +1669,40 @@ final class MeshtasticProtocolService {
 
     private func ensureSessionKey() async {
         guard sessionPasskey.isEmpty else { return }
-        guard configComplete else {
-            AppLogger.shared.log("[Protocol] Session key request skipped: config not complete", debug: SettingsService.shared.debugDevice)
-            return
-        }
         guard myNodeId != 0 else {
             AppLogger.shared.log("[Protocol] Session key request skipped: myNodeId unknown", debug: SettingsService.shared.debugDevice)
             return
         }
 
         var admin = Meshtastic_AdminMessage()
-        admin.getConfigRequest = 8   // triggers session passkey response
+        admin.getConfigRequest = .sessionkeyConfig
         await sendAdminMessage(admin)
         // Wait up to 4s for passkey
         let deadline = Date().addingTimeInterval(4)
         while sessionPasskey.isEmpty && Date() < deadline {
             try? await Task.sleep(for: .milliseconds(100))
         }
+        if sessionPasskey.isEmpty {
+            AppLogger.shared.log("[Protocol] Warning: No session key received after timeout", debug: true)
+        }
     }
 
     private func sendAdminMessage(_ admin: Meshtastic_AdminMessage) async {
         guard let data = try? admin.serializedData() else { return }
         var innerData = Meshtastic_Data()
-        innerData.portnum = 6   // ADMIN_APP
+        innerData.portnum = .adminApp
         innerData.payload = data
         innerData.wantResponse = true
 
         var packet = Meshtastic_MeshPacket()
+        packet.from = myNodeId
         packet.to = myNodeId   // admin messages go to self
-        packet.hopLimit = 0
-        packet.wantAck = true
+        packet.id = UInt32.random(in: 1..<UInt32(Int32.max))
+        // Leave hopLimit, wantAck, priority at defaults (0/false/unset)
+        // to match the Windows client pattern for local admin messages over TCP.
         packet.decoded = innerData
 
+        AppLogger.shared.log("[Protocol] Sending admin message (id=\(packet.id), from=\(String(format: "!%08x", packet.from)), payloadSize=\(data.count))", debug: true)
         await sendToRadio(packet: packet)
     }
 
@@ -1513,6 +1729,8 @@ final class MeshtasticProtocolService {
             framed.append(payload)
             data = framed
         }
+
+        AppLogger.shared.log("[Protocol] sendRaw: \(data.count) bytes (payload=\(payload.count), type=\(conn.type))", debug: true)
 
         do {
             try await conn.write(data)

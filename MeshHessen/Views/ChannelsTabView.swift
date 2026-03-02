@@ -7,6 +7,16 @@ struct ChannelsTabView: View {
     @State private var showAddSheet = false
     @State private var showBrowserSheet = false
 
+    private var hasDuplicateChannels: Bool {
+        var seen = Set<String>()
+        for ch in appState.channels {
+            let key = ch.name.lowercased()
+            if seen.contains(key) { return true }
+            seen.insert(key)
+        }
+        return false
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -17,6 +27,14 @@ struct ChannelsTabView: View {
                     Task { await coordinator.addMeshHessenChannel() }
                 }
                 .buttonStyle(.bordered)
+
+                if hasDuplicateChannels {
+                    Button("Remove Duplicates") {
+                        Task { await coordinator.cleanupDuplicateChannels() }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.orange)
+                }
 
                 Button { showBrowserSheet = true } label: {
                     Label("Browse", systemImage: "magnifyingglass")

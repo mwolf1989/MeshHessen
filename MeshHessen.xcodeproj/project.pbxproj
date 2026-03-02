@@ -16,12 +16,20 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		41BC71FF2F4AFF9100813C30 /* Exceptions for "MeshHessen" folder in "MeshHessen" target */ = {
+		AA000001000000000000007 /* Exceptions for "MeshHessen" folder in "MeshHessen" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Proto/admin.proto,
-				Proto/mesh.proto,
-				Proto/portnums.proto,
+				Proto/meshtastic/admin.proto,
+				Proto/meshtastic/atak.proto,
+				Proto/meshtastic/channel.proto,
+				Proto/meshtastic/config.proto,
+				Proto/meshtastic/connection_status.proto,
+				Proto/meshtastic/device_ui.proto,
+				Proto/meshtastic/mesh.proto,
+				Proto/meshtastic/module_config.proto,
+				Proto/meshtastic/portnums.proto,
+				Proto/meshtastic/telemetry.proto,
+				Proto/meshtastic/xmodem.proto,
 			);
 			target = 41BC718A2F4AFF9100813C30 /* MeshHessen */;
 		};
@@ -31,7 +39,7 @@
 		41BC718D2F4AFF9100813C30 /* MeshHessen */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				41BC71FF2F4AFF9100813C30 /* Exceptions for "MeshHessen" folder in "MeshHessen" target */,
+				AA000001000000000000007 /* Exceptions for "MeshHessen" folder in "MeshHessen" target */,
 			);
 			path = MeshHessen;
 			sourceTree = "<group>";
