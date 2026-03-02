@@ -1024,7 +1024,7 @@ final class MeshtasticProtocolService {
     func sendTraceroute(to targetNodeId: UInt32) async {
         let packetId = UInt32.random(in: UInt32(UInt8.max)..<UInt32.max)
 
-        var routeDiscovery = Meshtastic_RouteDiscovery()
+        let routeDiscovery = Meshtastic_RouteDiscovery()
         _ = routeDiscovery // empty request
 
         guard let payload = try? routeDiscovery.serializedData() else { return }
