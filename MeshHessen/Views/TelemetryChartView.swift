@@ -127,14 +127,13 @@ struct TelemetryChartView: View {
         guard !metricsToLoad.isEmpty else { return }
         isLoading = true
 
-        Task.detached {
+        Task.detached { [nodeId, days] in
             let db = TelemetryDatabaseService.shared
-            var results: [TelemetryMetric: [TimeSeriesPoint]] = [:]
-            for metric in metricsToLoad {
-                results[metric] = db.getTimeSeries(nodeId: nodeId, metric: metric, days: days)
+            let loaded: [TelemetryMetric: [TimeSeriesPoint]] = metricsToLoad.reduce(into: [:]) { dict, metric in
+                dict[metric] = db.getTimeSeries(nodeId: nodeId, metric: metric, days: days)
             }
             await MainActor.run {
-                dataPoints = results
+                dataPoints = loaded
                 isLoading = false
             }
         }
