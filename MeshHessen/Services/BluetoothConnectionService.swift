@@ -149,10 +149,24 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
             // Trigger a read after write (same as Windows client)
             Task { await self.drainFromRadio() }
         } else {
-            return try await withCheckedThrowingContinuation { cont in
-                self.storeWriteContinuation(cont)
-                self.pendingWriteData = data
-                p.writeValue(data, for: char, type: .withResponse)
+            // Timeout prevents hanging forever if didWriteValueFor is never called
+            return try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    try await withCheckedThrowingContinuation { cont in
+                        self.storeWriteContinuation(cont)
+                        self.pendingWriteData = data
+                        p.writeValue(data, for: char, type: .withResponse)
+                    }
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(10))
+                    if let cont = self.takeWriteContinuation() {
+                        AppLogger.shared.log("[BLE] Write timed out after 10s", debug: true)
+                        cont.resume(throwing: ConnectionError.timeout)
+                    }
+                }
+                try await group.next()
+                group.cancelAll()
             }
         }
     }

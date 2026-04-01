@@ -139,8 +139,6 @@ final class MeshtasticProtocolService {
         // 7. Request channels if we have node identity
         if gotBasicInfo {
             appState?.protocolStatusMessage = String(localized: "Loading channels…")
-            // Clear stale in-memory channels before re-requesting from device
-            appState?.channels.removeAll()
             await requestAllChannels()
             // Remove CoreData channels that the device no longer reports
             coreDataStore?.removeChannelsNotIn(indices: receivedChannelResponses)
@@ -441,6 +439,11 @@ final class MeshtasticProtocolService {
                 }
             }
         case .encrypted:
+            // TCP echoes our own sent packets back. For PKI-encrypted DMs the node
+            // can't decrypt them, so they arrive as .encrypted. Silently ignore
+            // these echoes to avoid false "PSK required" errors.
+            if myNodeId != 0 && packet.from == myNodeId { break }
+
             // Encrypted message we can't decode.
             // packet.channel is a channel HASH (not a 0–7 index) for encrypted
             // packets, so we cannot map it to a local channel slot. Showing these
@@ -784,6 +787,9 @@ final class MeshtasticProtocolService {
     // MARK: - Channel
 
     private func handleChannel(_ channel: Meshtastic_Channel) {
+        // Track ALL channel slots (including disabled) so requestAllChannels()
+        // won't re-request slots the device already reported.
+        receivedChannelResponses.insert(Int(channel.index))
         guard channel.role != .disabled else { return }
 
         let name = extractChannelName(channel)
@@ -806,7 +812,6 @@ final class MeshtasticProtocolService {
         appState?.channels.sort { $0.id < $1.id }
         coreDataStore?.upsertChannel(info)
 
-        receivedChannelResponses.insert(Int(channel.index))
         AppLogger.shared.log("[Protocol] Channel \(channel.index): \(name) [\(info.role)]", debug: SettingsService.shared.debugDevice)
     }
 
@@ -1437,7 +1442,12 @@ final class MeshtasticProtocolService {
             MessageLogger.shared.logDirectMessage(outgoing, partnerName: nodeDisplayName(toNodeId), partnerNodeId: toNodeId)
         }
 
-        await sendToRadio(packet: packet)
+        let sent = await sendToRadio(packet: packet)
+        if !sent {
+            let failState: MessageDeliveryState = .failed(String(localized: "Not connected"))
+            appState?.updateDeliveryState(requestId: packetId, state: failState)
+            coreDataStore?.updateDeliveryState(requestId: packetId, state: failState)
+        }
     }
 
     func setOwner(shortName: String, longName: String) async {
@@ -1710,15 +1720,20 @@ final class MeshtasticProtocolService {
         await sendToRadio(packet: packet)
     }
 
-    private func sendToRadio(packet: Meshtastic_MeshPacket) async {
+    @discardableResult
+    private func sendToRadio(packet: Meshtastic_MeshPacket) async -> Bool {
         var toRadio = Meshtastic_ToRadio()
         toRadio.packet = packet
-        await sendRaw(toRadio)
+        return await sendRaw(toRadio)
     }
 
-    private func sendRaw(_ toRadio: Meshtastic_ToRadio) async {
-        guard let conn = connectionService, !isDisconnecting else { return }
-        guard let payload = try? toRadio.serializedData() else { return }
+    @discardableResult
+    private func sendRaw(_ toRadio: Meshtastic_ToRadio) async -> Bool {
+        guard let conn = connectionService, !isDisconnecting else {
+            AppLogger.shared.log("[Protocol] sendRaw skipped: not connected", debug: true)
+            return false
+        }
+        guard let payload = try? toRadio.serializedData() else { return false }
 
         let data: Data
         if conn.type == .bluetooth {
@@ -1738,8 +1753,10 @@ final class MeshtasticProtocolService {
 
         do {
             try await conn.write(data)
+            return true
         } catch {
             AppLogger.shared.log("[Protocol] Write error: \(error.localizedDescription)", debug: true)
+            return false
         }
     }
 

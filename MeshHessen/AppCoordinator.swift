@@ -429,12 +429,17 @@ final class AppCoordinator {
             service = TcpConnectionService()
         }
 
+        // Guard callbacks against stale services: after reconnect, an old service
+        // could fire late and overwrite the new connection's state (race condition).
+        let serviceID = ObjectIdentifier(service)
+
         service.onDataReceived = { [weak self] data in
-            self?.protocol_.onDataReceived(data)
+            guard let self, self.activeConnection.map({ ObjectIdentifier($0) }) == serviceID else { return }
+            self.protocol_.onDataReceived(data)
         }
         service.onConnectionStateChanged = { [weak self] connected in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.activeConnection.map({ ObjectIdentifier($0) }) == serviceID else { return }
                 if connected {
                     self.appState.connectionState = .connected
                     self.reconnectAttempt = 0
@@ -458,7 +463,6 @@ final class AppCoordinator {
             cancelProtocolInitialization()
             AppLogger.shared.log("[Coordinator] Connected via \(type.rawValue)", debug: true)
 
-            let serviceID = ObjectIdentifier(service)
             protocolInitializationTask = Task { @MainActor [weak self] in
                 guard let self else { return }
 
