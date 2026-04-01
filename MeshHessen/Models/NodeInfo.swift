@@ -37,6 +37,7 @@ final class NodeInfo: Identifiable {
     var distanceMeters: Double = 0
 
     var viaMqtt: Bool = false
+    var publicKey: Data = Data()
 
     init(id: UInt32, nodeId: String, shortName: String, longName: String) {
         self.id = id

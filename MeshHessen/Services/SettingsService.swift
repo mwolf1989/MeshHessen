@@ -214,6 +214,28 @@ final class SettingsService {
         }
     }
 
+    // MARK: - Node Key / PKI
+
+    enum KeyMismatchAction: Int {
+        case warn = 0
+        case overwrite = 1
+    }
+
+    var nodeKeyMismatchAction: KeyMismatchAction {
+        get { KeyMismatchAction(rawValue: defaults.integer(forKey: "nodeKeyMismatchAction")) ?? .overwrite }
+        set { defaults.set(newValue.rawValue, forKey: "nodeKeyMismatchAction") }
+    }
+
+    // MARK: - Telemetry
+
+    var telemetryRetentionDays: Int {
+        get {
+            let val = defaults.integer(forKey: "telemetryRetentionDays")
+            return val > 0 ? val : 90
+        }
+        set { defaults.set(newValue, forKey: "telemetryRetentionDays") }
+    }
+
     // MARK: - Per-node color / note
 
     func colorHex(for nodeId: UInt32) -> String {

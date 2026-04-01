@@ -25,6 +25,7 @@ struct NodeInfoSheet: View {
     @State private var ownerLongName: String = ""
     @State private var isSavingOwner = false
     @State private var showTraceroute = false
+    @State private var showTelemetry = false
 
     private var isOwnNode: Bool {
         appState.myNodeInfo?.nodeId == node.id
@@ -43,6 +44,14 @@ struct NodeInfoSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button {
+                    showTelemetry = true
+                } label: {
+                    Image(systemName: "chart.bar.xaxis")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Telemetry")
                 if !isOwnNode {
                     Button {
                         showTraceroute = true
@@ -227,6 +236,9 @@ struct NodeInfoSheet: View {
         .frame(minWidth: 420, minHeight: 320)
         .sheet(isPresented: $showTraceroute) {
             TracerouteSheet(targetNodeId: node.id, targetName: node.name)
+        }
+        .sheet(isPresented: $showTelemetry) {
+            TelemetryView(nodeId: node.id, nodeName: node.name)
         }
         .onAppear {
             // Load persisted values from UserDefaults, falling back to in-memory model

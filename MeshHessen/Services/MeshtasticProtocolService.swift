@@ -136,7 +136,15 @@ final class MeshtasticProtocolService {
             }
         }
 
-        // 7. Request channels if we have node identity
+        // 7. Request DeviceMetadata and SecurityConfig
+        if gotBasicInfo {
+            try? await Task.sleep(for: .milliseconds(200))
+            await requestDeviceMetadata()
+            try? await Task.sleep(for: .milliseconds(200))
+            await requestSecurityConfig()
+        }
+
+        // 8. Request channels if we have node identity
         if gotBasicInfo {
             appState?.protocolStatusMessage = String(localized: "Loading channels…")
             await requestAllChannels()
@@ -148,10 +156,10 @@ final class MeshtasticProtocolService {
             appState?.protocolStatusMessage = String(localized: "Connected, waiting for mesh data…")
         }
 
-        // 8. Finish init; data continues to stream in live
+        // 9. Finish init; data continues to stream in live
         isInitializing = false
 
-        // 9. Start TCP heartbeat to prevent idle disconnects
+        // 10. Start TCP heartbeat to prevent idle disconnects
         if gotBasicInfo && connectionService?.type != .bluetooth {
             startHeartbeat()
         }
@@ -413,6 +421,8 @@ final class MeshtasticProtocolService {
         case .configCompleteID:
             configComplete = true
             AppLogger.shared.log("[Protocol] ConfigComplete received", debug: true)
+        case .metadata(let meta):
+            handleDeviceMetadata(meta)
         default:
             break
         }
@@ -421,6 +431,34 @@ final class MeshtasticProtocolService {
     // MARK: - Mesh Packet
 
     private func handleMeshPacket(_ packet: Meshtastic_MeshPacket) {
+        // Update SNR/RSSI on the sender node from every packet
+        if packet.from != 0 && packet.from != myNodeId, let senderNode = appState?.node(forId: packet.from) {
+            if packet.rxSnr != 0 {
+                senderNode.snrFloat = packet.rxSnr
+                senderNode.snr = String(format: "%.1f dB", packet.rxSnr)
+            }
+            if packet.rxRssi != 0 {
+                senderNode.rssiInt = packet.rxRssi
+                senderNode.rssi = "\(packet.rxRssi) dBm"
+            }
+        }
+
+        // Record every received packet in the telemetry database
+        if packet.from != 0 && packet.from != myNodeId {
+            let hopCount = packet.hopStart > 0 ? Int(packet.hopStart) - Int(packet.hopLimit) : 0
+            let senderNode = appState?.node(forId: packet.from)
+            TelemetryDatabaseService.shared.insertPacketRx(
+                nodeId: packet.from,
+                packetId: packet.id,
+                snr: packet.rxSnr,
+                rssi: packet.rxRssi,
+                hopCount: max(0, hopCount),
+                wantAck: packet.wantAck,
+                latitude: senderNode?.latitude ?? 0,
+                longitude: senderNode?.longitude ?? 0
+            )
+        }
+
         switch packet.payloadVariant {
         case .decoded(let data):
             switch data.portnum {
@@ -438,20 +476,52 @@ final class MeshtasticProtocolService {
                     AppLogger.shared.log("[Protocol] Unhandled portnum \(data.portnum) from \(String(format: "!%08x", packet.from))", debug: true)
                 }
             }
-        case .encrypted:
+        case .encrypted(let ciphertext):
             // TCP echoes our own sent packets back. For PKI-encrypted DMs the node
             // can't decrypt them, so they arrive as .encrypted. Silently ignore
             // these echoes to avoid false "PSK required" errors.
             if myNodeId != 0 && packet.from == myNodeId { break }
 
+            // Attempt client-side PKI decryption if the packet is PKI-encrypted
+            if packet.pkiEncrypted && PkiDecryptionService.shared.hasPrivateKey {
+                // Get sender's public key: prefer from packet, fallback to NodeKeyService
+                let senderPubKey = !packet.publicKey.isEmpty
+                    ? packet.publicKey
+                    : NodeKeyService.shared.publicKey(for: packet.from)
+
+                if let pubKey = senderPubKey,
+                   let plaintext = PkiDecryptionService.shared.tryDecrypt(
+                       ciphertext: ciphertext,
+                       senderPublicKey: pubKey,
+                       fromNode: packet.from,
+                       packetId: packet.id
+                   ) {
+                    // Successfully decrypted — parse as Data proto and route normally
+                    if let decoded = try? Meshtastic_Data(serializedBytes: plaintext) {
+                        var decryptedPacket = packet
+                        decryptedPacket.decoded = decoded
+                        AppLogger.shared.log("[PKI] Decrypted packet from \(nodeDisplayName(packet.from)) portnum=\(decoded.portnum)", debug: true)
+                        // Re-enter dispatch with decoded payload
+                        switch decoded.portnum {
+                        case .textMessageApp:    handleTextMessage(data: decoded, packet: decryptedPacket)
+                        case .positionApp:       handlePosition(data: decoded, packet: decryptedPacket)
+                        case .nodeinfoApp:       handleNodeInfoPacket(data: decoded, packet: decryptedPacket)
+                        case .routingApp:        handleRoutingPacket(data: decoded, packet: decryptedPacket)
+                        case .telemetryApp:      handleTelemetry(data: decoded, packet: decryptedPacket)
+                        case .tracerouteApp:     handleTraceroutePacket(data: decoded, packet: decryptedPacket)
+                        default:
+                            AppLogger.shared.log("[PKI] Decrypted portnum \(decoded.portnum) from \(nodeDisplayName(packet.from))", debug: true)
+                        }
+                        break
+                    }
+                }
+                AppLogger.shared.log("[PKI] Decryption failed for packet from \(nodeDisplayName(packet.from))", debug: true)
+            }
+
             // Encrypted message we can't decode.
-            // packet.channel is a channel HASH (not a 0–7 index) for encrypted
-            // packets, so we cannot map it to a local channel slot. Showing these
-            // on a real channel would pollute the conversation with unreadable
-            // messages, so we only log them.
             if SettingsService.shared.debugMessages {
                 let from = nodeDisplayName(packet.from)
-                AppLogger.shared.log("[MSG] Encrypted from \(from) CH-hash:\(packet.channel) MQTT:\(packet.viaMqtt)", debug: true)
+                AppLogger.shared.log("[MSG] Encrypted from \(from) CH-hash:\(packet.channel) MQTT:\(packet.viaMqtt) PKI:\(packet.pkiEncrypted)", debug: true)
             }
         default:
             break
@@ -615,6 +685,10 @@ final class MeshtasticProtocolService {
         coreDataStore?.updateDeliveryState(requestId: data.requestID, state: deliveryState)
 
         if routingError == .none {
+            TelemetryDatabaseService.shared.markAckReceived(packetId: data.requestID)
+        }
+
+        if routingError == .none {
             AppLogger.shared.log(
                 "[ACK] Routing ACK for requestId=\(data.requestID) from \(String(format: "!%08x", packet.from))",
                 debug: SettingsService.shared.debugMessages
@@ -725,12 +799,14 @@ final class MeshtasticProtocolService {
 
         // If this is our own node
         if packet.from == myNodeId || myNodeId == 0 {
+            let existingFW = appState?.myNodeInfo?.firmwareVersion ?? ""
+            let hwModel = user.hwModel != .unset ? hardwareModelName(user.hwModel) : (appState?.myNodeInfo?.hardwareModel ?? "Unknown")
             appState?.myNodeInfo = MyNodeInfo(
                 nodeId: packet.from,
                 shortName: user.shortName,
                 longName: user.longName,
-                hardwareModel: hardwareModelName(user.hwModel),
-                firmwareVersion: ""
+                hardwareModel: hwModel,
+                firmwareVersion: existingFW
             )
         }
 
@@ -769,12 +845,14 @@ final class MeshtasticProtocolService {
         node.note = SettingsService.shared.note(for: info.num)
 
         if info.num == myNodeId {
+            let existingFW = appState?.myNodeInfo?.firmwareVersion ?? ""
+            let hwModel = user.hwModel != .unset ? hardwareModelName(user.hwModel) : (appState?.myNodeInfo?.hardwareModel ?? "Unknown")
             appState?.myNodeInfo = MyNodeInfo(
                 nodeId: info.num,
                 shortName: user.shortName,
                 longName: user.longName,
-                hardwareModel: hardwareModelName(user.hwModel),
-                firmwareVersion: ""
+                hardwareModel: hwModel,
+                firmwareVersion: existingFW
             )
         }
 
@@ -848,7 +926,11 @@ final class MeshtasticProtocolService {
             receivedConfigs[.bluetooth] = config
             AppLogger.shared.log("[Protocol] Config: Bluetooth", debug: SettingsService.shared.debugDevice)
         case .security:
-            AppLogger.shared.log("[Protocol] Config: Security", debug: SettingsService.shared.debugDevice)
+            let sec = config.security
+            if !sec.privateKey.isEmpty {
+                PkiDecryptionService.shared.setPrivateKey(sec.privateKey)
+            }
+            AppLogger.shared.log("[Protocol] Config: Security (pubKey=\(sec.publicKey.count)B, privKey=\(sec.privateKey.count)B)", debug: SettingsService.shared.debugDevice)
         case .sessionkey:
             // SessionkeyConfig is an empty message — the actual session key
             // comes via admin.sessionPasskey (handled in handleAdminPacket).
@@ -911,9 +993,43 @@ final class MeshtasticProtocolService {
         case .getModuleConfigResponse(let moduleConfig):
             handleModuleConfig(moduleConfig)
             AppLogger.shared.log("[Protocol] Admin getModuleConfigResponse received", debug: true)
+        case .getDeviceMetadataResponse(let meta):
+            handleDeviceMetadata(meta)
         default:
             break
         }
+    }
+
+    // MARK: - DeviceMetadata
+
+    private func handleDeviceMetadata(_ meta: Meshtastic_DeviceMetadata) {
+        if !meta.firmwareVersion.isEmpty {
+            appState?.myNodeInfo?.firmwareVersion = meta.firmwareVersion
+        }
+        if meta.hwModel != .unset {
+            appState?.myNodeInfo?.hardwareModel = hardwareModelName(meta.hwModel)
+        }
+        AppLogger.shared.log("[Protocol] DeviceMetadata: FW=\(meta.firmwareVersion), HW=\(meta.hwModel)", debug: SettingsService.shared.debugDevice)
+    }
+
+    private func requestDeviceMetadata() async {
+        await ensureSessionKey()
+        guard !sessionPasskey.isEmpty else { return }
+        var admin = Meshtastic_AdminMessage()
+        admin.getDeviceMetadataRequest = true
+        admin.sessionPasskey = sessionPasskey
+        await sendAdminMessage(admin)
+        AppLogger.shared.log("[Protocol] Requested DeviceMetadata", debug: SettingsService.shared.debugDevice)
+    }
+
+    private func requestSecurityConfig() async {
+        await ensureSessionKey()
+        guard !sessionPasskey.isEmpty else { return }
+        var admin = Meshtastic_AdminMessage()
+        admin.getConfigRequest = .securityConfig
+        admin.sessionPasskey = sessionPasskey
+        await sendAdminMessage(admin)
+        AppLogger.shared.log("[Protocol] Requested SecurityConfig", debug: SettingsService.shared.debugDevice)
     }
 
     // MARK: - Waypoint (portnum 8)
@@ -1030,6 +1146,17 @@ final class MeshtasticProtocolService {
             tracerouteResults.insert(result, at: 0)
             TracerouteStore.shared.save(result)
         }
+
+        // Insert traceroute hops into telemetry database
+        let traceHops = hops.enumerated().map { (i, hop) in
+            (nodeId: hop.nodeId, snrTowards: hop.snr, snrBack: nil as Float?)
+        }
+        TelemetryDatabaseService.shared.insertTracerouteHops(
+            requestId: packet.id,
+            sourceNodeId: myNodeId,
+            destNodeId: packet.from,
+            hops: traceHops
+        )
 
         // Inject as a channel message for visibility
         let ts = formatTime()
@@ -1322,30 +1449,55 @@ final class MeshtasticProtocolService {
         node.lastSeen = formatTime()
         node.lastHeard = Int32(Date().timeIntervalSince1970)
 
-        // Parse DeviceMetrics payload (portnum 67)
-        guard let metrics = try? Meshtastic_DeviceMetrics(serializedBytes: data.payload) else {
+        // Node position for day/night classification
+        let lat = node.latitude ?? 0
+        let lon = node.longitude ?? 0
+
+        // Parse the Telemetry envelope (contains a variant oneof)
+        guard let telemetry = try? Meshtastic_Telemetry(serializedBytes: data.payload) else {
             AppLogger.shared.log("[Protocol] Telemetry parse failed from \(nodeDisplayName(packet.from))", debug: SettingsService.shared.debugDevice)
             return
         }
 
-        // Update battery
-        if metrics.batteryLevel > 0 {
-            node.batteryLevel = metrics.batteryLevel
-            node.battery = metrics.batteryLevel <= 100 ? "\(metrics.batteryLevel)%" : "-"
+        switch telemetry.variant {
+        case .deviceMetrics(let metrics):
+            if metrics.batteryLevel > 0 {
+                node.batteryLevel = metrics.batteryLevel
+                node.battery = metrics.batteryLevel <= 100 ? "\(metrics.batteryLevel)%" : "-"
+            }
+            if metrics.voltage > 0 {
+                node.voltage = metrics.voltage
+            }
+            node.channelUtilization = metrics.channelUtilization
+            node.airUtilTx = metrics.airUtilTx
+
+            TelemetryDatabaseService.shared.insertDeviceTelemetry(
+                nodeId: packet.from,
+                batteryPercent: metrics.batteryLevel,
+                voltage: metrics.voltage,
+                channelUtilization: metrics.channelUtilization,
+                airUtilTx: metrics.airUtilTx,
+                uptimeSeconds: metrics.uptimeSeconds,
+                latitude: lat, longitude: lon
+            )
+
+            AppLogger.shared.log("[Protocol] DeviceMetrics from \(nodeDisplayName(packet.from)): bat=\(metrics.batteryLevel)% v=\(String(format: "%.2f", metrics.voltage))V chUtil=\(String(format: "%.1f", metrics.channelUtilization))% airTx=\(String(format: "%.1f", metrics.airUtilTx))%", debug: SettingsService.shared.debugDevice)
+
+        case .environmentMetrics(let env):
+            TelemetryDatabaseService.shared.insertEnvironmentTelemetry(
+                nodeId: packet.from,
+                temperature: env.temperature,
+                relativeHumidity: env.relativeHumidity,
+                barometricPressure: env.barometricPressure,
+                iaq: env.iaq,
+                latitude: lat, longitude: lon
+            )
+
+            AppLogger.shared.log("[Protocol] EnvironmentMetrics from \(nodeDisplayName(packet.from)): temp=\(String(format: "%.1f", env.temperature))°C hum=\(String(format: "%.0f", env.relativeHumidity))% pres=\(String(format: "%.0f", env.barometricPressure))hPa", debug: SettingsService.shared.debugDevice)
+
+        default:
+            AppLogger.shared.log("[Protocol] Telemetry variant \(String(describing: telemetry.variant)) from \(nodeDisplayName(packet.from))", debug: SettingsService.shared.debugDevice)
         }
-
-        // Update voltage
-        if metrics.voltage > 0 {
-            node.voltage = metrics.voltage
-        }
-
-        // Update channel utilization
-        node.channelUtilization = metrics.channelUtilization
-
-        // Update air utilization TX
-        node.airUtilTx = metrics.airUtilTx
-
-        AppLogger.shared.log("[Protocol] Telemetry from \(nodeDisplayName(packet.from)): bat=\(metrics.batteryLevel)% v=\(String(format: "%.2f", metrics.voltage))V chUtil=\(String(format: "%.1f", metrics.channelUtilization))% airTx=\(String(format: "%.1f", metrics.airUtilTx))%", debug: SettingsService.shared.debugDevice)
     }
 
     // MARK: - Channel Requests
@@ -1639,6 +1791,7 @@ final class MeshtasticProtocolService {
     func disconnect() {
         isDisconnecting = true
         stopHeartbeat()
+        PkiDecryptionService.shared.clearPrivateKey()
         connectionService?.disconnect()
     }
 
@@ -1780,6 +1933,15 @@ final class MeshtasticProtocolService {
         )
         node.colorHex = SettingsService.shared.colorHex(for: num)
         node.note = SettingsService.shared.note(for: num)
+        if !user.publicKey.isEmpty {
+            node.publicKey = user.publicKey
+            NodeKeyService.shared.checkAndUpdate(
+                nodeId: num,
+                shortName: user.shortName,
+                longName: user.longName,
+                publicKey: user.publicKey
+            )
+        }
         return node
     }
 
