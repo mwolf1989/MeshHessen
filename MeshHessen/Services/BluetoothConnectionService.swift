@@ -31,6 +31,9 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
     private var pollingTask: Task<Void, Never>?
     private var pendingWriteData: Data?
     private var writeContinuation: CheckedContinuation<Void, Error>?
+    private let writeTurnLock = NSLock()
+    private var writeTurnHeld = false
+    private var writeTurnWaiters: [CheckedContinuation<Void, Never>] = []
 
     // Discovered peripherals during scan (keyed by UUID for fast lookup)
     private var knownPeripherals: [UUID: CBPeripheral] = [:]
@@ -76,6 +79,38 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
             writeContinuation = nil
             return c
         }
+    }
+
+    /// Ensures only one BLE write is in flight at a time.
+    /// CoreBluetooth callbacks are completion-based, so overlapping writes can
+    /// overwrite continuation state and lead to false timeouts.
+    private func waitForWriteTurn() async {
+        await withCheckedContinuation { cont in
+            var resumeNow = false
+            writeTurnLock.withLock {
+                if !writeTurnHeld {
+                    writeTurnHeld = true
+                    resumeNow = true
+                } else {
+                    writeTurnWaiters.append(cont)
+                }
+            }
+            if resumeNow {
+                cont.resume()
+            }
+        }
+    }
+
+    private func releaseWriteTurn() {
+        var next: CheckedContinuation<Void, Never>?
+        writeTurnLock.withLock {
+            if writeTurnWaiters.isEmpty {
+                writeTurnHeld = false
+            } else {
+                next = writeTurnWaiters.removeFirst()
+            }
+        }
+        next?.resume()
     }
 
     func connect(parameters: ConnectionParameters) async throws {
@@ -139,6 +174,10 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
             AppLogger.shared.log("[BLE] Write failed: not connected", debug: SettingsService.shared.debugBluetooth)
             throw ConnectionError.notConnected
         }
+
+        await waitForWriteTurn()
+        defer { releaseWriteTurn() }
+
         let writeType: CBCharacteristicWriteType = char.properties.contains(.writeWithoutResponse)
             ? .withoutResponse : .withResponse
 
