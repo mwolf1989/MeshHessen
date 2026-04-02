@@ -9,6 +9,7 @@ struct MainView: View {
 
     @State private var showConnectSheet = false
     @State private var showDeviceConfig = false
+    @State private var showDisconnectConfirmation = false
     @State private var selectedNodeId: UInt32?
     @Environment(\.openWindow) private var openWindow
 
@@ -78,6 +79,14 @@ struct MainView: View {
                 AppLogger.shared.log("[Export] Failed: \(error.localizedDescription)")
             }
         }
+        .alert("Disconnect?", isPresented: $showDisconnectConfirmation) {
+            Button("Disconnect", role: .destructive) {
+                Task { await coordinator.disconnect() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Do you really want to disconnect from the connected device?")
+        }
     }
 
     // MARK: - Tab Content
@@ -122,7 +131,7 @@ struct MainView: View {
         ToolbarItem(placement: .navigation) {
             Button {
                 if appState.connectionState.isConnected {
-                    Task { await coordinator.disconnect() }
+                    showDisconnectConfirmation = true
                 } else {
                     showConnectSheet = true
                 }
