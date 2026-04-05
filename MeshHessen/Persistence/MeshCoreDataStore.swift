@@ -333,7 +333,10 @@ final class MeshCoreDataStore {
             object.setValue(node.airUtilTx, forKey: "airUtilTx")
             object.setValue(node.distanceMeters, forKey: "distanceMeters")
             object.setValue(node.viaMqtt, forKey: "viaMqtt")
-            object.setValue(node.isPinned, forKey: "isPinned")
+            // Preserve existing pin state — only set to true, never overwrite with false
+            if node.isPinned {
+                object.setValue(true, forKey: "isPinned")
+            }
 
             self.save(context: context, label: "node")
         }

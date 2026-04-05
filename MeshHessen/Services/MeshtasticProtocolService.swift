@@ -1799,7 +1799,7 @@ final class MeshtasticProtocolService {
 
     private func startHeartbeat() {
         stopHeartbeat()
-        heartbeatTask = Task { [weak self] in
+        heartbeatTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 guard !Task.isCancelled else { break }
