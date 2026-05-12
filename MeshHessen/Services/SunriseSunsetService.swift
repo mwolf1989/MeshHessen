@@ -12,7 +12,6 @@ struct SunriseSunsetService {
         }
 
         let calendar = Calendar.current
-        let dayOfYear = Double(calendar.ordinality(of: .day, in: .year, for: date) ?? 1)
         let year = Double(calendar.component(.year, from: date))
 
         // Julian day

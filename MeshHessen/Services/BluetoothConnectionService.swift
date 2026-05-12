@@ -34,6 +34,9 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
     private let writeTurnLock = NSLock()
     private var writeTurnHeld = false
     private var writeTurnWaiters: [CheckedContinuation<Void, Never>] = []
+    private let drainLock = NSLock()
+    private var needsDrain = false
+    private var isDraining = false
 
     // Discovered peripherals during scan (keyed by UUID for fast lookup)
     private var knownPeripherals: [UUID: CBPeripheral] = [:]
@@ -81,6 +84,11 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
         }
     }
 
+    /// Thread-safe check whether a write response callback is still pending.
+    private var hasPendingWriteContinuation: Bool {
+        continuationLock.withLock { writeContinuation != nil }
+    }
+
     /// Ensures only one BLE write is in flight at a time.
     /// CoreBluetooth callbacks are completion-based, so overlapping writes can
     /// overwrite continuation state and lead to false timeouts.
@@ -111,6 +119,50 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
             }
         }
         next?.resume()
+    }
+
+    private func requestDrain() {
+        var shouldStart = false
+        drainLock.withLock {
+            needsDrain = true
+            if !isDraining, !hasPendingWriteContinuation {
+                isDraining = true
+                shouldStart = true
+            }
+        }
+
+        guard shouldStart else { return }
+        Task { await runDrainLoop() }
+    }
+
+    private func runDrainLoop() async {
+        while true {
+            guard !hasPendingWriteContinuation else { break }
+
+            drainLock.withLock {
+                needsDrain = false
+            }
+
+            await drainFromRadio()
+
+            let shouldContinue = drainLock.withLock { needsDrain }
+            if !shouldContinue {
+                break
+            }
+        }
+
+        var shouldRestart = false
+        drainLock.withLock {
+            isDraining = false
+            if needsDrain, !hasPendingWriteContinuation {
+                isDraining = true
+                shouldRestart = true
+            }
+        }
+
+        if shouldRestart {
+            Task { await runDrainLoop() }
+        }
     }
 
     func connect(parameters: ConnectionParameters) async throws {
@@ -185,8 +237,7 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
 
         if writeType == .withoutResponse {
             p.writeValue(data, for: char, type: .withoutResponse)
-            // Trigger a read after write (same as Windows client)
-            Task { await self.drainFromRadio() }
+            requestDrain()
         } else {
             // Timeout prevents hanging forever if didWriteValueFor is never called
             return try await withThrowingTaskGroup(of: Void.self) { group in
@@ -241,7 +292,7 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
     }
 
     private func startPolling() {
-        AppLogger.shared.log("[BLE] Starting polling loop (35ms interval)", debug: SettingsService.shared.debugBluetooth)
+        AppLogger.shared.log("[BLE] Starting polling fallback (35ms interval)", debug: SettingsService.shared.debugBluetooth)
         pollingTask = Task { [weak self] in
             var iteration = 0
             while !Task.isCancelled {
@@ -249,7 +300,7 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
                     AppLogger.shared.log("[BLE] Polling stopped: not connected", debug: SettingsService.shared.debugBluetooth)
                     break
                 }
-                await self.drainFromRadio()
+                self.requestDrain()
                 try? await Task.sleep(for: .milliseconds(35))
                 iteration += 1
                 if iteration % 150 == 0 { // Log every ~5 seconds
@@ -262,16 +313,17 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
 
     /// Triggers an immediate drain outside the polling loop (e.g. on fromNum notification).
     private func triggerImmediateDrain() {
-        Task { await drainFromRadio() }
+        requestDrain()
     }
 
     private func drainFromRadio() async {
         guard let p = peripheral, let char = fromRadioChar else { return }
+        guard !hasPendingWriteContinuation else { return }
         // Read multiple packets in a burst until no data is returned.
         // Each readValue triggers didUpdateValueFor asynchronously;
         // we read up to 32 times per drain to pull all queued packets.
         for _ in 0..<32 {
-            guard isConnected else { break }
+            guard isConnected, !hasPendingWriteContinuation else { break }
             p.readValue(for: char)
             try? await Task.sleep(for: .milliseconds(10))
         }
@@ -418,8 +470,13 @@ extension BluetoothConnectionService: CBPeripheralDelegate {
 
         isConnected = true
         onConnectionStateChanged?(true)
-        startPolling()
-        AppLogger.shared.log("[BLE] Connection ready, started polling", debug: SettingsService.shared.debugBluetooth)
+        if fromNumChar == nil {
+            startPolling()
+            AppLogger.shared.log("[BLE] Connection ready, using polling fallback", debug: SettingsService.shared.debugBluetooth)
+        } else {
+            triggerImmediateDrain()
+            AppLogger.shared.log("[BLE] Connection ready, using fromNum-driven drain", debug: SettingsService.shared.debugBluetooth)
+        }
         connectTimeoutTask?.cancel()
         connectTimeoutTask = nil
         takeConnectContinuation()?.resume()
@@ -453,8 +510,7 @@ extension BluetoothConnectionService: CBPeripheralDelegate {
             } else {
                 AppLogger.shared.log("[BLE] Write completed successfully", debug: SettingsService.shared.debugBluetooth)
                 cont.resume()
-                // Trigger drain after write
-                Task { await self.drainFromRadio() }
+                triggerImmediateDrain()
             }
         }
     }

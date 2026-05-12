@@ -3,7 +3,6 @@ import Network
 
 /// TCP/WiFi connection to a Meshtastic node
 /// Uses Network.framework (NWConnection) for async TCP
-@MainActor
 final class TcpConnectionService: ConnectionService {
     let type: ConnectionType = .tcp
     var onDataReceived: ((Data) -> Void)?
@@ -13,9 +12,6 @@ final class TcpConnectionService: ConnectionService {
     private var didNotifyDisconnected: Bool = false
 
     private var connection: NWConnection?
-    private let writeQueue = DispatchQueue(label: "tcp.write")
-
-    @MainActor
     func connect(parameters: ConnectionParameters) async throws {
         guard case .tcp(let hostname, let port) = parameters else {
             AppLogger.shared.log("[TCP] Invalid connection parameters", debug: true)
@@ -94,7 +90,6 @@ final class TcpConnectionService: ConnectionService {
         AppLogger.shared.log("[TCP] Disconnected", debug: true)
     }
 
-    @MainActor
     func write(_ data: Data) async throws {
         guard let conn = connection else {
             AppLogger.shared.log("[TCP] Write failed: not connected", debug: true)
