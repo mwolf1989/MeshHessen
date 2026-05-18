@@ -80,6 +80,7 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
         continuationLock.withLock {
             let c = writeContinuation
             writeContinuation = nil
+            pendingWriteData = nil
             return c
         }
     }
@@ -135,6 +136,13 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
         Task { await runDrainLoop() }
     }
 
+    private func resetDrainState() {
+        drainLock.withLock {
+            needsDrain = false
+            isDraining = false
+        }
+    }
+
     private func runDrainLoop() async {
         while true {
             guard !hasPendingWriteContinuation else { break }
@@ -162,6 +170,24 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
 
         if shouldRestart {
             Task { await runDrainLoop() }
+        }
+    }
+
+    private func writeWithResponse(_ data: Data, to characteristic: CBCharacteristic, on peripheral: CBPeripheral) async throws {
+        let timeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(10))
+            guard let self else { return }
+            if let cont = self.takeWriteContinuation() {
+                AppLogger.shared.log("[BLE] Write timed out after 10s", debug: true)
+                cont.resume(throwing: ConnectionError.timeout)
+            }
+        }
+        defer { timeoutTask.cancel() }
+
+        try await withCheckedThrowingContinuation { cont in
+            storeWriteContinuation(cont)
+            pendingWriteData = data
+            peripheral.writeValue(data, for: characteristic, type: .withResponse)
         }
     }
 
@@ -206,8 +232,10 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
         connectTimeoutTask?.cancel()
         connectTimeoutTask = nil
         takeConnectContinuation()?.resume(throwing: ConnectionError.cancelled)
+        takeWriteContinuation()?.resume(throwing: ConnectionError.cancelled)
         pollingTask?.cancel()
         pollingTask = nil
+        resetDrainState()
         centralManager.stopScan()
         if let p = peripheral {
             centralManager.cancelPeripheralConnection(p)
@@ -239,25 +267,7 @@ final class BluetoothConnectionService: NSObject, ConnectionService {
             p.writeValue(data, for: char, type: .withoutResponse)
             requestDrain()
         } else {
-            // Timeout prevents hanging forever if didWriteValueFor is never called
-            return try await withThrowingTaskGroup(of: Void.self) { group in
-                group.addTask {
-                    try await withCheckedThrowingContinuation { cont in
-                        self.storeWriteContinuation(cont)
-                        self.pendingWriteData = data
-                        p.writeValue(data, for: char, type: .withResponse)
-                    }
-                }
-                group.addTask {
-                    try await Task.sleep(for: .seconds(10))
-                    if let cont = self.takeWriteContinuation() {
-                        AppLogger.shared.log("[BLE] Write timed out after 10s", debug: true)
-                        cont.resume(throwing: ConnectionError.timeout)
-                    }
-                }
-                try await group.next()
-                group.cancelAll()
-            }
+            try await writeWithResponse(data, to: char, on: p)
         }
     }
 
@@ -394,6 +404,9 @@ extension BluetoothConnectionService: CBCentralManagerDelegate {
         }
         isConnected = false
         pollingTask?.cancel()
+        pollingTask = nil
+        resetDrainState()
+        takeWriteContinuation()?.resume(throwing: ConnectionError.cancelled)
         onConnectionStateChanged?(false)
     }
 
@@ -470,12 +483,12 @@ extension BluetoothConnectionService: CBPeripheralDelegate {
 
         isConnected = true
         onConnectionStateChanged?(true)
-        if fromNumChar == nil {
-            startPolling()
-            AppLogger.shared.log("[BLE] Connection ready, using polling fallback", debug: SettingsService.shared.debugBluetooth)
-        } else {
+        startPolling()
+        if fromNumChar != nil {
             triggerImmediateDrain()
-            AppLogger.shared.log("[BLE] Connection ready, using fromNum-driven drain", debug: SettingsService.shared.debugBluetooth)
+            AppLogger.shared.log("[BLE] Connection ready, using fromNum notifications with polling fallback", debug: SettingsService.shared.debugBluetooth)
+        } else {
+            AppLogger.shared.log("[BLE] Connection ready, using polling fallback", debug: SettingsService.shared.debugBluetooth)
         }
         connectTimeoutTask?.cancel()
         connectTimeoutTask = nil

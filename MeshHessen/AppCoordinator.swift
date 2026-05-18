@@ -434,8 +434,10 @@ final class AppCoordinator {
         let serviceID = ObjectIdentifier(service)
 
         service.onDataReceived = { [weak self] data in
-            guard let self, self.activeConnection.map({ ObjectIdentifier($0) }) == serviceID else { return }
-            self.protocol_.onDataReceived(data)
+            Task { @MainActor in
+                guard let self, self.activeConnection.map({ ObjectIdentifier($0) }) == serviceID else { return }
+                self.protocol_.onDataReceived(data)
+            }
         }
         service.onConnectionStateChanged = { [weak self] connected in
             Task { @MainActor in
