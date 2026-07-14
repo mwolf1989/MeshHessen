@@ -108,8 +108,7 @@ struct ChannelChatView: View {
         }
         .alert("Nachrichten löschen?", isPresented: $showDeleteConfirmation) {
             Button("Löschen", role: .destructive) {
-                appState.clearChannelMessages(channelIndex)
-                coordinator.coreDataStore.deleteChannelMessages(channelIndex: channelIndex)
+                coordinator.clearChannelMessages(channelIndex)
             }
             Button("Abbrechen", role: .cancel) {}
         } message: {
@@ -136,4 +135,3 @@ struct ChannelChatView: View {
         }
     }
 }
-

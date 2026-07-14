@@ -159,8 +159,7 @@ private struct DMConversationView: View {
         }
         .alert("Nachrichten löschen?", isPresented: $showDeleteConfirmation) {
             Button("Löschen", role: .destructive) {
-                appState.clearDMMessages(for: conversation.id)
-                coordinator.coreDataStore.deleteConversationMessages(partnerNodeId: conversation.id)
+                coordinator.clearDirectMessages(for: conversation.id)
             }
             Button("Abbrechen", role: .cancel) {}
         } message: {
@@ -179,4 +178,3 @@ private struct DMConversationView: View {
         }
     }
 }
-

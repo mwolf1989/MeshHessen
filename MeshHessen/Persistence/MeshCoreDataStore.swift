@@ -214,7 +214,7 @@ final class MeshCoreDataStore {
     /// Deletes all messages for a specific channel.
     func deleteChannelMessages(channelIndex: Int) {
         let context = persistenceController.newBackgroundContext()
-        context.perform {
+        context.performAndWait {
             let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
             request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
                 NSPredicate(format: "isDirect == NO"),
@@ -231,7 +231,7 @@ final class MeshCoreDataStore {
     /// Deletes all DM messages for a specific conversation partner.
     func deleteConversationMessages(partnerNodeId: UInt32) {
         let context = persistenceController.newBackgroundContext()
-        context.perform {
+        context.performAndWait {
             let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
             request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
                 NSPredicate(format: "isDirect == YES"),

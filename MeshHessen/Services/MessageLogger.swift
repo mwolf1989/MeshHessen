@@ -26,10 +26,14 @@ final class MessageLogger {
         return f
     }()
 
-    private init() {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        logsDir = support.appendingPathComponent("MeshHessen/logs", isDirectory: true)
-        try? FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
+    init(logsDir: URL? = nil) {
+        if let logsDir {
+            self.logsDir = logsDir
+        } else {
+            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            self.logsDir = support.appendingPathComponent("MeshHessen/logs", isDirectory: true)
+        }
+        try? FileManager.default.createDirectory(at: self.logsDir, withIntermediateDirectories: true)
     }
 
     // MARK: - Write
@@ -56,6 +60,22 @@ final class MessageLogger {
     func loadDirectMessages(partnerNodeId: UInt32, partnerName: String, limit: Int? = nil) -> [MessageItem] {
         let fileName = dmFileName(partnerNodeId: partnerNodeId, partnerName: partnerName)
         return loadMessages(from: fileName, channelIndex: 0, channelName: "", limit: limit ?? defaultLoadLimit)
+    }
+
+    // MARK: - Delete
+
+    /// Removes every legacy log for a channel, including files written before a
+    /// channel rename. The serial logger queue ensures earlier appends finish first.
+    @discardableResult
+    func deleteChannelMessages(channelIndex: Int) -> Int {
+        deleteLogFiles(withPrefix: "Channel_\(channelIndex)_")
+    }
+
+    /// Removes every legacy log for a direct-message partner, regardless of the
+    /// display name that was part of the original file name.
+    @discardableResult
+    func deleteDirectMessages(partnerNodeId: UInt32) -> Int {
+        deleteLogFiles(withPrefix: "DM_\(String(format: "%08x", partnerNodeId))_")
     }
 
     /// Returns all DM log file names with their partner node IDs.
@@ -151,6 +171,25 @@ final class MessageLogger {
             } else {
                 try? data.write(to: url)
             }
+        }
+    }
+
+    private func deleteLogFiles(withPrefix prefix: String) -> Int {
+        queue.sync {
+            let fileManager = FileManager.default
+            guard let files = try? fileManager.contentsOfDirectory(atPath: logsDir.path) else { return 0 }
+
+            var deleted = 0
+            for file in files where file.hasPrefix(prefix) && file.hasSuffix(".log") {
+                let url = logsDir.appendingPathComponent(file)
+                do {
+                    try fileManager.removeItem(at: url)
+                    deleted += 1
+                } catch {
+                    AppLogger.shared.log("[History] Failed to delete \(file): \(error.localizedDescription)")
+                }
+            }
+            return deleted
         }
     }
 

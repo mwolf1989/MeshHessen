@@ -260,6 +260,29 @@ final class AppCoordinator {
 
     // MARK: - Message history
 
+    /// Deletes channel history from every persistence layer before returning.
+    func clearChannelMessages(_ channelIndex: Int) {
+        appState.clearChannelMessages(channelIndex)
+        coreDataStore.deleteChannelMessages(channelIndex: channelIndex)
+        let deletedLogs = MessageLogger.shared.deleteChannelMessages(channelIndex: channelIndex)
+        AppLogger.shared.log(
+            "[History] Cleared channel \(channelIndex) history and \(deletedLogs) legacy log file(s)",
+            debug: true
+        )
+    }
+
+    /// Deletes direct-message history from every persistence layer before returning.
+    func clearDirectMessages(for nodeId: UInt32) {
+        appState.clearDMMessages(for: nodeId)
+        coreDataStore.deleteConversationMessages(partnerNodeId: nodeId)
+        let deletedLogs = MessageLogger.shared.deleteDirectMessages(partnerNodeId: nodeId)
+        let formattedNodeId = String(format: "!%08x", nodeId)
+        AppLogger.shared.log(
+            "[History] Cleared direct-message history for \(formattedNodeId) and \(deletedLogs) legacy log file(s)",
+            debug: true
+        )
+    }
+
     /// Loads previous messages from CoreData into app state.
     /// Falls back to legacy log files only when CoreData is empty.
     /// Called after protocol initialization completes so channel info is available.
