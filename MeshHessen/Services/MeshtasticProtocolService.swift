@@ -1080,9 +1080,21 @@ final class MeshtasticProtocolService {
     /// Completed traceroute results (most recent first)
     var tracerouteResults: [TracerouteResult] = []
 
+    /// Uses the generated protobuf decoder so malformed/truncated payloads throw
+    /// instead of advancing a hand-written cursor beyond the payload bounds.
+    nonisolated static func decodeRouteDiscovery(_ payload: Data) throws -> Meshtastic_RouteDiscovery {
+        try Meshtastic_RouteDiscovery(serializedBytes: payload)
+    }
+
     private func handleTraceroutePacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
-        guard let route = try? Meshtastic_RouteDiscovery(serializedBytes: data.payload) else {
-            AppLogger.shared.log("[Protocol] Traceroute parse failed from \(String(format: "!%08x", packet.from))", debug: SettingsService.shared.debugDevice)
+        let route: Meshtastic_RouteDiscovery
+        do {
+            route = try Self.decodeRouteDiscovery(data.payload)
+        } catch {
+            AppLogger.shared.log(
+                "[Protocol] Traceroute parse failed from \(String(format: "!%08x", packet.from)): \(error.localizedDescription)",
+                debug: SettingsService.shared.debugDevice
+            )
             return
         }
 
@@ -1096,8 +1108,7 @@ final class MeshtasticProtocolService {
             debug: SettingsService.shared.debugDevice
         )
 
-        // Parse extended SNR fields from raw payload (field 2: snr_towards, field 3: route_back, field 4: snr_back)
-        let snrTowards = parseRepeatedSignedInts(data.payload, fieldNumber: 2)
+        let snrTowards = route.snrTowards
 
         // Build TracerouteResult
         var hops: [TracerouteHop] = []
@@ -1175,48 +1186,6 @@ final class MeshtasticProtocolService {
             senderNote: node?.note ?? ""
         )
         deliver(msg)
-    }
-
-    /// Parse repeated signed int (zigzag or sint32) fields from protobuf payload
-    private func parseRepeatedSignedInts(_ data: Data, fieldNumber: UInt64) -> [Int32] {
-        var results: [Int32] = []
-        var idx = data.startIndex
-        while idx < data.endIndex {
-            let (tag, tagBytes) = decodeVarint(data, from: idx)
-            guard tagBytes > 0 else { break }
-            idx += tagBytes
-            let fn = tag >> 3
-            let wt = tag & 0x07
-
-            if fn == fieldNumber && wt == 0 {
-                let (value, vBytes) = decodeVarint(data, from: idx)
-                guard vBytes > 0 else { break }
-                idx += vBytes
-                // ZigZag decode
-                results.append(Int32(bitPattern: UInt32(value >> 1) ^ (0 &- UInt32(value & 1))))
-            } else if fn == fieldNumber && wt == 2 {
-                // Packed repeated
-                let (length, lBytes) = decodeVarint(data, from: idx)
-                guard lBytes > 0 else { break }
-                idx += lBytes
-                let end = idx + Int(length)
-                while idx < end {
-                    let (value, vBytes) = decodeVarint(data, from: idx)
-                    guard vBytes > 0 else { break }
-                    idx += vBytes
-                    results.append(Int32(bitPattern: UInt32(value >> 1) ^ (0 &- UInt32(value & 1))))
-                }
-            } else {
-                switch wt {
-                case 0: let (_, vb) = decodeVarint(data, from: idx); idx += max(vb, 1)
-                case 1: idx += 8
-                case 2: let (len, lb) = decodeVarint(data, from: idx); idx += lb + Int(len)
-                case 5: idx += 4
-                default: return results
-                }
-            }
-        }
-        return results
     }
 
     /// Send a traceroute request to a target node
