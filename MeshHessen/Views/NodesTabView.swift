@@ -98,7 +98,7 @@ struct NodesTabView: View {
             .width(80)
 
             TableColumn("Note", value: \.note) { node in
-                TextField("Notiz…", text: Binding(
+                TextField("", text: Binding(
                     get: { node.note },
                     set: { newVal in
                         node.note = newVal
@@ -107,6 +107,7 @@ struct NodesTabView: View {
                 ))
                 .textFieldStyle(.plain)
                 .font(.caption)
+                .accessibilityLabel("Note")
             }
             .width(min: 80, ideal: 130)
         }
