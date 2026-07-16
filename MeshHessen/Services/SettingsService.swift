@@ -10,6 +10,9 @@ final class SettingsService {
 
     private init() {
         self.fontSizeStep = defaults.integer(forKey: "fontSizeStep")
+        self.nodeSortOrder = NodeSortOrder(
+            rawValue: defaults.string(forKey: "nodeSortOrder") ?? ""
+        ) ?? .name
     }
 
     // MARK: - General
@@ -44,6 +47,15 @@ final class SettingsService {
                 defaults.set(clamped, forKey: "fontSizeStep")
                 AppLogger.shared.log("[Settings] fontSizeStep: \(clamped)", debug: true)
             }
+        }
+    }
+
+    /// Sidebar node ordering. Existing installations default to alphabetical order.
+    var nodeSortOrder: NodeSortOrder {
+        didSet {
+            guard nodeSortOrder != oldValue else { return }
+            defaults.set(nodeSortOrder.rawValue, forKey: "nodeSortOrder")
+            AppLogger.shared.log("[Settings] nodeSortOrder: \(nodeSortOrder.rawValue)", debug: true)
         }
     }
 

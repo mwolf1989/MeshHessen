@@ -1,5 +1,38 @@
 import Foundation
 
+/// Persistent ordering choices for the sidebar node list.
+enum NodeSortOrder: String, CaseIterable, Identifiable {
+    case name
+    case lastHeard
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .name:      return String(localized: "Name")
+        case .lastHeard: return String(localized: "Last Heard")
+        }
+    }
+
+    func sorted(_ nodes: [NodeInfo]) -> [NodeInfo] {
+        nodes.sorted(by: areInIncreasingOrder)
+    }
+
+    private func areInIncreasingOrder(_ lhs: NodeInfo, _ rhs: NodeInfo) -> Bool {
+        if self == .lastHeard, lhs.lastHeard != rhs.lastHeard {
+            if lhs.lastHeard == 0 { return false }
+            if rhs.lastHeard == 0 { return true }
+            return lhs.lastHeard > rhs.lastHeard
+        }
+
+        let nameComparison = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+        if nameComparison == .orderedSame {
+            return lhs.id < rhs.id
+        }
+        return nameComparison == .orderedAscending
+    }
+}
+
 /// Represents a node in the Meshtastic mesh network
 @Observable
 final class NodeInfo: Identifiable {

@@ -4,11 +4,16 @@ import SwiftUI
 struct NodeListView: View {
     @Environment(\.appState) private var appState
     @Environment(\.openWindow) private var openWindow
+    @State private var settings = SettingsService.shared
     @Binding var selectedNodeId: UInt32?
+
+    private var sortedNodes: [NodeInfo] {
+        settings.nodeSortOrder.sorted(appState.filteredNodes)
+    }
 
     var body: some View {
         List(selection: $selectedNodeId) {
-            ForEach(appState.filteredNodes) { node in
+            ForEach(sortedNodes) { node in
                 NodeRowView(node: node)
                     .tag(node.id)
                     .contextMenu {
@@ -22,6 +27,19 @@ struct NodeListView: View {
                             NSPasteboard.general.setString(node.nodeId, forType: .string)
                         }
                         Divider()
+                        Menu("Sort By") {
+                            ForEach(NodeSortOrder.allCases) { sortOrder in
+                                Button {
+                                    settings.nodeSortOrder = sortOrder
+                                } label: {
+                                    if settings.nodeSortOrder == sortOrder {
+                                        Label(sortOrder.displayName, systemImage: "checkmark")
+                                    } else {
+                                        Text(sortOrder.displayName)
+                                    }
+                                }
+                            }
+                        }
                         Menu("Set Color") {
                             ForEach(nodeColorPresets, id: \.hex) { preset in
                                 Button {

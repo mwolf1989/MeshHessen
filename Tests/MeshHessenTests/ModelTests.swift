@@ -95,6 +95,44 @@ struct NavigationStateTests {
 @Suite("Model Types")
 struct ModelTests {
 
+    @Test("Node sorting is alphabetical and case-insensitive")
+    func nodeSortByName() {
+        let zulu = NodeInfo(id: 1, nodeId: "!00000001", shortName: "Z", longName: "zulu")
+        let alpha = NodeInfo(id: 2, nodeId: "!00000002", shortName: "A", longName: "Alpha")
+
+        #expect(NodeSortOrder.name.sorted([zulu, alpha]).map(\.id) == [2, 1])
+    }
+
+    @Test("Last-heard sorting puts newest nodes first")
+    func nodeSortByLastHeard() {
+        let older = NodeInfo(id: 1, nodeId: "!00000001", shortName: "O", longName: "Older")
+        older.lastHeard = 100
+        let newer = NodeInfo(id: 2, nodeId: "!00000002", shortName: "N", longName: "Newer")
+        newer.lastHeard = 200
+
+        #expect(NodeSortOrder.lastHeard.sorted([older, newer]).map(\.id) == [2, 1])
+    }
+
+    @Test("Last-heard sorting puts never-heard nodes last")
+    func nodeSortNeverHeardLast() {
+        let neverHeard = NodeInfo(id: 1, nodeId: "!00000001", shortName: "N", longName: "Never")
+        let heard = NodeInfo(id: 2, nodeId: "!00000002", shortName: "H", longName: "Heard")
+        heard.lastHeard = 100
+
+        #expect(NodeSortOrder.lastHeard.sorted([neverHeard, heard]).map(\.id) == [2, 1])
+    }
+
+    @Test("Node sorting uses node ID as a deterministic final tie-breaker")
+    func nodeSortStableTie() {
+        let higherId = NodeInfo(id: 2, nodeId: "!00000002", shortName: "S", longName: "Same")
+        higherId.lastHeard = 100
+        let lowerId = NodeInfo(id: 1, nodeId: "!00000001", shortName: "S", longName: "same")
+        lowerId.lastHeard = 100
+
+        #expect(NodeSortOrder.name.sorted([higherId, lowerId]).map(\.id) == [1, 2])
+        #expect(NodeSortOrder.lastHeard.sorted([higherId, lowerId]).map(\.id) == [1, 2])
+    }
+
     @Test("NodeInfo initializer sets name from longName")
     func nodeInfoName() {
         let node = NodeInfo(id: 1, nodeId: "!00000001", shortName: "SH", longName: "Long Name")
