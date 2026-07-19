@@ -12,6 +12,50 @@ import SwiftProtobuf
 @Observable
 @MainActor
 final class MeshtasticProtocolService {
+    struct DeviceConfigSnapshot: Equatable {
+        var device: Meshtastic_Config.DeviceConfig
+        var position: Meshtastic_Config.PositionConfig
+        var lora: Meshtastic_Config.LoRaConfig
+        var bluetooth: Meshtastic_Config.BluetoothConfig
+        var network: Meshtastic_Config.NetworkConfig
+        var display: Meshtastic_Config.DisplayConfig
+        var power: Meshtastic_Config.PowerConfig
+        var mqtt: Meshtastic_ModuleConfig.MQTTConfig
+    }
+
+    enum DeviceConfigError: LocalizedError {
+        case notConnected
+        case missingSessionKey
+        case requestFailed
+        case incompleteResponse([String])
+        case writeFailed(String)
+        case verificationFailed([String])
+        case verificationTimedOut
+
+        var errorDescription: String? {
+            switch self {
+            case .notConnected:
+                return String(localized: "The device is not connected.")
+            case .missingSessionKey:
+                return String(localized: "The device did not provide an admin session key.")
+            case .requestFailed:
+                return String(localized: "The configuration request could not be sent.")
+            case .incompleteResponse(let categories):
+                return String(
+                    localized: "The device returned an incomplete configuration: \(categories.joined(separator: ", "))."
+                )
+            case .writeFailed(let category):
+                return String(localized: "The configuration for \(category) could not be sent.")
+            case .verificationFailed(let categories):
+                return String(
+                    localized: "The device did not retain the configuration for: \(categories.joined(separator: ", "))."
+                )
+            case .verificationTimedOut:
+                return String(localized: "The saved configuration could not be verified after reconnecting.")
+            }
+        }
+    }
+
     // MARK: - Singleton / State
     weak var appState: AppState?
     var coreDataStore: MeshCoreDataStore?
@@ -602,16 +646,7 @@ final class MeshtasticProtocolService {
 
     private func handleEmojiReaction(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
         let targetPacketId = data.replyID
-
-        // emoji field is a fixed32 Unicode scalar value
-        let emojiStr: String
-        if data.emoji != 0, let scalar = Unicode.Scalar(data.emoji) {
-            emojiStr = String(scalar)
-        } else if let textEmoji = String(bytes: data.payload, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !textEmoji.isEmpty {
-            emojiStr = textEmoji
-        } else {
-            emojiStr = "👍"
-        }
+        let emojiStr = Self.decodeEmojiReaction(data)
 
         appState?.addReaction(emoji: emojiStr, from: packet.from, toPacketId: targetPacketId)
 
@@ -631,17 +666,41 @@ final class MeshtasticProtocolService {
         packet.hopLimit = 7
         packet.wantAck = true
 
-        var data = Meshtastic_Data()
-        data.portnum = .textMessageApp
-        data.payload = emoji.data(using: .utf8) ?? Data()
-        data.replyID = toPacketId
-        data.emoji = emoji.unicodeScalars.first.map { UInt32($0.value) } ?? 0
+        let data = Self.makeEmojiReactionData(emoji: emoji, replyID: toPacketId)
 
         packet.decoded = data
         await sendToRadio(packet: packet)
 
         // Apply reaction locally
         appState?.addReaction(emoji: emoji, from: myNodeId, toPacketId: toPacketId)
+    }
+
+    /// Meshtastic uses `emoji` as a boolean marker. The actual (possibly
+    /// multi-scalar) emoji is UTF-8 encoded in the payload.
+    nonisolated static func decodeEmojiReaction(_ data: Meshtastic_Data) -> String {
+        if let payloadEmoji = String(bytes: data.payload, encoding: .utf8),
+           !payloadEmoji.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return payloadEmoji
+        }
+
+        // Compatibility with older MeshHessen builds that incorrectly stored a
+        // single Unicode scalar in the marker field.
+        if data.emoji > 1,
+           let scalar = Unicode.Scalar(data.emoji),
+           !CharacterSet.controlCharacters.contains(scalar) {
+            return String(scalar)
+        }
+
+        return "👍"
+    }
+
+    nonisolated static func makeEmojiReactionData(emoji: String, replyID: UInt32) -> Meshtastic_Data {
+        var data = Meshtastic_Data()
+        data.portnum = .textMessageApp
+        data.payload = Data(emoji.utf8)
+        data.replyID = replyID
+        data.emoji = 1
+        return data
     }
 
     // MARK: - Routing / ACK
@@ -1078,7 +1137,8 @@ final class MeshtasticProtocolService {
     var pendingTraceroutes: [UInt32: TracerouteResult] = [:]
 
     /// Completed traceroute results (most recent first)
-    var tracerouteResults: [TracerouteResult] = []
+    var tracerouteResults: [TracerouteResult] = TracerouteStore.shared.loadAll()
+        .sorted { $0.requestTime > $1.requestTime }
 
     /// Uses the generated protobuf decoder so malformed/truncated payloads throw
     /// instead of advancing a hand-written cursor beyond the payload bounds.
@@ -1145,8 +1205,7 @@ final class MeshtasticProtocolService {
                 hops: hops,
                 responseTime: Date()
             )
-            tracerouteResults.insert(completed, at: 0)
-            TracerouteStore.shared.save(completed)
+            storeTracerouteResult(completed)
         } else {
             let result = TracerouteResult(
                 targetNodeId: packet.from,
@@ -1154,8 +1213,7 @@ final class MeshtasticProtocolService {
                 hops: hops,
                 responseTime: Date()
             )
-            tracerouteResults.insert(result, at: 0)
-            TracerouteStore.shared.save(result)
+            storeTracerouteResult(result)
         }
 
         // Insert traceroute hops into telemetry database
@@ -1169,33 +1227,29 @@ final class MeshtasticProtocolService {
             hops: traceHops
         )
 
-        // Inject as a channel message for visibility
-        let ts = formatTime()
-        let chIndex = resolvedChannelIndex(for: packet.channel)
-        let chName = channelName(for: Int(packet.channel))
-        let node = appState?.node(forId: packet.from)
-        let msg = MessageItem(
-            packetId: packet.id,
-            time: ts, from: from, fromId: packet.from, toId: packet.to,
-            message: String(localized: "🔀 Traceroute: \(hopStr)"),
-            channelIndex: chIndex >= 0 ? chIndex : 0,
-            channelName: chName,
-            isViaMqtt: packet.viaMqtt,
-            senderShortName: node?.shortName ?? "",
-            senderColorHex: node?.colorHex ?? "",
-            senderNote: node?.note ?? ""
+    }
+
+    private func storeTracerouteResult(_ result: TracerouteResult) {
+        tracerouteResults.insert(result, at: 0)
+        TracerouteStore.shared.save(result)
+
+        if let targetNode = appState?.node(forId: result.targetNodeId) {
+            targetNode.lastTracerouteHopCount = result.hops.count
+        }
+        coreDataStore?.updateNodeTracerouteHopCount(
+            nodeId: result.targetNodeId,
+            hopCount: result.hops.count
         )
-        deliver(msg)
     }
 
     /// Send a traceroute request to a target node
-    func sendTraceroute(to targetNodeId: UInt32) async {
+    func sendTraceroute(to targetNodeId: UInt32) async -> Bool {
         let packetId = UInt32.random(in: UInt32(UInt8.max)..<UInt32.max)
 
         let routeDiscovery = Meshtastic_RouteDiscovery()
         _ = routeDiscovery // empty request
 
-        guard let payload = try? routeDiscovery.serializedData() else { return }
+        guard let payload = try? routeDiscovery.serializedData() else { return false }
 
         var data = Meshtastic_Data()
         data.portnum = .tracerouteApp
@@ -1214,9 +1268,13 @@ final class MeshtasticProtocolService {
         let pending = TracerouteResult(targetNodeId: targetNodeId, targetName: targetName)
         pendingTraceroutes[packetId] = pending
 
-        await sendToRadio(packet: packet)
+        guard await sendToRadio(packet: packet) else {
+            pendingTraceroutes.removeValue(forKey: packetId)
+            return false
+        }
 
         AppLogger.shared.log("[Traceroute] Request sent to \(targetName) (packetId=\(packetId))", debug: true)
+        return true
     }
 
     // MARK: - Device Config (admin requests)
@@ -1224,12 +1282,19 @@ final class MeshtasticProtocolService {
     /// Request all device configs from the connected node via admin messages.
     /// Config request field numbers: 0=Device, 1=Position, 2=Power, 3=Network, 4=Display, 5=LoRa, 6=Bluetooth
     /// Module config request field numbers: 0=MQTT
-    func requestAllDeviceConfigs() async {
+    func requestAllDeviceConfigs(timeout: Duration = .seconds(10)) async throws -> DeviceConfigSnapshot {
+        guard connectionService?.isConnected == true else {
+            throw DeviceConfigError.notConnected
+        }
         await ensureSessionKey()
         guard !sessionPasskey.isEmpty else {
             AppLogger.shared.log("[Protocol] requestAllDeviceConfigs aborted: no session key", debug: true)
-            return
+            throw DeviceConfigError.missingSessionKey
         }
+
+        receivedConfigs.removeAll()
+        receivedModuleConfigs.removeValue(forKey: "mqtt")
+
         // Request each config type
         let configTypes: [Meshtastic_AdminMessage.ConfigType] = [
             .deviceConfig, .positionConfig, .powerConfig,
@@ -1239,70 +1304,161 @@ final class MeshtasticProtocolService {
             var admin = Meshtastic_AdminMessage()
             admin.getConfigRequest = configType
             admin.sessionPasskey = sessionPasskey
-            await sendAdminMessage(admin)
+            guard await sendAdminMessage(admin) else {
+                throw DeviceConfigError.requestFailed
+            }
+            try await Task.sleep(for: .milliseconds(100))
         }
         // Request MQTT module config
         var mqttAdmin = Meshtastic_AdminMessage()
         mqttAdmin.getModuleConfigRequest = .mqttConfig
         mqttAdmin.sessionPasskey = sessionPasskey
-        await sendAdminMessage(mqttAdmin)
+        guard await sendAdminMessage(mqttAdmin) else {
+            throw DeviceConfigError.requestFailed
+        }
         AppLogger.shared.log("[Protocol] Requested all device configs", debug: SettingsService.shared.debugDevice)
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while clock.now < deadline {
+            try Task.checkCancellation()
+            if let snapshot = currentDeviceConfigSnapshot {
+                return snapshot
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+
+        throw DeviceConfigError.incompleteResponse(missingDeviceConfigCategories)
     }
 
-    /// Save device configs back to the node.
-    func saveDeviceConfigs(
-        device: Meshtastic_Config.DeviceConfig,
-        position: Meshtastic_Config.PositionConfig,
-        lora: Meshtastic_Config.LoRaConfig,
-        bluetooth: Meshtastic_Config.BluetoothConfig,
-        network: Meshtastic_Config.NetworkConfig,
-        display: Meshtastic_Config.DisplayConfig,
-        power: Meshtastic_Config.PowerConfig,
-        mqtt: Meshtastic_ModuleConfig.MQTTConfig
-    ) async {
+    /// Save only changed device configs back to the node.
+    /// Returns `true` when a commit was sent and the node is expected to reboot.
+    func saveDeviceConfigs(_ snapshot: DeviceConfigSnapshot, replacing original: DeviceConfigSnapshot) async throws -> Bool {
+        guard snapshot != original else { return false }
+        guard connectionService?.isConnected == true else {
+            throw DeviceConfigError.notConnected
+        }
         await ensureSessionKey()
         guard !sessionPasskey.isEmpty else {
             AppLogger.shared.log("[Protocol] saveDeviceConfigs aborted: no session key", debug: true)
-            return
+            throw DeviceConfigError.missingSessionKey
         }
 
         // Begin edit settings session
         var beginEdit = Meshtastic_AdminMessage()
         beginEdit.beginEditSettings = true
         beginEdit.sessionPasskey = sessionPasskey
-        await sendAdminMessage(beginEdit)
+        guard await sendAdminMessage(beginEdit) else {
+            throw DeviceConfigError.writeFailed("Begin Edit")
+        }
 
-        // Save each config type
-        let configs: [(Meshtastic_Config.OneOf_PayloadVariant)] = [
-            .device(device), .position(position), .power(power),
-            .network(network), .display(display), .lora(lora), .bluetooth(bluetooth),
+        // Avoid writing unchanged categories. Besides being faster, this prevents a
+        // partial load from overwriting valid device settings with default values.
+        let configs: [(String, Meshtastic_Config.OneOf_PayloadVariant)] = [
+            ("Device", .device(snapshot.device)),
+            ("Position", .position(snapshot.position)),
+            ("Power", .power(snapshot.power)),
+            ("Network", .network(snapshot.network)),
+            ("Display", .display(snapshot.display)),
+            ("LoRa", .lora(snapshot.lora)),
+            ("Bluetooth", .bluetooth(snapshot.bluetooth)),
         ]
-        for variant in configs {
+        let changedCategories = Set(Self.changedDeviceConfigCategories(snapshot, replacing: original))
+
+        for entry in configs where changedCategories.contains(entry.0) {
             var config = Meshtastic_Config()
-            config.payloadVariant = variant
+            config.payloadVariant = entry.1
             var admin = Meshtastic_AdminMessage()
             admin.setConfig = config
             admin.sessionPasskey = sessionPasskey
-            await sendAdminMessage(admin)
-            try? await Task.sleep(for: .milliseconds(300))
+            guard await sendAdminMessage(admin) else {
+                throw DeviceConfigError.writeFailed(entry.0)
+            }
+            try await Task.sleep(for: .milliseconds(300))
         }
 
-        // Save MQTT module config
-        var moduleConfig = Meshtastic_ModuleConfig()
-        moduleConfig.mqtt = mqtt
-        var mqttAdmin = Meshtastic_AdminMessage()
-        mqttAdmin.setModuleConfig = moduleConfig
-        mqttAdmin.sessionPasskey = sessionPasskey
-        await sendAdminMessage(mqttAdmin)
-        try? await Task.sleep(for: .milliseconds(300))
+        if snapshot.mqtt != original.mqtt {
+            var moduleConfig = Meshtastic_ModuleConfig()
+            moduleConfig.mqtt = snapshot.mqtt
+            var mqttAdmin = Meshtastic_AdminMessage()
+            mqttAdmin.setModuleConfig = moduleConfig
+            mqttAdmin.sessionPasskey = sessionPasskey
+            guard await sendAdminMessage(mqttAdmin) else {
+                throw DeviceConfigError.writeFailed("MQTT")
+            }
+            try await Task.sleep(for: .milliseconds(300))
+        }
 
         // Commit edit settings
         var commitEdit = Meshtastic_AdminMessage()
         commitEdit.commitEditSettings = true
         commitEdit.sessionPasskey = sessionPasskey
-        await sendAdminMessage(commitEdit)
+        guard await sendAdminMessage(commitEdit) else {
+            throw DeviceConfigError.writeFailed("Commit")
+        }
 
-        AppLogger.shared.log("[Protocol] All device configs saved", debug: SettingsService.shared.debugDevice)
+        AppLogger.shared.log("[Protocol] Changed device configs saved", debug: SettingsService.shared.debugDevice)
+        return true
+    }
+
+    nonisolated static func changedDeviceConfigCategories(
+        _ snapshot: DeviceConfigSnapshot,
+        replacing original: DeviceConfigSnapshot
+    ) -> [String] {
+        var categories: [String] = []
+        if snapshot.device != original.device { categories.append("Device") }
+        if snapshot.position != original.position { categories.append("Position") }
+        if snapshot.power != original.power { categories.append("Power") }
+        if snapshot.network != original.network { categories.append("Network") }
+        if snapshot.display != original.display { categories.append("Display") }
+        if snapshot.lora != original.lora { categories.append("LoRa") }
+        if snapshot.bluetooth != original.bluetooth { categories.append("Bluetooth") }
+        if snapshot.mqtt != original.mqtt { categories.append("MQTT") }
+        return categories
+    }
+
+    nonisolated static func mismatchedDeviceConfigCategories(
+        actual: DeviceConfigSnapshot,
+        expected: DeviceConfigSnapshot,
+        categories: [String]
+    ) -> [String] {
+        let differences = Set(changedDeviceConfigCategories(actual, replacing: expected))
+        return categories.filter(differences.contains)
+    }
+
+    private var currentDeviceConfigSnapshot: DeviceConfigSnapshot? {
+        guard let device = receivedConfigs[.device]?.device,
+              let position = receivedConfigs[.position]?.position,
+              let lora = receivedConfigs[.lora]?.lora,
+              let bluetooth = receivedConfigs[.bluetooth]?.bluetooth,
+              let network = receivedConfigs[.network]?.network,
+              let display = receivedConfigs[.display]?.display,
+              let power = receivedConfigs[.power]?.power,
+              let mqtt = receivedModuleConfigs["mqtt"]?.mqtt
+        else { return nil }
+
+        return DeviceConfigSnapshot(
+            device: device,
+            position: position,
+            lora: lora,
+            bluetooth: bluetooth,
+            network: network,
+            display: display,
+            power: power,
+            mqtt: mqtt
+        )
+    }
+
+    private var missingDeviceConfigCategories: [String] {
+        var missing: [String] = []
+        let expected: [(ConfigCategory, String)] = [
+            (.device, "Device"), (.position, "Position"), (.lora, "LoRa"),
+            (.bluetooth, "Bluetooth"), (.network, "Network"),
+            (.display, "Display"), (.power, "Power"),
+        ]
+        missing.append(contentsOf: expected.compactMap { receivedConfigs[$0.0] == nil ? $0.1 : nil })
+        if receivedModuleConfigs["mqtt"] == nil { missing.append("MQTT") }
+        return missing
     }
 
     // MARK: - NeighborInfo (portnum 71)
@@ -1823,8 +1979,9 @@ final class MeshtasticProtocolService {
         }
     }
 
-    private func sendAdminMessage(_ admin: Meshtastic_AdminMessage) async {
-        guard let data = try? admin.serializedData() else { return }
+    @discardableResult
+    private func sendAdminMessage(_ admin: Meshtastic_AdminMessage) async -> Bool {
+        guard let data = try? admin.serializedData() else { return false }
         var innerData = Meshtastic_Data()
         innerData.portnum = .adminApp
         innerData.payload = data
@@ -1839,7 +1996,7 @@ final class MeshtasticProtocolService {
         packet.decoded = innerData
 
         AppLogger.shared.log("[Protocol] Sending admin message (id=\(packet.id), from=\(String(format: "!%08x", packet.from)), payloadSize=\(data.count))", debug: true)
-        await sendToRadio(packet: packet)
+        return await sendToRadio(packet: packet)
     }
 
     @discardableResult

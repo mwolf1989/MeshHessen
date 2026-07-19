@@ -9,7 +9,9 @@ struct DeviceConfigView: View {
     @State private var selectedTab = ConfigTab.device
     @State private var isLoading = false
     @State private var isSaving = false
-    @State private var statusMessage: String?
+    @State private var statusMessage: LocalizedStringKey?
+    @State private var errorMessage: String?
+    @State private var loadedSnapshot: MeshtasticProtocolService.DeviceConfigSnapshot?
 
     // Config state
     @State private var deviceConfig = Meshtastic_Config.DeviceConfig()
@@ -65,13 +67,21 @@ struct DeviceConfigView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Button("Load from Device") { loadAllConfigs() }
+                Button("Load from Device") {
+                    Task { await loadAllConfigs() }
+                }
                     .buttonStyle(.bordered)
                     .disabled(isLoading || !appState.protocolReady)
-                Button("Save to Device") { saveAllConfigs() }
+                Button("Save to Device") {
+                    Task { await saveAllConfigs() }
+                }
                     .buttonStyle(.borderedProminent)
-                    .disabled(isSaving || !appState.protocolReady)
+                    .disabled(
+                        isLoading || isSaving || !appState.protocolReady
+                            || loadedSnapshot == nil || currentSnapshot == loadedSnapshot
+                    )
                 Button("Close") { dismiss() }
+                    .disabled(isSaving)
             }
             .padding()
 
@@ -105,8 +115,19 @@ struct DeviceConfigView: View {
             }
         }
         .frame(minWidth: 600, minHeight: 500)
-        .onAppear {
-            if appState.protocolReady { loadAllConfigs() }
+        .task {
+            if appState.protocolReady { await loadAllConfigs() }
+        }
+        .alert(
+            "Device Configuration Error",
+            isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 
@@ -152,9 +173,10 @@ struct DeviceConfigView: View {
                 HStack {
                     Text("Node Info Broadcast (secs)")
                     Spacer()
-                    TextField("900", value: $deviceConfig.nodeInfoBroadcastSecs, format: .number)
+                    TextField("", value: $deviceConfig.nodeInfoBroadcastSecs, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .accessibilityLabel("Node Info Broadcast (secs)")
                 }
                 Toggle("Double Tap as Button Press", isOn: $deviceConfig.doubleTapAsButtonPress)
             }
@@ -170,9 +192,10 @@ struct DeviceConfigView: View {
                 HStack {
                     Text("Broadcast Interval (secs)")
                     Spacer()
-                    TextField("900", value: $positionConfig.positionBroadcastSecs, format: .number)
+                    TextField("", value: $positionConfig.positionBroadcastSecs, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .accessibilityLabel("Broadcast Interval (secs)")
                 }
                 Toggle("Smart Position Enabled", isOn: $positionConfig.positionBroadcastSmartEnabled)
             }
@@ -181,9 +204,10 @@ struct DeviceConfigView: View {
                 HStack {
                     Text("GPS Update Interval (secs)")
                     Spacer()
-                    TextField("120", value: $positionConfig.gpsUpdateInterval, format: .number)
+                    TextField("", value: $positionConfig.gpsUpdateInterval, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .accessibilityLabel("GPS Update Interval (secs)")
                 }
             }
         }
@@ -214,17 +238,19 @@ struct DeviceConfigView: View {
                 HStack {
                     Text("Hop Limit")
                     Spacer()
-                    TextField("3", value: $loraConfig.hopLimit, format: .number)
+                    TextField("", value: $loraConfig.hopLimit, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 60)
+                        .accessibilityLabel("Hop Limit")
                 }
                 Toggle("TX Enabled", isOn: $loraConfig.txEnabled)
                 HStack {
                     Text("TX Power (dBm)")
                     Spacer()
-                    TextField("0", value: $loraConfig.txPower, format: .number)
+                    TextField("", value: $loraConfig.txPower, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 60)
+                        .accessibilityLabel("TX Power (dBm)")
                 }
                 Toggle("Override Duty Cycle", isOn: $loraConfig.overrideDutyCycle)
             }
@@ -234,23 +260,26 @@ struct DeviceConfigView: View {
                     HStack {
                         Text("Bandwidth")
                         Spacer()
-                        TextField("0", value: $loraConfig.bandwidth, format: .number)
+                        TextField("", value: $loraConfig.bandwidth, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
+                            .accessibilityLabel("Bandwidth")
                     }
                     HStack {
                         Text("Spread Factor")
                         Spacer()
-                        TextField("0", value: $loraConfig.spreadFactor, format: .number)
+                        TextField("", value: $loraConfig.spreadFactor, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
+                            .accessibilityLabel("Spread Factor")
                     }
                     HStack {
                         Text("Coding Rate")
                         Spacer()
-                        TextField("0", value: $loraConfig.codingRate, format: .number)
+                        TextField("", value: $loraConfig.codingRate, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
+                            .accessibilityLabel("Coding Rate")
                     }
                 }
             }
@@ -273,9 +302,10 @@ struct DeviceConfigView: View {
                     HStack {
                         Text("Fixed PIN")
                         Spacer()
-                        TextField("123456", value: $bluetoothConfig.fixedPin, format: .number)
+                        TextField("", value: $bluetoothConfig.fixedPin, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
+                            .accessibilityLabel("Fixed PIN")
                     }
                 }
             }
@@ -328,16 +358,18 @@ struct DeviceConfigView: View {
                 HStack {
                     Text("Screen On Time (secs)")
                     Spacer()
-                    TextField("60", value: $displayConfig.screenOnSecs, format: .number)
+                    TextField("", value: $displayConfig.screenOnSecs, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .accessibilityLabel("Screen On Time (secs)")
                 }
                 HStack {
                     Text("Auto Carousel (secs, 0=off)")
                     Spacer()
-                    TextField("0", value: $displayConfig.autoScreenCarouselSecs, format: .number)
+                    TextField("", value: $displayConfig.autoScreenCarouselSecs, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .accessibilityLabel("Auto Carousel (secs, 0=off)")
                 }
                 Toggle("Compass North Top", isOn: $displayConfig.compassNorthTop)
                 Toggle("Flip Screen", isOn: $displayConfig.flipScreen)
@@ -362,9 +394,10 @@ struct DeviceConfigView: View {
                 HStack {
                     Text("Shutdown After (secs, on battery)")
                     Spacer()
-                    TextField("0", value: $powerConfig.onBatteryShutdownAfterSecs, format: .number)
+                    TextField("", value: $powerConfig.onBatteryShutdownAfterSecs, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .accessibilityLabel("Shutdown After (secs, on battery)")
                 }
             }
 
@@ -372,30 +405,34 @@ struct DeviceConfigView: View {
                 HStack {
                     Text("Wait Bluetooth (secs)")
                     Spacer()
-                    TextField("60", value: $powerConfig.waitBluetoothSecs, format: .number)
+                    TextField("", value: $powerConfig.waitBluetoothSecs, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .accessibilityLabel("Wait Bluetooth (secs)")
                 }
                 HStack {
                     Text("Super Deep Sleep (secs)")
                     Spacer()
-                    TextField("0", value: $powerConfig.sdsSecs, format: .number)
+                    TextField("", value: $powerConfig.sdsSecs, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .accessibilityLabel("Super Deep Sleep (secs)")
                 }
                 HStack {
                     Text("Light Sleep (secs)")
                     Spacer()
-                    TextField("300", value: $powerConfig.lsSecs, format: .number)
+                    TextField("", value: $powerConfig.lsSecs, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .accessibilityLabel("Light Sleep (secs)")
                 }
                 HStack {
                     Text("Min Wake (secs)")
                     Spacer()
-                    TextField("10", value: $powerConfig.minWakeSecs, format: .number)
+                    TextField("", value: $powerConfig.minWakeSecs, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .accessibilityLabel("Min Wake (secs)")
                 }
             }
         }
@@ -440,60 +477,68 @@ struct DeviceConfigView: View {
 
     // MARK: - Load / Save
 
-    private func loadAllConfigs() {
+    private func loadAllConfigs() async {
         isLoading = true
         statusMessage = "Loading config…"
-        Task {
-            await coordinator.requestDeviceConfig()
-            // Wait for responses
-            try? await Task.sleep(for: .seconds(3))
-            // Read config from protocol service
-            let proto = coordinator.protocol_
-            if let config = proto.receivedConfigs[.device] {
-                deviceConfig = config.device
-            }
-            if let config = proto.receivedConfigs[.position] {
-                positionConfig = config.position
-            }
-            if let config = proto.receivedConfigs[.lora] {
-                loraConfig = config.lora
-            }
-            if let config = proto.receivedConfigs[.bluetooth] {
-                bluetoothConfig = config.bluetooth
-            }
-            if let config = proto.receivedConfigs[.network] {
-                networkConfig = config.network
-            }
-            if let config = proto.receivedConfigs[.display] {
-                displayConfig = config.display
-            }
-            if let config = proto.receivedConfigs[.power] {
-                powerConfig = config.power
-            }
-            if let moduleConfig = proto.receivedModuleConfigs["mqtt"] {
-                mqttConfig = moduleConfig.mqtt
-            }
-            isLoading = false
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let snapshot = try await coordinator.requestDeviceConfig()
+            apply(snapshot)
+            loadedSnapshot = snapshot
             statusMessage = "Config loaded"
+        } catch is CancellationError {
+            statusMessage = nil
+        } catch {
+            loadedSnapshot = nil
+            statusMessage = "Load failed"
+            errorMessage = error.localizedDescription
         }
     }
 
-    private func saveAllConfigs() {
+    private func saveAllConfigs() async {
+        guard let loadedSnapshot else {
+            errorMessage = String(localized: "Load the complete configuration before saving.")
+            return
+        }
         isSaving = true
         statusMessage = "Saving config…"
-        Task {
-            await coordinator.saveDeviceConfig(
-                device: deviceConfig,
-                position: positionConfig,
-                lora: loraConfig,
-                bluetooth: bluetoothConfig,
-                network: networkConfig,
-                display: displayConfig,
-                power: powerConfig,
-                mqtt: mqttConfig
-            )
-            isSaving = false
-            statusMessage = "Config saved — device may reboot"
+        errorMessage = nil
+        defer { isSaving = false }
+        do {
+            let snapshot = currentSnapshot
+            let didSave = try await coordinator.saveDeviceConfig(snapshot, replacing: loadedSnapshot)
+            self.loadedSnapshot = snapshot
+            statusMessage = didSave ? "Config saved and verified" : "No changes"
+        } catch is CancellationError {
+            statusMessage = nil
+        } catch {
+            statusMessage = "Save failed"
+            errorMessage = error.localizedDescription
         }
+    }
+
+    private var currentSnapshot: MeshtasticProtocolService.DeviceConfigSnapshot {
+        MeshtasticProtocolService.DeviceConfigSnapshot(
+            device: deviceConfig,
+            position: positionConfig,
+            lora: loraConfig,
+            bluetooth: bluetoothConfig,
+            network: networkConfig,
+            display: displayConfig,
+            power: powerConfig,
+            mqtt: mqttConfig
+        )
+    }
+
+    private func apply(_ snapshot: MeshtasticProtocolService.DeviceConfigSnapshot) {
+        deviceConfig = snapshot.device
+        positionConfig = snapshot.position
+        loraConfig = snapshot.lora
+        bluetoothConfig = snapshot.bluetooth
+        networkConfig = snapshot.network
+        displayConfig = snapshot.display
+        powerConfig = snapshot.power
+        mqttConfig = snapshot.mqtt
     }
 }

@@ -10,7 +10,13 @@ struct TracerouteSheet: View {
     let targetName: String
 
     @State private var isRequesting = false
-    @State private var results: [TracerouteResult] = []
+    @State private var requestStartedAt: Date?
+    @State private var requestTask: Task<Void, Never>?
+    @State private var statusMessage: LocalizedStringKey?
+
+    private var results: [TracerouteResult] {
+        coordinator.protocol_.tracerouteResults.filter { $0.targetNodeId == targetNodeId }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -26,14 +32,7 @@ struct TracerouteSheet: View {
                 }
                 Spacer()
                 Button {
-                    isRequesting = true
-                    Task {
-                        await coordinator.sendTraceroute(to: targetNodeId)
-                        // Wait a bit then refresh results
-                        try? await Task.sleep(for: .seconds(2))
-                        results = coordinator.tracerouteResults.filter { $0.targetNodeId == targetNodeId }
-                        isRequesting = false
-                    }
+                    runTraceroute()
                 } label: {
                     if isRequesting {
                         ProgressView().controlSize(.small)
@@ -46,6 +45,12 @@ struct TracerouteSheet: View {
 
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.return, modifiers: .command)
+            }
+
+            if let statusMessage {
+                Text(statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Divider()
@@ -68,10 +73,47 @@ struct TracerouteSheet: View {
         }
         .padding(20)
         .frame(minWidth: 500, minHeight: 400)
-        .onAppear {
-            results = coordinator.tracerouteResults.filter { $0.targetNodeId == targetNodeId }
-            if results.isEmpty {
-                results = TracerouteStore.shared.loadAll().filter { $0.targetNodeId == targetNodeId }
+        .onChange(of: results.first?.id) {
+            guard let requestStartedAt,
+                  let responseTime = results.first?.responseTime,
+                  responseTime >= requestStartedAt
+            else { return }
+
+            requestTask?.cancel()
+            requestTask = nil
+            self.requestStartedAt = nil
+            isRequesting = false
+            statusMessage = "Traceroute completed"
+        }
+        .onDisappear {
+            requestTask?.cancel()
+        }
+    }
+
+    private func runTraceroute() {
+        requestTask?.cancel()
+        let startedAt = Date()
+        requestStartedAt = startedAt
+        isRequesting = true
+        statusMessage = "Waiting for traceroute response…"
+
+        requestTask = Task {
+            let wasSent = await coordinator.sendTraceroute(to: targetNodeId)
+            guard wasSent else {
+                requestStartedAt = nil
+                isRequesting = false
+                statusMessage = "Traceroute could not be sent"
+                return
+            }
+
+            do {
+                try await Task.sleep(for: .seconds(30))
+                guard requestStartedAt == startedAt else { return }
+                requestStartedAt = nil
+                isRequesting = false
+                statusMessage = "No traceroute response received"
+            } catch {
+                // A new result or dismissal cancels the timeout task.
             }
         }
     }
@@ -93,7 +135,7 @@ private struct TracerouteResultCard: View {
                         .foregroundStyle(.green)
                 }
                 Spacer()
-                Text("\(result.hops.count) hop(s)")
+                Text(localizedHopCount(result.hops.count))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

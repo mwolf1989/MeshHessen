@@ -42,3 +42,95 @@ struct TraceroutePayloadDecodingTests {
         }
     }
 }
+
+@Suite("Emoji Reaction Protocol")
+struct EmojiReactionProtocolTests {
+    @Test("Standard reaction marker decodes emoji from UTF-8 payload")
+    func standardPayload() {
+        var data = Meshtastic_Data()
+        data.emoji = 1
+        data.payload = Data("❤️".utf8)
+
+        #expect(MeshtasticProtocolService.decodeEmojiReaction(data) == "❤️")
+    }
+
+    @Test("Outgoing reactions use marker value one and preserve multi-scalar emoji")
+    func outgoingPayload() {
+        let data = MeshtasticProtocolService.makeEmojiReactionData(emoji: "👨‍👩‍👧‍👦", replyID: 42)
+
+        #expect(data.emoji == 1)
+        #expect(data.replyID == 42)
+        #expect(String(data: data.payload, encoding: .utf8) == "👨‍👩‍👧‍👦")
+    }
+
+    @Test("Legacy scalar reactions remain readable")
+    func legacyScalar() {
+        var data = Meshtastic_Data()
+        data.emoji = 0x1F44D
+
+        #expect(MeshtasticProtocolService.decodeEmojiReaction(data) == "👍")
+    }
+
+    @Test("Empty or malformed reaction payload has a visible fallback")
+    func visibleFallback() {
+        var data = Meshtastic_Data()
+        data.emoji = 1
+        data.payload = Data([0xFF])
+
+        #expect(MeshtasticProtocolService.decodeEmojiReaction(data) == "👍")
+    }
+}
+
+@Suite("Device Configuration Safety")
+struct DeviceConfigurationSafetyTests {
+    private func emptySnapshot() -> MeshtasticProtocolService.DeviceConfigSnapshot {
+        MeshtasticProtocolService.DeviceConfigSnapshot(
+            device: .init(),
+            position: .init(),
+            lora: .init(),
+            bluetooth: .init(),
+            network: .init(),
+            display: .init(),
+            power: .init(),
+            mqtt: .init()
+        )
+    }
+
+    @Test("only changed configuration categories are selected for writing")
+    func onlyChangedCategories() {
+        let original = emptySnapshot()
+        var changed = original
+        changed.lora.hopLimit = 7
+
+        #expect(
+            MeshtasticProtocolService.changedDeviceConfigCategories(changed, replacing: original)
+                == ["LoRa"]
+        )
+    }
+
+    @Test("unchanged complete configuration requires no writes")
+    func unchangedConfiguration() {
+        let snapshot = emptySnapshot()
+
+        #expect(
+            MeshtasticProtocolService.changedDeviceConfigCategories(snapshot, replacing: snapshot)
+                .isEmpty
+        )
+    }
+
+    @Test("verification compares only categories changed by the user")
+    func verificationScope() {
+        let expected = emptySnapshot()
+        var actual = expected
+        actual.lora.hopLimit = 3
+        actual.network.wifiEnabled = true
+
+        #expect(
+            MeshtasticProtocolService.mismatchedDeviceConfigCategories(
+                actual: actual,
+                expected: expected,
+                categories: ["LoRa"]
+            ) == ["LoRa"]
+        )
+    }
+}

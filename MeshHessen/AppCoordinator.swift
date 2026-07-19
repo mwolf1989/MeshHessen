@@ -48,6 +48,7 @@ final class AppCoordinator {
     /// When true, the next disconnect is expected (e.g. firmware TCP reset after channel write)
     /// and should trigger an immediate reconnect without error UI.
     private var expectingDisconnect: Bool = false
+    private var expectedDisconnectTimeoutTask: Task<Void, Never>?
 
     /// Maximum backoff delay in seconds
     private let maxBackoffSeconds: Int = 30
@@ -98,6 +99,7 @@ final class AppCoordinator {
     func connect(type: ConnectionType, parameters: ConnectionParameters) async {
         // Cancel any pending reconnect before starting a fresh connection
         cancelReconnect()
+        clearExpectedSettingsWriteDisconnect()
         cancelProtocolInitialization()
         await teardownActiveConnection()
 
@@ -115,6 +117,7 @@ final class AppCoordinator {
         AppLogger.shared.log("[Coordinator] User requested disconnect", debug: true)
         userRequestedDisconnect = true
         cancelReconnect()
+        clearExpectedSettingsWriteDisconnect()
         cancelProtocolInitialization()
 
         protocol_.disconnect()
@@ -149,7 +152,7 @@ final class AppCoordinator {
         await protocol_.sendEmojiReaction(emoji, toPacketId: toPacketId, toNodeId: toNodeId, channelIndex: channelIndex)
     }
 
-    func sendTraceroute(to nodeId: UInt32) async {
+    func sendTraceroute(to nodeId: UInt32) async -> Bool {
         await protocol_.sendTraceroute(to: nodeId)
     }
 
@@ -163,25 +166,35 @@ final class AppCoordinator {
 
     // MARK: - Device Configuration
 
-    func requestDeviceConfig() async {
-        await protocol_.requestAllDeviceConfigs()
+    func requestDeviceConfig() async throws -> MeshtasticProtocolService.DeviceConfigSnapshot {
+        try await protocol_.requestAllDeviceConfigs()
     }
 
     func saveDeviceConfig(
-        device: Meshtastic_Config.DeviceConfig,
-        position: Meshtastic_Config.PositionConfig,
-        lora: Meshtastic_Config.LoRaConfig,
-        bluetooth: Meshtastic_Config.BluetoothConfig,
-        network: Meshtastic_Config.NetworkConfig,
-        display: Meshtastic_Config.DisplayConfig,
-        power: Meshtastic_Config.PowerConfig,
-        mqtt: Meshtastic_ModuleConfig.MQTTConfig
-    ) async {
-        await protocol_.saveDeviceConfigs(
-            device: device, position: position, lora: lora,
-            bluetooth: bluetooth, network: network, display: display,
-            power: power, mqtt: mqtt
-        )
+        _ snapshot: MeshtasticProtocolService.DeviceConfigSnapshot,
+        replacing original: MeshtasticProtocolService.DeviceConfigSnapshot
+    ) async throws -> Bool {
+        guard snapshot != original else { return false }
+
+        expectSettingsWriteDisconnect()
+        do {
+            let didWrite = try await protocol_.saveDeviceConfigs(snapshot, replacing: original)
+            guard didWrite else {
+                clearExpectedSettingsWriteDisconnect()
+                return false
+            }
+
+            let changedCategories = MeshtasticProtocolService.changedDeviceConfigCategories(
+                snapshot,
+                replacing: original
+            )
+            try await verifyDeviceConfig(snapshot, categories: changedCategories)
+            clearExpectedSettingsWriteDisconnect()
+            return true
+        } catch {
+            clearExpectedSettingsWriteDisconnect()
+            throw error
+        }
     }
 
     // MARK: - Channel management
@@ -193,7 +206,7 @@ final class AppCoordinator {
             return
         }
         let idx = appState.channels.count
-        expectingDisconnect = true
+        expectSettingsWriteDisconnect()
         await protocol_.setChannel(
             index: idx, name: name, psk: psk,
             isSecondary: idx > 0,
@@ -204,19 +217,19 @@ final class AppCoordinator {
 
     func deleteChannel(at index: Int) async {
         AppLogger.shared.log("[Coordinator] Deleting channel at index \(index)", debug: true)
-        expectingDisconnect = true
+        expectSettingsWriteDisconnect()
         await protocol_.deleteChannel(index: index)
     }
 
     func addMeshHessenChannel() async {
         AppLogger.shared.log("[Coordinator] Adding Mesh Hessen channel...", debug: true)
-        expectingDisconnect = true
+        expectSettingsWriteDisconnect()
         await protocol_.addMeshHessenChannel()
     }
 
     func cleanupDuplicateChannels() async {
         AppLogger.shared.log("[Coordinator] Cleaning up duplicate channels...", debug: true)
-        expectingDisconnect = true
+        expectSettingsWriteDisconnect()
         await protocol_.cleanupDuplicateChannels()
     }
 
@@ -559,10 +572,10 @@ final class AppCoordinator {
             return
         }
 
-        // Channel writes cause the firmware to reset TCP — reconnect immediately
+        // Settings writes can reboot the firmware — reconnect immediately.
         if expectingDisconnect {
-            expectingDisconnect = false
-            AppLogger.shared.log("[Coordinator] Expected disconnect (channel write) — reconnecting immediately", debug: true)
+            clearExpectedSettingsWriteDisconnect()
+            AppLogger.shared.log("[Coordinator] Expected disconnect after settings write — reconnecting immediately", debug: true)
             reconnectAttempt = 0
             scheduleReconnect()
             return
@@ -571,6 +584,71 @@ final class AppCoordinator {
         AppLogger.shared.log("[Coordinator] Unexpected disconnect — will auto-reconnect", debug: true)
         // Don't reset nodes/channels/messages — we want to preserve state across reconnects
         scheduleReconnect()
+    }
+
+    private func expectSettingsWriteDisconnect() {
+        expectedDisconnectTimeoutTask?.cancel()
+        expectingDisconnect = true
+        expectedDisconnectTimeoutTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(30))
+            } catch {
+                return
+            }
+            guard let self, self.expectingDisconnect else { return }
+            self.expectingDisconnect = false
+            self.expectedDisconnectTimeoutTask = nil
+            AppLogger.shared.log("[Coordinator] Expected settings-write disconnect did not occur", debug: true)
+        }
+    }
+
+    private func clearExpectedSettingsWriteDisconnect() {
+        expectingDisconnect = false
+        expectedDisconnectTimeoutTask?.cancel()
+        expectedDisconnectTimeoutTask = nil
+    }
+
+    private func verifyDeviceConfig(
+        _ expected: MeshtasticProtocolService.DeviceConfigSnapshot,
+        categories: [String]
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(60))
+        var lastMismatches: [String] = []
+
+        // Give the firmware time to apply the commit or begin its reboot.
+        try await Task.sleep(for: .seconds(1))
+
+        while clock.now < deadline {
+            try Task.checkCancellation()
+
+            guard appState.protocolReady, protocol_.connectionService?.isConnected == true else {
+                try await Task.sleep(for: .milliseconds(250))
+                continue
+            }
+
+            do {
+                let actual = try await protocol_.requestAllDeviceConfigs(timeout: .seconds(10))
+                let mismatches = MeshtasticProtocolService.mismatchedDeviceConfigCategories(
+                    actual: actual,
+                    expected: expected,
+                    categories: categories
+                )
+                if mismatches.isEmpty { return }
+                lastMismatches = mismatches
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // A reboot can interrupt the readback. Wait for reconnection and retry.
+            }
+
+            try await Task.sleep(for: .milliseconds(500))
+        }
+
+        if !lastMismatches.isEmpty {
+            throw MeshtasticProtocolService.DeviceConfigError.verificationFailed(lastMismatches)
+        }
+        throw MeshtasticProtocolService.DeviceConfigError.verificationTimedOut
     }
 
     /// Schedules the next reconnect attempt with exponential backoff.
