@@ -193,10 +193,11 @@ final class AppState {
 
     func updateDeliveryState(requestId: UInt32, state: MessageDeliveryState) {
         if let allIdx = allMessages.firstIndex(where: { $0.packetId == requestId }) {
-            allMessages[allIdx].deliveryState = state
+            let mergedState = allMessages[allIdx].deliveryState.merging(state)
+            allMessages[allIdx].deliveryState = mergedState
             let channelIndex = allMessages[allIdx].channelIndex
             if let channelMessageIndex = channelMessages[channelIndex]?.firstIndex(where: { $0.packetId == requestId }) {
-                channelMessages[channelIndex]?[channelMessageIndex].deliveryState = state
+                channelMessages[channelIndex]?[channelMessageIndex].deliveryState = mergedState
             }
         }
 
@@ -204,7 +205,8 @@ final class AppState {
             guard let msgIndex = dmConversations[key]?.messages.firstIndex(where: { $0.packetId == requestId }) else {
                 continue
             }
-            dmConversations[key]?.messages[msgIndex].deliveryState = state
+            let currentState = dmConversations[key]?.messages[msgIndex].deliveryState ?? .none
+            dmConversations[key]?.messages[msgIndex].deliveryState = currentState.merging(state)
         }
     }
 
@@ -252,6 +254,9 @@ final class AppState {
             existing.viaMqtt = info.viaMqtt
             // Preserve pin state from existing node (don't overwrite with incoming data)
             if info.isPinned { existing.isPinned = info.isPinned }
+            if info.lastTracerouteHopCount > 0 {
+                existing.lastTracerouteHopCount = info.lastTracerouteHopCount
+            }
         } else {
             nodes[info.id] = info
         }

@@ -259,4 +259,16 @@ struct RoutingErrorTests {
         #expect(MessageDeliveryState.failed("x") != MessageDeliveryState.failed("y"))
         #expect(MessageDeliveryState.pending != MessageDeliveryState.acknowledged)
     }
+
+    @Test("Acknowledged delivery is not downgraded by a late timeout")
+    func acknowledgedDeliveryIsTerminal() {
+        #expect(
+            MessageDeliveryState.acknowledged.merging(.failed("No response"))
+                == .acknowledged
+        )
+        #expect(
+            MessageDeliveryState.failed("No response").merging(.acknowledged)
+                == .acknowledged
+        )
+    }
 }

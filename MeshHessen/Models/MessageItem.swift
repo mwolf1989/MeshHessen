@@ -5,6 +5,24 @@ enum MessageDeliveryState: Equatable {
     case pending
     case acknowledged
     case failed(String)
+
+    /// Merge potentially duplicated or out-of-order routing responses.
+    /// A successful acknowledgement is terminal and must never be replaced by
+    /// a later timeout/NACK from another transport path.
+    func merging(_ incoming: MessageDeliveryState) -> MessageDeliveryState {
+        switch (self, incoming) {
+        case (.acknowledged, _):
+            return self
+        case (_, .acknowledged):
+            return incoming
+        case (.failed, _):
+            return self
+        case (.pending, .none):
+            return self
+        default:
+            return incoming
+        }
+    }
 }
 
 /// A single message in a channel or DM conversation

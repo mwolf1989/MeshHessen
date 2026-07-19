@@ -1,5 +1,12 @@
 import Foundation
 
+func localizedHopCount(_ count: Int) -> String {
+    if count == 1 {
+        return String(localized: "1 hop")
+    }
+    return String(localized: "\(count) hops")
+}
+
 /// Represents the result of a traceroute operation
 struct TracerouteResult: Identifiable, Codable {
     let id: UUID

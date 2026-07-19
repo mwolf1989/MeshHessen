@@ -193,6 +193,24 @@ struct PersistenceTests {
         #expect(results[0].value(forKey: "deliveryError") as? String == "Timeout")
     }
 
+    @Test("late failure does not overwrite persisted acknowledgement")
+    func acknowledgedDeliveryStaysAcknowledged() async throws {
+        let (store, pc) = makeStore()
+        store.upsertMessage(sampleMessage(packetId: 502), isDirect: false, partnerNodeId: nil)
+        try await Task.sleep(for: .milliseconds(200))
+
+        store.updateDeliveryState(requestId: 502, state: .acknowledged)
+        try await Task.sleep(for: .milliseconds(200))
+        store.updateDeliveryState(requestId: 502, state: .failed("No response"))
+        try await Task.sleep(for: .milliseconds(200))
+
+        let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
+        request.predicate = NSPredicate(format: "packetId == %lld", Int64(502))
+        let object = try #require(pc.container.viewContext.fetch(request).first)
+        #expect(object.value(forKey: "deliveryState") as? String == "acknowledged")
+        #expect(object.value(forKey: "deliveryError") == nil)
+    }
+
     // MARK: - Node Customization
 
     @Test("updateNodeCustomization creates/updates node color and note")
@@ -209,6 +227,38 @@ struct PersistenceTests {
         #expect(results.count == 1)
         #expect(results[0].value(forKey: "colorHex") as? String == "#00FF00")
         #expect(results[0].value(forKey: "note") as? String == "Green node")
+    }
+
+    @Test("pin state survives app state hydration")
+    @MainActor
+    func pinStatePersistsAcrossRestart() async throws {
+        let (store, _) = makeStore()
+        let node = sampleNode()
+        store.upsertNode(node)
+        try await Task.sleep(for: .milliseconds(200))
+        store.updateNodePinState(nodeId: node.id, isPinned: true)
+        try await Task.sleep(for: .milliseconds(200))
+
+        let restartedState = AppState()
+        _ = store.hydrate(appState: restartedState)
+
+        #expect(restartedState.node(forId: node.id)?.isPinned == true)
+    }
+
+    @Test("last traceroute hop count survives app state hydration")
+    @MainActor
+    func tracerouteHopCountPersistsAcrossRestart() async throws {
+        let (store, _) = makeStore()
+        let node = sampleNode()
+        store.upsertNode(node)
+        try await Task.sleep(for: .milliseconds(200))
+        store.updateNodeTracerouteHopCount(nodeId: node.id, hopCount: 5)
+        try await Task.sleep(for: .milliseconds(200))
+
+        let restartedState = AppState()
+        _ = store.hydrate(appState: restartedState)
+
+        #expect(restartedState.node(forId: node.id)?.lastTracerouteHopCount == 5)
     }
 
     // MARK: - Conversation Unread

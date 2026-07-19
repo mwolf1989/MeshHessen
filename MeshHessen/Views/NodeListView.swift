@@ -104,6 +104,11 @@ private struct NodeRowView: View {
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
+                    if node.lastTracerouteHopCount > 0 {
+                        Text(localizedHopCount(node.lastTracerouteHopCount))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 

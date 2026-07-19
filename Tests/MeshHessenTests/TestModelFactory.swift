@@ -47,6 +47,8 @@ enum TestModelFactory {
             float("airUtilTx"),
             double("distanceMeters"),
             bool("viaMqtt"),
+            bool("isPinned"),
+            int32("lastTracerouteHopCount"),
         ]
         e.uniquenessConstraints = [["nodeNum"]]
         return e

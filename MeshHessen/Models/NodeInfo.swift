@@ -58,6 +58,7 @@ final class NodeInfo: Identifiable {
     var colorHex: String = ""   // "#RRGGBB" or empty
     var note: String = ""
     var isPinned: Bool = false
+    var lastTracerouteHopCount: Int = 0
 
     // Raw values for calculations
     var lastHeard: Int32 = 0

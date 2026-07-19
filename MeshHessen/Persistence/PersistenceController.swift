@@ -8,6 +8,10 @@ final class PersistenceController {
 
     init(inMemory: Bool = false) {
         container = NSPersistentContainer(name: "MeshHessen")
+        container.persistentStoreDescriptions.forEach {
+            $0.shouldMigrateStoreAutomatically = true
+            $0.shouldInferMappingModelAutomatically = true
+        }
         if inMemory {
             container.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")
         }

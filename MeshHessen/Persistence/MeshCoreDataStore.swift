@@ -333,6 +333,9 @@ final class MeshCoreDataStore {
             object.setValue(node.airUtilTx, forKey: "airUtilTx")
             object.setValue(node.distanceMeters, forKey: "distanceMeters")
             object.setValue(node.viaMqtt, forKey: "viaMqtt")
+            if node.lastTracerouteHopCount > 0 {
+                object.setValue(Int32(node.lastTracerouteHopCount), forKey: "lastTracerouteHopCount")
+            }
             // Preserve existing pin state — only set to true, never overwrite with false
             if node.isPinned {
                 object.setValue(true, forKey: "isPinned")
@@ -429,8 +432,13 @@ final class MeshCoreDataStore {
 
             guard let object = try? context.fetch(request).first else { return }
 
-            object.setValue(Self.deliveryStateString(from: state), forKey: "deliveryState")
-            object.setValue(Self.deliveryErrorString(from: state), forKey: "deliveryError")
+            let currentState = Self.deliveryState(
+                from: object.value(forKey: "deliveryState") as? String,
+                error: object.value(forKey: "deliveryError") as? String
+            )
+            let mergedState = currentState.merging(state)
+            object.setValue(Self.deliveryStateString(from: mergedState), forKey: "deliveryState")
+            object.setValue(Self.deliveryErrorString(from: mergedState), forKey: "deliveryError")
 
             self.save(context: context, label: "delivery")
         }
@@ -587,6 +595,7 @@ final class MeshCoreDataStore {
         node.distanceMeters = object.value(forKey: "distanceMeters") as? Double ?? 0
         node.viaMqtt = object.value(forKey: "viaMqtt") as? Bool ?? false
         node.isPinned = object.value(forKey: "isPinned") as? Bool ?? false
+        node.lastTracerouteHopCount = Int(object.value(forKey: "lastTracerouteHopCount") as? Int32 ?? 0)
         return node
     }
 
@@ -690,6 +699,26 @@ final class MeshCoreDataStore {
             object.setValue(isPinned, forKey: "isPinned")
 
             self.save(context: context, label: "node-pin")
+        }
+    }
+
+    /// Persists the most recent successful route length without replacing node metadata.
+    func updateNodeTracerouteHopCount(nodeId: UInt32, hopCount: Int) {
+        let context = persistenceController.newBackgroundContext()
+        context.perform {
+            let request = NSFetchRequest<NSManagedObject>(entityName: "MHNodeEntity")
+            request.fetchLimit = 1
+            request.predicate = NSPredicate(format: "nodeNum == %lld", Int64(nodeId))
+
+            let object = (try? context.fetch(request).first)
+                ?? NSEntityDescription.insertNewObject(forEntityName: "MHNodeEntity", into: context)
+
+            if (object.value(forKey: "nodeNum") as? Int64 ?? 0) == 0 {
+                object.setValue(Int64(nodeId), forKey: "nodeNum")
+                object.setValue(String(format: "!%08x", nodeId), forKey: "nodeId")
+            }
+            object.setValue(Int32(clamping: hopCount), forKey: "lastTracerouteHopCount")
+            self.save(context: context, label: "node-traceroute-hop-count")
         }
     }
 
