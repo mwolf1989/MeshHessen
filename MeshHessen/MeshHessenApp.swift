@@ -7,6 +7,7 @@ import TipKit
 @main
 struct MeshHessenApp: App {
     private let persistenceController: PersistenceController
+    private let notificationDelegate: NotificationPresentationDelegate
     @State private var coordinator: AppCoordinator
     @State private var settings = SettingsService.shared
     @Environment(\.openWindow) private var openWindow
@@ -14,6 +15,9 @@ struct MeshHessenApp: App {
     init() {
         let persistenceController = PersistenceController.shared
         self.persistenceController = persistenceController
+        let notificationDelegate = NotificationPresentationDelegate()
+        self.notificationDelegate = notificationDelegate
+        UNUserNotificationCenter.current().delegate = notificationDelegate
         let coord = AppCoordinator(persistenceController: persistenceController)
         _coordinator = State(initialValue: coord)
 
@@ -170,6 +174,19 @@ struct MeshHessenApp: App {
                 AppLogger.shared.log("[App] Failed to post notification: \(error.localizedDescription)", debug: true)
             }
         }
+    }
+}
+
+// MARK: - Notification Presentation
+
+/// By default macOS suppresses notification banners while the app is in the
+/// foreground. Explicit presentation keeps incoming DMs visible in every app state.
+private final class NotificationPresentationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound]
     }
 }
 

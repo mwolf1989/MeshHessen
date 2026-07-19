@@ -3,6 +3,8 @@ import SwiftUI
 /// Statistics overview for a single node, showing signal, power, airtime,
 /// and routing metrics split by day and night.
 struct TelemetryView: View {
+    @Environment(\.dismiss) private var dismiss
+
     let nodeId: UInt32
     let nodeName: String
 
@@ -16,8 +18,21 @@ struct TelemetryView: View {
     private let dayOptions = [7, 30, 90, 0]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Telemetry — \(nodeName)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Spacer()
+                Button("Close") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
                 // Time range picker
                 HStack {
                     Text("Time Range:")
@@ -102,10 +117,10 @@ struct TelemetryView: View {
                     }
                 }
             }
-            .padding()
+                .padding()
+            }
         }
         .frame(minWidth: 500, minHeight: 400)
-        .navigationTitle("Telemetry — \(nodeName)")
         .onAppear { loadStats() }
         .onChange(of: selectedDays) { loadStats() }
         .sheet(isPresented: $showChart) {

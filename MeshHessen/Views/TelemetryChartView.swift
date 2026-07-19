@@ -58,7 +58,7 @@ struct TelemetryChartView: View {
             }
         }
         .padding(.vertical)
-        .frame(minWidth: 600, minHeight: 450)
+        .frame(minWidth: 850, idealWidth: 950, minHeight: 450)
         .onAppear { loadData() }
         .onChange(of: selectedMetrics) { loadData() }
     }
@@ -108,6 +108,7 @@ struct TelemetryChartView: View {
                         AxisValueLabel()
                     }
                 }
+                .modifier(MetricYScaleModifier(metric: metric))
                 .frame(height: 200)
             }
         } label: {
@@ -136,6 +137,19 @@ struct TelemetryChartView: View {
                 dataPoints = loaded
                 isLoading = false
             }
+        }
+    }
+}
+
+private struct MetricYScaleModifier: ViewModifier {
+    let metric: TelemetryMetric
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if metric == .voltage {
+            content.chartYScale(domain: 0.0...5.0)
+        } else {
+            content
         }
     }
 }
