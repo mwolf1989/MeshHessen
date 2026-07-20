@@ -3,6 +3,7 @@ import SwiftUI
 /// "Messages" tab — per-channel tab strip with ChannelChatView per channel.
 struct ChannelTabsView: View {
     @Environment(\.appState) private var appState
+    @State private var selectedTabID = -1
 
     var body: some View {
         if appState.channels.isEmpty {
@@ -23,18 +24,13 @@ struct ChannelTabsView: View {
                 )
             }
         } else {
-            TabView(selection: Binding(
-                get: {
-                    if appState.channels.contains(where: { $0.id == appState.selectedChannelIndex }) {
-                        return appState.selectedChannelIndex
+            TabView(selection: $selectedTabID) {
+                AllChannelsChatView()
+                    .tabItem {
+                        Label("All Channels", systemImage: "text.bubble.fill")
                     }
-                    return appState.channels.first?.id ?? 0
-                },
-                set: { newValue in
-                    guard appState.channels.contains(where: { $0.id == newValue }) else { return }
-                    appState.selectedChannelIndex = newValue
-                }
-            )) {
+                    .tag(-1)
+
                 ForEach(appState.channels) { channel in
                     ChannelChatView(channelIndex: channel.id)
                         .tabItem {
@@ -49,6 +45,24 @@ struct ChannelTabsView: View {
                 }
             }
             .tabViewStyle(.automatic)
+            .onAppear {
+                if appState.channels.contains(where: { $0.id == appState.selectedChannelIndex }) {
+                    selectedTabID = appState.selectedChannelIndex
+                }
+            }
+            .onChange(of: selectedTabID) { _, newValue in
+                guard newValue >= 0,
+                      appState.channels.contains(where: { $0.id == newValue })
+                else { return }
+                appState.selectedChannelIndex = newValue
+            }
+            .onChange(of: appState.selectedChannelIndex) { _, newValue in
+                if selectedTabID != -1,
+                   newValue != selectedTabID,
+                   appState.channels.contains(where: { $0.id == newValue }) {
+                    selectedTabID = newValue
+                }
+            }
         }
     }
 }

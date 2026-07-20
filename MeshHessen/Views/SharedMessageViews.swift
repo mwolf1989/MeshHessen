@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Shared delivery state label used in both channel and DM message bubbles.
@@ -142,6 +143,10 @@ private struct ReplyContextView: View {
 
 /// Unified message bubble used in both channel chat and DM conversations.
 struct MessageBubbleView: View {
+    @Environment(\.appState) private var appState
+    @Environment(AppCoordinator.self) private var coordinator
+    @Environment(\.openWindow) private var openWindow
+
     let message: MessageItem
     let isMine: Bool
     var protocolReady: Bool = true
@@ -150,10 +155,16 @@ struct MessageBubbleView: View {
     var replyTarget: MessageItem?
     var onReply: (() -> Void)?
     var onReaction: ((String) -> Void)?
+    var onRetry: (() -> Void)?
 
     @State private var pendingURL: URL?
     @State private var showLinkConfirmation = false
     @State private var showEmojiPicker = false
+    @State private var showNodeInfo: NodeInfo?
+    @State private var showTraceroute: NodeInfo?
+    @State private var showTelemetry: NodeInfo?
+    @State private var showNoteEditor = false
+    @State private var noteDraft = ""
 
     var body: some View {
         VStack(alignment: isMine ? .trailing : .leading, spacing: 2) {
@@ -199,17 +210,15 @@ struct MessageBubbleView: View {
                             .foregroundStyle(.secondary)
                             .font(.caption)
                             .help("Verschlüsselt — Kanalschlüssel (PSK) nicht konfiguriert")
-                        Text(message.isEncrypted && !protocolReady
-                             ? "Kanal wird noch geladen…"
-                             : message.message)
+                        Text(encryptedMessageText)
                             .italic()
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
-                    } else if let attributed = Self.detectLinks(in: message.message) {
+                    } else if let attributed = Self.detectLinks(in: visibleMessageText) {
                         Text(attributed)
                             .textSelection(.enabled)
                     } else {
-                        Text(message.message)
+                        Text(visibleMessageText)
                             .textSelection(.enabled)
                     }
                 }
@@ -223,7 +232,16 @@ struct MessageBubbleView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .contextMenu {
+                Button {
+                    copyMessageText()
+                } label: {
+                    Label("Nachricht kopieren", systemImage: "doc.on.doc")
+                }
+
                 if message.routablePacketId != nil {
+                    if onReply != nil || onReaction != nil {
+                        Divider()
+                    }
                     if let onReply {
                         Button {
                             onReply()
@@ -244,6 +262,72 @@ struct MessageBubbleView: View {
                         Button("More Reactions…") { showEmojiPicker = true }
                     }
                 }
+
+                if let senderNode {
+                    Divider()
+                    if senderNode.id != appState.myNodeInfo?.nodeId {
+                        Button {
+                            appState.ensureDMConversation(for: senderNode.id)
+                            appState.dmTargetNodeId = senderNode.id
+                            openWindow(id: "dm")
+                        } label: {
+                            Label("Send Direct Message", systemImage: "bubble.left")
+                        }
+                    }
+                    Button { showNodeInfo = senderNode } label: {
+                        Label("Show Node Info", systemImage: "info.circle")
+                    }
+                    Button {
+                        coordinator.router.navigateToNodeOnMap(nodeNum: senderNode.id)
+                    } label: {
+                        Label("Show on Map", systemImage: "map")
+                    }
+                    .disabled(senderNode.latitude == nil || senderNode.longitude == nil)
+                    Button(
+                        senderNode.isFavorite
+                            ? String(localized: "Remove Favorite")
+                            : String(localized: "Add Favorite")
+                    ) {
+                        Task {
+                            _ = await coordinator.protocol_.setFavorite(
+                                !senderNode.isFavorite,
+                                nodeId: senderNode.id
+                            )
+                        }
+                    }
+                    Button(
+                        senderNode.isPinned
+                            ? String(localized: "Unpin")
+                            : String(localized: "Pin")
+                    ) {
+                        senderNode.isPinned.toggle()
+                        coordinator.coreDataStore.updateNodePinState(
+                            nodeId: senderNode.id,
+                            isPinned: senderNode.isPinned
+                        )
+                    }
+                    Button("Edit Note…") {
+                        noteDraft = senderNode.note
+                        showNoteEditor = true
+                    }
+                    Menu("Set Color") {
+                        ForEach(nodeColorPresets, id: \.hex) { preset in
+                            Button(preset.name) {
+                                setColor(preset.hex, for: senderNode)
+                            }
+                        }
+                        Divider()
+                        Button("Clear Color") { setColor("", for: senderNode) }
+                    }
+                    Divider()
+                    Button("Toggle Position Track") {
+                        appState.mapPathToggleNodeId = senderNode.id
+                        coordinator.router.navigateToNodeOnMap(nodeNum: senderNode.id)
+                    }
+                    Button("Traceroute…") { showTraceroute = senderNode }
+                        .disabled(senderNode.id == appState.myNodeInfo?.nodeId)
+                    Button("Telemetry…") { showTelemetry = senderNode }
+                }
             }
             .popover(isPresented: $showEmojiPicker) {
                 EmojiPickerView { emoji in
@@ -255,8 +339,25 @@ struct MessageBubbleView: View {
             // Reaction pills
             ReactionPillsView(reactions: message.reactionsByEmoji)
 
+            if let receptionSummary {
+                Label(receptionSummary.text, systemImage: receptionSummary.symbol)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(receptionSummary.color)
+                    .help(receptionSummary.help)
+                    .accessibilityLabel("Message reception")
+                    .accessibilityValue(receptionSummary.text)
+            }
+
             if isMine {
-                DeliveryStateLabel(state: message.deliveryState)
+                HStack(spacing: 6) {
+                    DeliveryStateLabel(state: message.deliveryState)
+                    if case .failed = message.deliveryState, let onRetry {
+                        Button("Erneut senden", action: onRetry)
+                            .buttonStyle(.link)
+                            .font(.caption2)
+                            .accessibilityLabel("Nachricht erneut senden")
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
@@ -277,6 +378,99 @@ struct MessageBubbleView: View {
         } message: { url in
             Text(url.absoluteString)
         }
+        .alert("Node Note", isPresented: $showNoteEditor) {
+            TextField("Note", text: $noteDraft)
+            Button("Save") { saveNote() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Store a local note for this message sender.")
+        }
+        .sheet(item: $showNodeInfo) { node in
+            NodeInfoSheet(node: node)
+        }
+        .sheet(item: $showTraceroute) { node in
+            TracerouteSheet(targetNodeId: node.id, targetName: node.name)
+        }
+        .sheet(item: $showTelemetry) { node in
+            TelemetryView(nodeId: node.id, nodeName: node.name)
+        }
+    }
+
+    private var senderNode: NodeInfo? {
+        guard message.fromId != 0 else { return nil }
+        return appState.node(forId: message.fromId)
+    }
+
+    private var visibleMessageText: String {
+        guard message.hasAlertBell else { return message.message }
+        var value = message.message.replacingOccurrences(of: "\u{0007}", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        while value.hasPrefix("🔔") {
+            value.removeFirst()
+            value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return value.isEmpty ? String(localized: "Emergency alert") : value
+    }
+
+    private var receptionSummary: (text: String, symbol: String, color: Color, help: String)? {
+        guard !message.isViaMqtt, let hopCount = message.hopCount else { return nil }
+        if hopCount > 0 {
+            let text = localizedHopCount(hopCount)
+            return (text, "point.3.connected.trianglepath.dotted", .secondary,
+                    String(localized: "Relayed message; end-to-end RSSI/SNR is not available"))
+        }
+
+        var parts: [String] = []
+        if let snr = message.receivedSnr { parts.append(String(format: "SNR %.1f dB", snr)) }
+        if let rssi = message.receivedRssi { parts.append("RSSI \(rssi) dBm") }
+        guard !parts.isEmpty else { return nil }
+        let color: Color
+        if let snr = message.receivedSnr {
+            color = snr >= 0 ? .green : (snr >= -10 ? .orange : .red)
+        } else if let rssi = message.receivedRssi {
+            color = rssi >= -90 ? .green : (rssi >= -110 ? .orange : .red)
+        } else {
+            color = .secondary
+        }
+        return (parts.joined(separator: " · "), "antenna.radiowaves.left.and.right", color,
+                String(localized: "Direct RF reception quality"))
+    }
+
+    private var encryptedMessageText: String {
+        if !protocolReady {
+            return String(localized: "Kanal wird noch geladen…")
+        }
+        if message.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return String(localized: "Verschlüsselte Nachricht – kein passender Schlüssel verfügbar")
+        }
+        return message.message
+    }
+
+    private func copyMessageText() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(visibleMessageText, forType: .string)
+    }
+
+    private func setColor(_ colorHex: String, for node: NodeInfo) {
+        node.colorHex = colorHex
+        SettingsService.shared.setColorHex(colorHex, for: node.id)
+        coordinator.coreDataStore.updateNodeCustomization(
+            nodeId: node.id,
+            colorHex: colorHex,
+            note: node.note
+        )
+    }
+
+    private func saveNote() {
+        guard let node = senderNode else { return }
+        let note = noteDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        node.note = note
+        SettingsService.shared.setNote(note, for: node.id)
+        coordinator.coreDataStore.updateNodeCustomization(
+            nodeId: node.id,
+            colorHex: node.colorHex,
+            note: note
+        )
     }
 
     /// Detect URLs in the given string and return an AttributedString with `.link` attributes.

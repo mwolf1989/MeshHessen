@@ -84,7 +84,13 @@ private struct DMConversationView: View {
     @Environment(\.appState) private var appState
     @State private var messageText = ""
     @State private var isSending = false
+    @State private var isLoadingOlder = false
+    @State private var hasMoreHistory = true
+    @State private var suppressNextAutoScroll = false
     @State private var showDeleteConfirmation = false
+    @State private var deletionScope: MessageHistoryDeletionScope = .all
+    @State private var showSOSConfirmation = false
+    @State private var kioskState = KioskState.shared
     @State private var replyingTo: MessageItem?
     @FocusState private var inputFocused: Bool
 
@@ -92,16 +98,20 @@ private struct DMConversationView: View {
         VStack(spacing: 0) {
             HStack {
                 Spacer()
-                Button {
-                    showDeleteConfirmation = true
+                Menu {
+                    deletionButton("Alle Nachrichten", scope: .all)
+                    Divider()
+                    deletionButton("Älter als 30 Tage", scope: .olderThanThirtyDays)
+                    deletionButton("Älter als 90 Tage", scope: .olderThanNinetyDays)
+                    deletionButton("Älter als ein Jahr", scope: .olderThanOneYear)
                 } label: {
                     Label("Nachrichten löschen", systemImage: "trash")
                         .font(.caption)
                 }
-                .buttonStyle(.borderless)
+                .menuStyle(.borderlessButton)
                 .foregroundStyle(.secondary)
                 .disabled(conversation.messages.isEmpty)
-                .help("Alle Nachrichten in dieser Konversation löschen")
+                .help("Nachrichtenverlauf dieser Konversation bereinigen")
                 .padding(.trailing, 12)
                 .padding(.top, 4)
             }
@@ -109,6 +119,23 @@ private struct DMConversationView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
+                        if hasMoreHistory {
+                            Button {
+                                loadOlderHistory(using: proxy)
+                            } label: {
+                                if isLoadingOlder {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Label("Ältere Nachrichten laden", systemImage: "clock.arrow.circlepath")
+                                }
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(isLoadingOlder)
+                            .frame(maxWidth: .infinity)
+                            .padding(.bottom, 4)
+                        }
+
                         ForEach(conversation.messages) { msg in
                             MessageBubbleView(
                                 message: msg,
@@ -117,7 +144,8 @@ private struct DMConversationView: View {
                                 onReply: msg.routablePacketId == nil ? nil : {
                                     beginReply(to: msg)
                                 },
-                                onReaction: reactionHandler(for: msg)
+                                onReaction: reactionHandler(for: msg),
+                                onRetry: retryHandler(for: msg)
                             )
                             .id(msg.id)
                         }
@@ -125,7 +153,9 @@ private struct DMConversationView: View {
                     .padding(12)
                 }
                 .onChange(of: conversation.messages.count) { _, _ in
-                    if let last = conversation.messages.last {
+                    if suppressNextAutoScroll {
+                        suppressNextAutoScroll = false
+                    } else if let last = conversation.messages.last {
                         withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                     }
                 }
@@ -142,19 +172,51 @@ private struct DMConversationView: View {
                 }
 
                 HStack(spacing: 8) {
+                    if !kioskState.isFeatureLocked(.sos) {
+                        Button {
+                            showSOSConfirmation = true
+                        } label: {
+                            Text("SOS")
+                                .fontWeight(.bold)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.red)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Send SOS directly to \(conversation.nodeName)")
+                        .disabled(!appState.protocolReady || isSending)
+                    }
+
                     TextField("Message to \(conversation.nodeName)…", text: $messageText, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
                         .lineLimit(1...4)
                         .frame(maxWidth: .infinity)
                         .focused($inputFocused)
+                        .onChange(of: messageText) { _, newValue in
+                            let limited = MessageItem.truncatingToPayloadLimit(newValue)
+                            if limited != newValue {
+                                messageText = limited
+                            }
+                        }
 
                     Button(action: sendMessage) {
                         Image(systemName: "paperplane.fill")
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending)
+                    .disabled(
+                        messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || MessageItem.payloadByteCount(messageText) > MessageItem.maximumPayloadBytes
+                            || isSending
+                    )
                     .keyboardShortcut(.return, modifiers: .command)
                 }
+
+                Text("\(MessageItem.payloadByteCount(messageText))/\(MessageItem.maximumPayloadBytes) Bytes")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .padding(10)
         }
@@ -166,17 +228,65 @@ private struct DMConversationView: View {
         .alert("Nachrichten löschen?", isPresented: $showDeleteConfirmation) {
             Button("Löschen", role: .destructive) {
                 replyingTo = nil
-                coordinator.clearDirectMessages(for: conversation.id)
+                coordinator.clearDirectMessages(for: conversation.id, scope: deletionScope)
             }
             Button("Abbrechen", role: .cancel) {}
         } message: {
-            Text("Alle Nachrichten in dieser Konversation werden unwiderruflich gelöscht.")
+            Text(deletionConfirmationText)
+        }
+        .confirmationDialog("SOS-Alarm senden?", isPresented: $showSOSConfirmation) {
+            Button("SOS senden", role: .destructive) {
+                sendSOSAlert()
+            }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            Text("Der Notruf wird als Direktnachricht an \(conversation.nodeName) gesendet. Text im Eingabefeld wird als Zusatztext übernommen.")
+        }
+    }
+
+    @ViewBuilder
+    private func deletionButton(_ title: LocalizedStringKey, scope: MessageHistoryDeletionScope) -> some View {
+        Button(title, role: .destructive) {
+            deletionScope = scope
+            showDeleteConfirmation = true
+        }
+    }
+
+    private var deletionConfirmationText: String {
+        switch deletionScope {
+        case .all:
+            return String(localized: "Alle Nachrichten in dieser Konversation werden unwiderruflich gelöscht.")
+        case .olderThanThirtyDays:
+            return String(localized: "Alle Direktnachrichten, die älter als 30 Tage sind, werden gelöscht.")
+        case .olderThanNinetyDays:
+            return String(localized: "Alle Direktnachrichten, die älter als 90 Tage sind, werden gelöscht.")
+        case .olderThanOneYear:
+            return String(localized: "Alle Direktnachrichten, die älter als ein Jahr sind, werden gelöscht.")
+        }
+    }
+
+    private func loadOlderHistory(using proxy: ScrollViewProxy) {
+        guard !isLoadingOlder else { return }
+        let previousFirstID = conversation.messages.first?.id
+        isLoadingOlder = true
+        suppressNextAutoScroll = true
+        let page = coordinator.loadOlderDirectMessages(for: conversation.id)
+        hasMoreHistory = page.hasMore
+        isLoadingOlder = false
+        if page.messages.isEmpty {
+            suppressNextAutoScroll = false
+        }
+        guard let previousFirstID, !page.messages.isEmpty else { return }
+        Task { @MainActor in
+            await Task.yield()
+            proxy.scrollTo(previousFirstID, anchor: .top)
         }
     }
 
     private func sendMessage() {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty,
+              MessageItem.payloadByteCount(text) <= MessageItem.maximumPayloadBytes else { return }
         let replyToPacketId = replyingTo?.packetId
         messageText = ""
         replyingTo = nil
@@ -187,6 +297,24 @@ private struct DMConversationView: View {
                 toNodeId: conversation.id,
                 replyToPacketId: replyToPacketId
             )
+            isSending = false
+        }
+    }
+
+    private func sendSOSAlert() {
+        let additionalText = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let alertText = MessageItem.truncatingToPayloadLimit(
+            additionalText.isEmpty ? "🔔 Alert Bell Character!" : "🔔 \(additionalText)"
+        )
+        messageText = ""
+        replyingTo = nil
+        isSending = true
+        AppLogger.shared.log(
+            "[UI] User triggered direct SOS alert to \(String(format: "!%08x", conversation.id))",
+            debug: true
+        )
+        Task {
+            await coordinator.sendDirectMessage(alertText, toNodeId: conversation.id)
             isSending = false
         }
     }
@@ -211,6 +339,20 @@ private struct DMConversationView: View {
                     toPacketId: packetId,
                     toNodeId: conversation.id,
                     channelIndex: 0
+                )
+            }
+        }
+    }
+
+    private func retryHandler(for message: MessageItem) -> (() -> Void)? {
+        guard case .failed = message.deliveryState,
+              message.fromId == appState.myNodeInfo?.nodeId else { return nil }
+        return {
+            Task {
+                await coordinator.sendDirectMessage(
+                    message.message,
+                    toNodeId: conversation.id,
+                    replyToPacketId: message.replyToPacketId
                 )
             }
         }

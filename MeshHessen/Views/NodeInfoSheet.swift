@@ -26,13 +26,16 @@ struct NodeInfoSheet: View {
     @State private var isSavingOwner = false
     @State private var showTraceroute = false
     @State private var showTelemetry = false
+    @State private var showRemoteAdmin = false
+    @State private var kioskState = KioskState.shared
 
     private var isOwnNode: Bool {
         appState.myNodeInfo?.nodeId == node.id
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
             // Header
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
@@ -53,6 +56,19 @@ struct NodeInfoSheet: View {
                 .buttonStyle(.plain)
                 .help("Telemetry")
                 if !isOwnNode {
+                    Menu {
+                        ForEach(NodeInfoRequestType.allCases) { requestType in
+                            Button {
+                                Task { await coordinator.protocol_.requestNodeInfo(requestType, from: node.id) }
+                            } label: {
+                                Label(requestType.displayName, systemImage: requestType.systemImage)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "arrow.clockwise.circle")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .help("Request information")
                     Button {
                         showTraceroute = true
                     } label: {
@@ -61,6 +77,24 @@ struct NodeInfoSheet: View {
                     }
                     .buttonStyle(.plain)
                     .help("Traceroute")
+                    Button {
+                        Task { await coordinator.protocol_.setFavorite(!node.isFavorite, nodeId: node.id) }
+                    } label: {
+                        Image(systemName: node.isFavorite ? "star.fill" : "star")
+                            .foregroundStyle(node.isFavorite ? .yellow : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(node.isFavorite ? "Remove favorite" : "Add favorite")
+                    if node.isFavorite, !kioskState.isFeatureLocked(.remoteAdmin) {
+                        Button {
+                            showRemoteAdmin = true
+                        } label: {
+                            Image(systemName: "gearshape.2.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Remote Administration")
+                    }
                 }
                 Button {
                     node.isPinned.toggle()
@@ -88,6 +122,24 @@ struct NodeInfoSheet: View {
                     Text("Long Name").foregroundStyle(.secondary)
                     Text(node.longName).fontWeight(.medium)
                 }
+                if !node.hardwareModel.isEmpty && node.hardwareModel != "Unknown" {
+                    GridRow {
+                        Text("Hardware").foregroundStyle(.secondary)
+                        Text(node.hardwareModel)
+                    }
+                }
+                if !node.firmwareVersion.isEmpty {
+                    GridRow {
+                        Text("Firmware").foregroundStyle(.secondary)
+                        Text(node.firmwareVersion)
+                    }
+                }
+                if !node.role.isEmpty {
+                    GridRow {
+                        Text("Role").foregroundStyle(.secondary)
+                        Text(node.role)
+                    }
+                }
                 if node.batteryLevel > 0 {
                     GridRow {
                         Text("Battery").foregroundStyle(.secondary)
@@ -98,6 +150,28 @@ struct NodeInfoSheet: View {
                     GridRow {
                         Text("SNR").foregroundStyle(.secondary)
                         Text(String(format: "%.1f dB", node.snrFloat))
+                    }
+                }
+                if let directRssi = node.directRssi {
+                    GridRow {
+                        Text("Direct RSSI").foregroundStyle(.secondary)
+                        Text("\(directRssi) dBm")
+                    }
+                }
+                if node.viaMqtt || node.hopsAway != nil {
+                    GridRow {
+                        Text("Path").foregroundStyle(.secondary)
+                        if node.viaMqtt {
+                            Label("MQTT", systemImage: "cloud")
+                        } else if let hopsAway = node.hopsAway {
+                            Text(hopsAway == 0 ? String(localized: "Direct RF") : localizedHopCount(hopsAway))
+                        }
+                    }
+                }
+                if node.voltage > 0 {
+                    GridRow {
+                        Text("Voltage").foregroundStyle(.secondary)
+                        Text(node.voltage, format: .number.precision(.fractionLength(2))) + Text(" V")
                     }
                 }
                 if node.distanceMeters > 0 {
@@ -126,6 +200,28 @@ struct NodeInfoSheet: View {
                         }
                     }
                 }
+                if node.hasPublicKey {
+                    GridRow {
+                        Text("Public Key").foregroundStyle(.secondary)
+                        HStack {
+                            Text(node.publicKey.base64EncodedString())
+                                .font(.system(.caption, design: .monospaced))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Button("Copy", systemImage: "doc.on.doc") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(node.publicKey.base64EncodedString(), forType: .string)
+                            }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
+            if hasExtendedTelemetry {
+                Divider()
+                extendedTelemetry
             }
 
             Divider()
@@ -231,14 +327,18 @@ struct NodeInfoSheet: View {
                         .frame(minWidth: 200)
                 }
             }
+            }
         }
         .padding(20)
-        .frame(minWidth: 420, minHeight: 320)
+        .frame(minWidth: 520, minHeight: 480, idealHeight: 620)
         .sheet(isPresented: $showTraceroute) {
             TracerouteSheet(targetNodeId: node.id, targetName: node.name)
         }
         .sheet(isPresented: $showTelemetry) {
             TelemetryView(nodeId: node.id, nodeName: node.name)
+        }
+        .sheet(isPresented: $showRemoteAdmin) {
+            RemoteAdminView(nodeID: node.id, nodeName: node.name)
         }
         .onAppear {
             // Load persisted values from UserDefaults, falling back to in-memory model
@@ -253,6 +353,75 @@ struct NodeInfoSheet: View {
             ownerLongName = appState.myNodeInfo?.longName.isEmpty == false
                 ? (appState.myNodeInfo?.longName ?? node.longName)
                 : node.longName
+        }
+    }
+
+    private var hasExtendedTelemetry: Bool {
+        node.temperature != nil
+            || node.relativeHumidity != nil
+            || node.barometricPressure != nil
+            || node.pm25 != nil
+            || node.pm10 != nil
+            || node.paxMetrics != nil
+            || node.localStats != nil
+            || node.hostMetrics != nil
+    }
+
+    private var extendedTelemetry: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Latest Telemetry")
+                .font(.headline)
+
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+                if let temperature = node.temperature {
+                    GridRow {
+                        Text("Temperature").foregroundStyle(.secondary)
+                        Text(temperature, format: .number.precision(.fractionLength(1))) + Text(" °C")
+                    }
+                }
+                if let humidity = node.relativeHumidity {
+                    GridRow {
+                        Text("Humidity").foregroundStyle(.secondary)
+                        Text(humidity, format: .number.precision(.fractionLength(0))) + Text(" %")
+                    }
+                }
+                if let pressure = node.barometricPressure {
+                    GridRow {
+                        Text("Pressure").foregroundStyle(.secondary)
+                        Text(pressure, format: .number.precision(.fractionLength(0))) + Text(" hPa")
+                    }
+                }
+                if let pm25 = node.pm25 {
+                    GridRow {
+                        Text("PM2.5").foregroundStyle(.secondary)
+                        Text("\(pm25) µg/m³")
+                    }
+                }
+                if let pm10 = node.pm10 {
+                    GridRow {
+                        Text("PM10").foregroundStyle(.secondary)
+                        Text("\(pm10) µg/m³")
+                    }
+                }
+                if let pax = node.paxMetrics {
+                    GridRow {
+                        Text("PAX Counter").foregroundStyle(.secondary)
+                        Text("Wi-Fi \(pax.wifi) · BLE \(pax.ble)")
+                    }
+                }
+                if let local = node.localStats {
+                    GridRow {
+                        Text("Mesh Packets").foregroundStyle(.secondary)
+                        Text("TX \(local.packetsTx) · RX \(local.packetsRx) · Bad \(local.packetsRxBad)")
+                    }
+                }
+                if let host = node.hostMetrics {
+                    GridRow {
+                        Text("Host Load").foregroundStyle(.secondary)
+                        Text(String(format: "%.2f · %.2f · %.2f", Double(host.load1) / 100, Double(host.load5) / 100, Double(host.load15) / 100))
+                    }
+                }
+            }
         }
     }
 
