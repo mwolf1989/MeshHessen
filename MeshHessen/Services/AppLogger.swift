@@ -8,6 +8,8 @@ final class AppLogger {
     private let queue = DispatchQueue(label: "logger", qos: .background)
     private let maxFileSize: Int = 5 * 1024 * 1024  // 5 MB
 
+    var logFileURL: URL { fileURL }
+
     private init() {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = support.appendingPathComponent("MeshHessen", isDirectory: true)

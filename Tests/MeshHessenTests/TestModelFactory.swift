@@ -18,9 +18,22 @@ enum TestModelFactory {
 
     /// Schema shipped before 1.0.18, used to verify the additive message migration.
     static func makeLegacyModel() -> NSManagedObjectModel {
-        let model = makeModel()
+        let model = makeVersion2Model()
         guard let messageEntity = model.entitiesByName["MHMessageEntity"] else { return model }
         messageEntity.properties.removeAll { $0.name == "replyToPacketId" }
+        return model
+    }
+
+    /// Schema used by MeshHessen 1.0.18 before context-aware message identity.
+    static func makeVersion2Model() -> NSManagedObjectModel {
+        let model = makeModel()
+        guard let messageEntity = model.entitiesByName["MHMessageEntity"] else { return model }
+        let version3Properties: Set<String> = [
+            "messageUUID", "persistenceKey", "hopCount", "receivedSnr",
+            "receivedRssi", "reactionsData",
+        ]
+        messageEntity.properties.removeAll { version3Properties.contains($0.name) }
+        messageEntity.uniquenessConstraints = [["packetId"]]
         return model
     }
 
@@ -83,6 +96,8 @@ enum TestModelFactory {
         e.name = "MHMessageEntity"
         e.managedObjectClassName = NSStringFromClass(NSManagedObject.self)
         e.properties = [
+            uuid("messageUUID"),
+            string("persistenceKey"),
             int64("packetId"),
             int64("replyToPacketId"),
             date("createdAt"),
@@ -103,8 +118,12 @@ enum TestModelFactory {
             string("deliveryError"),
             bool("isDirect"),
             int64("partnerNodeId"),
+            int32("hopCount"),
+            float("receivedSnr"),
+            int32("receivedRssi"),
+            binary("reactionsData"),
         ]
-        e.uniquenessConstraints = [["packetId"]]
+        e.uniquenessConstraints = [["persistenceKey"]]
         return e
     }
 
@@ -177,6 +196,22 @@ enum TestModelFactory {
         let a = NSAttributeDescription()
         a.name = name
         a.attributeType = .dateAttributeType
+        a.isOptional = optional
+        return a
+    }
+
+    private static func uuid(_ name: String, optional: Bool = true) -> NSAttributeDescription {
+        let a = NSAttributeDescription()
+        a.name = name
+        a.attributeType = .UUIDAttributeType
+        a.isOptional = optional
+        return a
+    }
+
+    private static func binary(_ name: String, optional: Bool = true) -> NSAttributeDescription {
+        let a = NSAttributeDescription()
+        a.name = name
+        a.attributeType = .binaryDataAttributeType
         a.isOptional = optional
         return a
     }

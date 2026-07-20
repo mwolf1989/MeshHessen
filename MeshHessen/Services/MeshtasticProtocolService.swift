@@ -27,6 +27,8 @@ final class MeshtasticProtocolService {
         case notConnected
         case missingSessionKey
         case requestFailed
+        case invalidTarget
+        case adminTimedOut(String)
         case incompleteResponse([String])
         case writeFailed(String)
         case verificationFailed([String])
@@ -40,6 +42,10 @@ final class MeshtasticProtocolService {
                 return String(localized: "The device did not provide an admin session key.")
             case .requestFailed:
                 return String(localized: "The configuration request could not be sent.")
+            case .invalidTarget:
+                return String(localized: "The administration target is invalid.")
+            case .adminTimedOut(let operation):
+                return String(localized: "The node did not answer the administration request: \(operation).")
             case .incompleteResponse(let categories):
                 return String(
                     localized: "The device returned an incomplete configuration: \(categories.joined(separator: ", "))."
@@ -61,6 +67,16 @@ final class MeshtasticProtocolService {
     var coreDataStore: MeshCoreDataStore?
 
     var connectionService: (any ConnectionService)?
+    var onFromRadioPayloadReceived: ((Data) -> Void)?
+    var onMqttProxyMessageReceived: ((Meshtastic_MqttClientProxyMessage) -> Void)?
+    var onMqttConfigurationReceived: ((Meshtastic_ModuleConfig.MQTTConfig) -> Void)?
+
+    /// Waypoints and direct contacts are observable protocol state so map views can
+    /// consume them without performing I/O themselves.
+    private(set) var waypoints: [UInt32: MeshWaypoint] = [:]
+    private(set) var directNeighborContacts: [DirectNeighborContact] = []
+
+    var currentNodeId: UInt32 { myNodeId }
 
     // MARK: - Protocol state (non-isolated mutable, protected by dataLock)
     private let dataLock = NSLock()
@@ -76,9 +92,24 @@ final class MeshtasticProtocolService {
     private var receivedChannelResponses = Set<Int>()
 
     // Device config storage (populated by admin getConfigResponse / getModuleConfigResponse)
-    enum ConfigCategory: String { case device, position, power, network, display, lora, bluetooth }
+    enum ConfigCategory: String {
+        case device, position, power, network, display, lora, bluetooth, security, session, deviceUI
+    }
     var receivedConfigs: [ConfigCategory: Meshtastic_Config] = [:]
     var receivedModuleConfigs: [String: Meshtastic_ModuleConfig] = [:]
+
+    private struct AdminResponseRecord {
+        let sequence: UInt64
+        let sourceNodeID: UInt32
+        let requestID: UInt32
+        let message: Meshtastic_AdminMessage
+    }
+
+    private var adminResponseSequence: UInt64 = 0
+    private var adminResponses: [AdminResponseRecord] = []
+    private var remoteSessionPasskeys: [UInt32: Data] = [:]
+    private var remoteSessionPasskeyDates: [UInt32: Date] = [:]
+    private var localSessionPasskeyDate: Date?
 
     // TCP heartbeat keepalive
     private var heartbeatTask: Task<Void, Never>?
@@ -109,6 +140,11 @@ final class MeshtasticProtocolService {
         isInitializing = true
         configComplete = false
         sessionPasskey = Data()
+        localSessionPasskeyDate = nil
+        remoteSessionPasskeys.removeAll()
+        remoteSessionPasskeyDates.removeAll()
+        adminResponses.removeAll()
+        adminResponseSequence = 0
         tempChannels.removeAll()
         receivedChannelResponses.removeAll()
         receiveBuffer = Data()
@@ -229,6 +265,12 @@ final class MeshtasticProtocolService {
         }
     }
 
+    /// Processes a raw FromRadio protobuf emitted locally by a Virtual Node
+    /// client, independently of the active physical transport's framing.
+    func onVirtualFromRadioPayload(_ data: Data) {
+        processPacket(data, forwardToVirtualNode: false)
+    }
+
     // MARK: - Buffer Processing (Serial/TCP framing)
 
     private func processBuffer() {
@@ -326,9 +368,12 @@ final class MeshtasticProtocolService {
 
     // MARK: - Packet Processing
 
-    private func processPacket(_ data: Data) {
+    private func processPacket(_ data: Data, forwardToVirtualNode: Bool = true) {
         do {
             let fromRadio = try Meshtastic_FromRadio(serializedBytes: data)
+            if forwardToVirtualNode {
+                onFromRadioPayloadReceived?(data)
+            }
             handleFromRadio(fromRadio)
         } catch {
             AppLogger.shared.log("[Protocol] Parse error: \(error.localizedDescription) (bytes: \(data.count))", debug: true)
@@ -467,6 +512,8 @@ final class MeshtasticProtocolService {
             AppLogger.shared.log("[Protocol] ConfigComplete received", debug: true)
         case .metadata(let meta):
             handleDeviceMetadata(meta)
+        case .mqttClientProxyMessage(let message):
+            onMqttProxyMessageReceived?(message)
         default:
             break
         }
@@ -475,21 +522,49 @@ final class MeshtasticProtocolService {
     // MARK: - Mesh Packet
 
     private func handleMeshPacket(_ packet: Meshtastic_MeshPacket) {
-        // Update SNR/RSSI on the sender node from every packet
+        let hopCount = Self.hopCount(hopStart: packet.hopStart, hopLimit: packet.hopLimit)
+        let isDirectRF = Self.isDirectRF(hopCount: hopCount, viaMqtt: packet.viaMqtt)
+
+        // Signal values represent direct RF quality. A relayed or MQTT packet must
+        // never replace a previously measured direct link with a misleading value.
         if packet.from != 0 && packet.from != myNodeId, let senderNode = appState?.node(forId: packet.from) {
-            if packet.rxSnr != 0 {
-                senderNode.snrFloat = packet.rxSnr
-                senderNode.snr = String(format: "%.1f dB", packet.rxSnr)
-            }
-            if packet.rxRssi != 0 {
-                senderNode.rssiInt = packet.rxRssi
-                senderNode.rssi = "\(packet.rxRssi) dBm"
+            senderNode.hopsAway = hopCount
+            senderNode.viaMqtt = packet.viaMqtt
+
+            if isDirectRF {
+                let timestamp = Int32(Date().timeIntervalSince1970)
+                senderNode.lastDirectHeard = timestamp
+
+                if packet.rxSnr != 0 {
+                    senderNode.directSnr = packet.rxSnr
+                    senderNode.snrFloat = packet.rxSnr
+                    senderNode.snr = String(format: "%.1f dB", packet.rxSnr)
+                }
+                if packet.rxRssi != 0 {
+                    senderNode.directRssi = packet.rxRssi
+                    senderNode.rssiInt = packet.rxRssi
+                    senderNode.rssi = "\(packet.rxRssi) dBm"
+                }
+
+                directNeighborContacts.insert(
+                    DirectNeighborContact(
+                        nodeId: packet.from,
+                        timestamp: Date(),
+                        snr: packet.rxSnr == 0 ? nil : packet.rxSnr,
+                        rssi: packet.rxRssi == 0 ? nil : packet.rxRssi,
+                        latitude: senderNode.latitude,
+                        longitude: senderNode.longitude
+                    ),
+                    at: 0
+                )
+                if directNeighborContacts.count > 2_000 {
+                    directNeighborContacts.removeLast(directNeighborContacts.count - 2_000)
+                }
             }
         }
 
         // Record every received packet in the telemetry database
         if packet.from != 0 && packet.from != myNodeId {
-            let hopCount = packet.hopStart > 0 ? Int(packet.hopStart) - Int(packet.hopLimit) : 0
             let senderNode = appState?.node(forId: packet.from)
             TelemetryDatabaseService.shared.insertPacketRx(
                 nodeId: packet.from,
@@ -497,6 +572,7 @@ final class MeshtasticProtocolService {
                 snr: packet.rxSnr,
                 rssi: packet.rxRssi,
                 hopCount: max(0, hopCount),
+                viaMqtt: packet.viaMqtt,
                 wantAck: packet.wantAck,
                 latitude: senderNode?.latitude ?? 0,
                 longitude: senderNode?.longitude ?? 0
@@ -513,6 +589,7 @@ final class MeshtasticProtocolService {
             case .adminApp:          handleAdminPacket(data: data, packet: packet)
             case .waypointApp:       handleWaypointPacket(data: data, packet: packet)
             case .telemetryApp:      handleTelemetry(data: data, packet: packet)
+            case .paxcounterApp:     handlePaxCounter(data: data, packet: packet)
             case .tracerouteApp:     handleTraceroutePacket(data: data, packet: packet)
             case .neighborinfoApp:   handleNeighborInfoPacket(data: data, packet: packet)
             default:
@@ -552,6 +629,7 @@ final class MeshtasticProtocolService {
                         case .nodeinfoApp:       handleNodeInfoPacket(data: decoded, packet: decryptedPacket)
                         case .routingApp:        handleRoutingPacket(data: decoded, packet: decryptedPacket)
                         case .telemetryApp:      handleTelemetry(data: decoded, packet: decryptedPacket)
+                        case .paxcounterApp:     handlePaxCounter(data: decoded, packet: decryptedPacket)
                         case .tracerouteApp:     handleTraceroutePacket(data: decoded, packet: decryptedPacket)
                         default:
                             AppLogger.shared.log("[PKI] Decrypted portnum \(decoded.portnum) from \(nodeDisplayName(packet.from))", debug: true)
@@ -567,9 +645,19 @@ final class MeshtasticProtocolService {
                 let from = nodeDisplayName(packet.from)
                 AppLogger.shared.log("[MSG] Encrypted from \(from) CH-hash:\(packet.channel) MQTT:\(packet.viaMqtt) PKI:\(packet.pkiEncrypted)", debug: true)
             }
+            handleEncryptedPacket(packet)
         default:
             break
         }
+    }
+
+    nonisolated static func hopCount(hopStart: UInt32, hopLimit: UInt32) -> Int {
+        guard hopStart > 0 else { return 0 }
+        return max(0, Int(hopStart) - Int(hopLimit))
+    }
+
+    nonisolated static func isDirectRF(hopCount: Int, viaMqtt: Bool) -> Bool {
+        hopCount == 0 && !viaMqtt
     }
 
     // MARK: - Text Message
@@ -609,7 +697,10 @@ final class MeshtasticProtocolService {
             senderShortName: node?.shortName ?? "",
             senderColorHex: node?.colorHex ?? "",
             senderNote: node?.note ?? "",
-            hasAlertBell: hasAlertBell
+            hasAlertBell: hasAlertBell,
+            hopCount: packet.viaMqtt ? nil : Self.hopCount(hopStart: packet.hopStart, hopLimit: packet.hopLimit),
+            receivedSnr: packet.viaMqtt || packet.rxSnr == 0 ? nil : packet.rxSnr,
+            receivedRssi: packet.viaMqtt || packet.rxRssi == 0 ? nil : Int(packet.rxRssi)
         )
 
         if SettingsService.shared.debugMessages {
@@ -643,13 +734,63 @@ final class MeshtasticProtocolService {
         }
     }
 
+    private func handleEncryptedPacket(_ packet: Meshtastic_MeshPacket) {
+        let channelIndex = max(0, resolvedChannelIndex(for: packet.channel))
+        let node = appState?.node(forId: packet.from)
+        let message = MessageItem(
+            packetId: packet.id == 0 ? nil : packet.id,
+            time: formatTime(),
+            from: nodeDisplayName(packet.from),
+            fromId: packet.from,
+            toId: packet.to,
+            message: "",
+            channelIndex: channelIndex,
+            channelName: channelName(for: Int(packet.channel)),
+            isEncrypted: true,
+            isViaMqtt: packet.viaMqtt,
+            senderShortName: node?.shortName ?? "",
+            senderColorHex: node?.colorHex ?? "",
+            senderNote: node?.note ?? "",
+            hopCount: packet.viaMqtt ? nil : Self.hopCount(hopStart: packet.hopStart, hopLimit: packet.hopLimit),
+            receivedSnr: packet.viaMqtt || packet.rxSnr == 0 ? nil : packet.rxSnr,
+            receivedRssi: packet.viaMqtt || packet.rxRssi == 0 ? nil : Int(packet.rxRssi)
+        )
+
+        let isBroadcast = packet.to == 0xFFFFFFFF || packet.to == 0
+        if !isBroadcast && (packet.to == myNodeId || packet.from == myNodeId) {
+            let partnerNodeId = packet.from == myNodeId ? packet.to : packet.from
+            appState?.addOrUpdateDM(message, myNodeId: myNodeId, partnerNodeId: partnerNodeId)
+            coreDataStore?.upsertMessage(
+                message,
+                isDirect: true,
+                partnerNodeId: partnerNodeId,
+                partnerName: nodeDisplayName(partnerNodeId)
+            )
+        } else {
+            deliver(message)
+        }
+    }
+
     // MARK: - Emoji Reaction
 
     private func handleEmojiReaction(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
         let targetPacketId = data.replyID
         let emojiStr = Self.decodeEmojiReaction(data)
+        let isBroadcast = packet.to == 0xFFFFFFFF || packet.to == 0
+        let context: MessageStorageContext
+        if isBroadcast {
+            context = .channel(max(0, resolvedChannelIndex(for: packet.channel)))
+        } else {
+            let partnerId = packet.from == myNodeId ? packet.to : packet.from
+            context = .directMessage(partnerNodeId: partnerId)
+        }
 
-        appState?.addReaction(emoji: emojiStr, from: packet.from, toPacketId: targetPacketId)
+        appState?.addReaction(
+            emoji: emojiStr,
+            from: packet.from,
+            toPacketId: targetPacketId,
+            context: context
+        )
 
         if SettingsService.shared.debugMessages {
             AppLogger.shared.log("[Reaction] \(nodeDisplayName(packet.from)) reacted \(emojiStr) to packet \(targetPacketId)", debug: true)
@@ -673,7 +814,15 @@ final class MeshtasticProtocolService {
         await sendToRadio(packet: packet)
 
         // Apply reaction locally
-        appState?.addReaction(emoji: emoji, from: myNodeId, toPacketId: toPacketId)
+        let context: MessageStorageContext = (toNodeId == 0xFFFFFFFF || toNodeId == 0)
+            ? .channel(channelIndex)
+            : .directMessage(partnerNodeId: toNodeId)
+        appState?.addReaction(
+            emoji: emoji,
+            from: myNodeId,
+            toPacketId: toPacketId,
+            context: context
+        )
     }
 
     /// Meshtastic uses `emoji` as a boolean marker. The actual (possibly
@@ -726,6 +875,20 @@ final class MeshtasticProtocolService {
         // Parse it from the raw payload to determine success vs. error code.
         let errorCode = parseRoutingErrorReason(from: data.payload)
         let routingError = RoutingError(rawValue: errorCode) ?? .none
+        let storageContext: MessageStorageContext? = {
+            if packet.from != 0 && packet.from != myNodeId {
+                return .directMessage(partnerNodeId: packet.from)
+            }
+            guard let message = appState?.findMessageByPacketId(data.requestID) else {
+                let channelIndex = resolvedChannelIndex(for: packet.channel)
+                return channelIndex >= 0 ? .channel(channelIndex) : nil
+            }
+            if message.isDirect {
+                let partnerNodeId = message.fromId == myNodeId ? message.toId : message.fromId
+                return .directMessage(partnerNodeId: partnerNodeId)
+            }
+            return .channel(message.channelIndex)
+        }()
 
         // For DMs (unicast): ignore the local ACK from our own node — only
         // mark as acknowledged when the actual destination node responds.
@@ -735,7 +898,7 @@ final class MeshtasticProtocolService {
         // destination node will send a separate ACK.
         let isFromSelf = packet.from == myNodeId
         if isFromSelf && routingError == .none {
-            let isDirect = appState?.findMessageByPacketId(data.requestID)?.isDirect ?? false
+            let isDirect = appState?.findMessageByPacketId(data.requestID, context: storageContext)?.isDirect ?? false
             if isDirect {
                 AppLogger.shared.log(
                     "[ACK] Local ACK for requestId=\(data.requestID) (ignoring — waiting for destination ACK)",
@@ -753,8 +916,16 @@ final class MeshtasticProtocolService {
             deliveryState = .failed(routingError.display)
         }
 
-        appState?.updateDeliveryState(requestId: data.requestID, state: deliveryState)
-        coreDataStore?.updateDeliveryState(requestId: data.requestID, state: deliveryState)
+        appState?.updateDeliveryState(
+            requestId: data.requestID,
+            state: deliveryState,
+            context: storageContext
+        )
+        coreDataStore?.updateDeliveryState(
+            requestId: data.requestID,
+            state: deliveryState,
+            storageContext: storageContext
+        )
 
         if routingError == .none {
             TelemetryDatabaseService.shared.markAckReceived(packetId: data.requestID)
@@ -851,6 +1022,8 @@ final class MeshtasticProtocolService {
             node.latitude = lat
             node.longitude = lon
             node.altitude = alt
+            node.groundSpeed = pos.groundSpeed
+            node.groundTrack = pos.groundTrack
             appState?.recalculateDistance(for: packet.from)
         }
 
@@ -900,6 +1073,8 @@ final class MeshtasticProtocolService {
             node.latitude = Double(position.latitudeI) / 1e7
             node.longitude = Double(position.longitudeI) / 1e7
             node.altitude = Int(position.altitude)
+            node.groundSpeed = position.groundSpeed
+            node.groundTrack = position.groundTrack
         }
 
         // Apply telemetry
@@ -911,6 +1086,9 @@ final class MeshtasticProtocolService {
         node.batteryLevel = metrics.batteryLevel
         node.battery = metrics.batteryLevel > 0 ? "\(metrics.batteryLevel)%" : "-"
         node.viaMqtt = info.viaMqtt
+        node.hopsAway = info.hopsAway > 0 ? Int(info.hopsAway) : (info.viaMqtt ? nil : 0)
+        node.isFavorite = info.isFavorite
+        node.isOwnNode = info.num == myNodeId
 
         // Apply saved color/note from settings
         node.colorHex = SettingsService.shared.colorHex(for: info.num)
@@ -998,16 +1176,19 @@ final class MeshtasticProtocolService {
             receivedConfigs[.bluetooth] = config
             AppLogger.shared.log("[Protocol] Config: Bluetooth", debug: SettingsService.shared.debugDevice)
         case .security:
+            receivedConfigs[.security] = config
             let sec = config.security
             if !sec.privateKey.isEmpty {
                 PkiDecryptionService.shared.setPrivateKey(sec.privateKey)
             }
             AppLogger.shared.log("[Protocol] Config: Security (pubKey=\(sec.publicKey.count)B, privKey=\(sec.privateKey.count)B)", debug: SettingsService.shared.debugDevice)
         case .sessionkey:
+            receivedConfigs[.session] = config
             // SessionkeyConfig is an empty message — the actual session key
             // comes via admin.sessionPasskey (handled in handleAdminPacket).
             AppLogger.shared.log("[Protocol] Config: Sessionkey", debug: SettingsService.shared.debugDevice)
         case .deviceUi:
+            receivedConfigs[.deviceUI] = config
             AppLogger.shared.log("[Protocol] Config: DeviceUI", debug: SettingsService.shared.debugDevice)
         case .none:
             AppLogger.shared.log("[Protocol] Config received (empty)", debug: SettingsService.shared.debugDevice)
@@ -1018,6 +1199,7 @@ final class MeshtasticProtocolService {
         switch moduleConfig.payloadVariant {
         case .mqtt:
             receivedModuleConfigs["mqtt"] = moduleConfig
+            onMqttConfigurationReceived?(moduleConfig.mqtt)
             AppLogger.shared.log("[Protocol] ModuleConfig: MQTT", debug: SettingsService.shared.debugDevice)
         case .serial:
             receivedModuleConfigs["serial"] = moduleConfig
@@ -1025,8 +1207,34 @@ final class MeshtasticProtocolService {
         case .telemetry:
             receivedModuleConfigs["telemetry"] = moduleConfig
             AppLogger.shared.log("[Protocol] ModuleConfig: Telemetry", debug: SettingsService.shared.debugDevice)
-        default:
-            AppLogger.shared.log("[Protocol] ModuleConfig received (other)", debug: SettingsService.shared.debugDevice)
+        case .externalNotification:
+            receivedModuleConfigs[MeshModuleConfigCategory.externalNotification.rawValue] = moduleConfig
+        case .storeForward:
+            receivedModuleConfigs[MeshModuleConfigCategory.storeForward.rawValue] = moduleConfig
+        case .rangeTest:
+            receivedModuleConfigs[MeshModuleConfigCategory.rangeTest.rawValue] = moduleConfig
+        case .cannedMessage:
+            receivedModuleConfigs[MeshModuleConfigCategory.cannedMessage.rawValue] = moduleConfig
+        case .audio:
+            receivedModuleConfigs[MeshModuleConfigCategory.audio.rawValue] = moduleConfig
+        case .remoteHardware:
+            receivedModuleConfigs[MeshModuleConfigCategory.remoteHardware.rawValue] = moduleConfig
+        case .neighborInfo:
+            receivedModuleConfigs[MeshModuleConfigCategory.neighborInfo.rawValue] = moduleConfig
+        case .ambientLighting:
+            receivedModuleConfigs[MeshModuleConfigCategory.ambientLighting.rawValue] = moduleConfig
+        case .detectionSensor:
+            receivedModuleConfigs[MeshModuleConfigCategory.detectionSensor.rawValue] = moduleConfig
+        case .paxcounter:
+            receivedModuleConfigs[MeshModuleConfigCategory.paxcounter.rawValue] = moduleConfig
+        case .statusmessage:
+            receivedModuleConfigs[MeshModuleConfigCategory.statusMessage.rawValue] = moduleConfig
+        case .trafficManagement:
+            receivedModuleConfigs[MeshModuleConfigCategory.trafficManagement.rawValue] = moduleConfig
+        case .tak:
+            receivedModuleConfigs[MeshModuleConfigCategory.tak.rawValue] = moduleConfig
+        case nil:
+            AppLogger.shared.log("[Protocol] ModuleConfig received (empty)", debug: SettingsService.shared.debugDevice)
         }
     }
 
@@ -1040,15 +1248,36 @@ final class MeshtasticProtocolService {
 
         AppLogger.shared.log("[Protocol] Admin response: \(String(describing: admin.payloadVariant)), passkey=\(admin.sessionPasskey.count) bytes", debug: true)
 
-        // Extract session passkey from every admin response (matches Windows client behavior)
+        adminResponseSequence &+= 1
+        adminResponses.append(
+            AdminResponseRecord(
+                sequence: adminResponseSequence,
+                sourceNodeID: packet.from,
+                requestID: data.requestID,
+                message: admin
+            )
+        )
+        if adminResponses.count > 512 {
+            adminResponses.removeFirst(adminResponses.count - 512)
+        }
+
+        // Session keys are scoped to the responding node and expire after five
+        // minutes. Keeping remote keys separate prevents a remote read from
+        // invalidating subsequent local configuration writes.
         if !admin.sessionPasskey.isEmpty {
-            sessionPasskey = admin.sessionPasskey
-            AppLogger.shared.log("[Protocol] Session passkey updated (\(sessionPasskey.count) bytes)", debug: true)
+            if packet.from == myNodeId {
+                sessionPasskey = admin.sessionPasskey
+                localSessionPasskeyDate = Date()
+            } else if packet.from != 0 {
+                remoteSessionPasskeys[packet.from] = admin.sessionPasskey
+                remoteSessionPasskeyDates[packet.from] = Date()
+            }
+            AppLogger.shared.log("[Protocol] Session passkey updated for \(String(format: "!%08x", packet.from)) (\(admin.sessionPasskey.count) bytes)", debug: true)
         }
 
         switch admin.payloadVariant {
         case .getChannelResponse(let channel):
-            handleChannel(channel)
+            if packet.from == myNodeId { handleChannel(channel) }
         case .getOwnerResponse(let owner):
             if packet.from == myNodeId {
                 appState?.myNodeInfo?.shortName = owner.shortName
@@ -1060,13 +1289,19 @@ final class MeshtasticProtocolService {
                 }
             }
         case .getConfigResponse(let config):
-            handleConfig(config)
+            if packet.from == myNodeId { handleConfig(config) }
             AppLogger.shared.log("[Protocol] Admin getConfigResponse received", debug: true)
         case .getModuleConfigResponse(let moduleConfig):
-            handleModuleConfig(moduleConfig)
+            if packet.from == myNodeId { handleModuleConfig(moduleConfig) }
             AppLogger.shared.log("[Protocol] Admin getModuleConfigResponse received", debug: true)
         case .getDeviceMetadataResponse(let meta):
-            handleDeviceMetadata(meta)
+            if packet.from == myNodeId { handleDeviceMetadata(meta) }
+        case .getUiConfigResponse(let config):
+            if packet.from == myNodeId {
+                var wrapper = Meshtastic_Config()
+                wrapper.deviceUi = config
+                handleConfig(wrapper)
+            }
         default:
             break
         }
@@ -1107,21 +1342,42 @@ final class MeshtasticProtocolService {
     // MARK: - Waypoint (portnum 8)
 
     private func handleWaypointPacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
-        // Waypoint protobuf is not in our slim proto schema, so parse raw fields:
-        // field 1 (fixed32): id, field 2 (sfixed32): latitudeI, field 3 (sfixed32): longitudeI,
-        // field 4 (int32): expire, field 5 (uint32): locked_to, field 6 (string): name,
-        // field 7 (string): description, field 8 (fixed32): icon
         let from = nodeDisplayName(packet.from)
-        let waypointId = parseFixed32(data.payload, fieldNumber: 1)
-        let latI = parseSFixed32(data.payload, fieldNumber: 2)
-        let lonI = parseSFixed32(data.payload, fieldNumber: 3)
-        let name = parseString(data.payload, fieldNumber: 6) ?? "Waypoint"
+        let protobuf: Meshtastic_Waypoint
+        do {
+            protobuf = try Meshtastic_Waypoint(serializedBytes: data.payload)
+        } catch {
+            AppLogger.shared.log("[Waypoint] Invalid payload from \(from): \(error.localizedDescription)")
+            return
+        }
 
-        let lat = Double(latI) / 1e7
-        let lon = Double(lonI) / 1e7
+        let expiration = protobuf.expire == 0
+            ? nil
+            : Date(timeIntervalSince1970: TimeInterval(protobuf.expire))
+        let waypoint = MeshWaypoint(
+            id: protobuf.id,
+            latitude: Double(protobuf.latitudeI) / 1e7,
+            longitude: Double(protobuf.longitudeI) / 1e7,
+            name: protobuf.name,
+            detail: protobuf.description_p,
+            icon: protobuf.icon,
+            expiration: expiration,
+            lockedTo: protobuf.lockedTo,
+            sourceNodeId: packet.from,
+            channelIndex: packet.channel,
+            receivedAt: Date()
+        )
+
+        if waypoint.isExpired {
+            waypoints.removeValue(forKey: waypoint.id)
+            AppLogger.shared.log("[Waypoint] Removed expired waypoint \(waypoint.id)", debug: SettingsService.shared.debugDevice)
+            return
+        }
+
+        waypoints[waypoint.id] = waypoint
 
         AppLogger.shared.log(
-            "[Waypoint] From \(from): \"\(name)\" id=\(waypointId) at (\(String(format: "%.5f", lat)), \(String(format: "%.5f", lon)))",
+            "[Waypoint] From \(from): \"\(waypoint.displayName)\" id=\(waypoint.id) at (\(String(format: "%.5f", waypoint.latitude)), \(String(format: "%.5f", waypoint.longitude)))",
             debug: SettingsService.shared.debugDevice
         )
 
@@ -1133,15 +1389,82 @@ final class MeshtasticProtocolService {
         let msg = MessageItem(
             packetId: packet.id,
             time: ts, from: from, fromId: packet.from, toId: packet.to,
-            message: String(localized: "📍 Waypoint: \(name) (\(String(format: "%.5f", lat)), \(String(format: "%.5f", lon)))"),
+            message: String(localized: "📍 Waypoint: \(waypoint.displayName) (\(String(format: "%.5f", waypoint.latitude)), \(String(format: "%.5f", waypoint.longitude)))"),
             channelIndex: chIndex >= 0 ? chIndex : 0,
             channelName: chName,
             isViaMqtt: packet.viaMqtt,
             senderShortName: node?.shortName ?? "",
             senderColorHex: node?.colorHex ?? "",
-            senderNote: node?.note ?? ""
+            senderNote: node?.note ?? "",
+            hopCount: packet.viaMqtt ? nil : Self.hopCount(hopStart: packet.hopStart, hopLimit: packet.hopLimit),
+            receivedSnr: packet.viaMqtt || packet.rxSnr == 0 ? nil : packet.rxSnr,
+            receivedRssi: packet.viaMqtt || packet.rxRssi == 0 ? nil : Int(packet.rxRssi)
         )
         deliver(msg)
+    }
+
+    @discardableResult
+    func sendWaypoint(
+        _ waypoint: MeshWaypoint,
+        toNodeId: UInt32 = 0xFFFFFFFF,
+        channelIndex: Int = 0
+    ) async -> Bool {
+        guard myNodeId != 0 else { return false }
+
+        var protobuf = Meshtastic_Waypoint()
+        protobuf.id = waypoint.id
+        protobuf.latitudeI = Int32((waypoint.latitude * 1e7).rounded())
+        protobuf.longitudeI = Int32((waypoint.longitude * 1e7).rounded())
+        protobuf.expire = waypoint.expiration.map {
+            UInt32(clamping: Int($0.timeIntervalSince1970))
+        } ?? 0
+        protobuf.lockedTo = waypoint.lockedTo
+        protobuf.name = String(waypoint.name.prefix(30))
+        protobuf.description_p = String(waypoint.detail.prefix(100))
+        protobuf.icon = waypoint.icon
+
+        guard let payload = try? protobuf.serializedData() else { return false }
+        var decoded = Meshtastic_Data()
+        decoded.portnum = .waypointApp
+        decoded.payload = payload
+
+        var packet = Meshtastic_MeshPacket()
+        packet.from = myNodeId
+        packet.to = toNodeId
+        packet.channel = UInt32(clamping: channelIndex)
+        packet.id = UInt32.random(in: 1..<UInt32.max)
+        packet.hopLimit = 7
+        packet.wantAck = true
+        packet.decoded = decoded
+
+        let sent = await sendToRadio(packet: packet)
+        if sent { waypoints[waypoint.id] = waypoint }
+        return sent
+    }
+
+    @discardableResult
+    func deleteWaypoint(
+        id: UInt32,
+        lockedTo: UInt32 = 0,
+        toNodeId: UInt32 = 0xFFFFFFFF,
+        channelIndex: Int = 0
+    ) async -> Bool {
+        let deletion = MeshWaypoint(
+            id: id,
+            latitude: 0,
+            longitude: 0,
+            name: "",
+            detail: "",
+            icon: 0,
+            expiration: Date(timeIntervalSince1970: 1),
+            lockedTo: lockedTo,
+            sourceNodeId: myNodeId,
+            channelIndex: UInt32(clamping: channelIndex),
+            receivedAt: Date()
+        )
+        let sent = await sendWaypoint(deletion, toNodeId: toNodeId, channelIndex: channelIndex)
+        if sent { waypoints.removeValue(forKey: id) }
+        return sent
     }
 
     // MARK: - Traceroute (portnum 70)
@@ -1210,17 +1533,22 @@ final class MeshtasticProtocolService {
 
         // Check if this is a response to a pending request
         if let requestId = data.requestID != 0 ? data.requestID : nil,
-           var pending = pendingTraceroutes.removeValue(forKey: requestId) {
-            pending.responseTime = Date()
+           let pending = pendingTraceroutes.removeValue(forKey: requestId) {
+            let responseTime = Date()
             let completed = TracerouteResult(
+                requestId: requestId,
+                requestTime: pending.requestTime,
+                sourceNodeId: myNodeId,
                 targetNodeId: pending.targetNodeId,
                 targetName: pending.targetName,
                 hops: hops,
-                responseTime: Date()
+                responseTime: responseTime
             )
             storeTracerouteResult(completed)
         } else {
             let result = TracerouteResult(
+                requestId: data.requestID != 0 ? data.requestID : packet.id,
+                sourceNodeId: myNodeId,
                 targetNodeId: packet.from,
                 targetName: from,
                 hops: hops,
@@ -1234,7 +1562,7 @@ final class MeshtasticProtocolService {
             (nodeId: hop.nodeId, snrTowards: hop.snr, snrBack: nil as Float?)
         }
         TelemetryDatabaseService.shared.insertTracerouteHops(
-            requestId: packet.id,
+            requestId: data.requestID != 0 ? data.requestID : packet.id,
             sourceNodeId: myNodeId,
             destNodeId: packet.from,
             hops: traceHops
@@ -1278,7 +1606,12 @@ final class MeshtasticProtocolService {
 
         // Record pending traceroute
         let targetName = nodeDisplayName(targetNodeId)
-        let pending = TracerouteResult(targetNodeId: targetNodeId, targetName: targetName)
+        let pending = TracerouteResult(
+            requestId: packetId,
+            sourceNodeId: myNodeId,
+            targetNodeId: targetNodeId,
+            targetName: targetName
+        )
         pendingTraceroutes[packetId] = pending
 
         guard await sendToRadio(packet: packet) else {
@@ -1474,6 +1807,454 @@ final class MeshtasticProtocolService {
         return missing
     }
 
+    // MARK: - Complete Local / Remote Administration
+
+    private enum CompleteAdminRequestKind: Hashable {
+        case owner
+        case config(MeshConfigCategory)
+        case module(MeshModuleConfigCategory)
+        case channel(Int)
+        case metadata
+        case cannedMessages
+        case ringtone
+    }
+
+    /// Reads every core and module category supported by the generated schema.
+    /// Unsupported categories remain marked as unavailable in the returned
+    /// snapshot and are consequently excluded from later writes.
+    func requestCompleteConfiguration(
+        from target: AdminTarget = .local,
+        selection: MeshConfigurationRequestSelection = .all,
+        timeout: Duration = .seconds(30)
+    ) async throws -> MeshConfigurationSnapshot {
+        guard connectionService?.isConnected == true else {
+            throw DeviceConfigError.notConnected
+        }
+        guard let destination = target.destination(localNodeID: myNodeId) else {
+            throw DeviceConfigError.invalidTarget
+        }
+
+        guard !selection.isEmpty else { return MeshConfigurationSnapshot() }
+        let key = try await ensureAdminSession(for: target, destination: destination, timeout: timeout)
+        var requestQueue: [(Meshtastic_AdminMessage, CompleteAdminRequestKind)] = []
+
+        if selection.includeOwner {
+            var request = Meshtastic_AdminMessage()
+            request.getOwnerRequest = true
+            requestQueue.append((request, .owner))
+        }
+        for category in MeshConfigCategory.allCases where selection.configCategories.contains(category) {
+            var request = Meshtastic_AdminMessage()
+            request.getConfigRequest = category.requestType
+            requestQueue.append((request, .config(category)))
+        }
+        for category in MeshModuleConfigCategory.allCases where selection.moduleCategories.contains(category) {
+            var request = Meshtastic_AdminMessage()
+            request.getModuleConfigRequest = category.requestType
+            requestQueue.append((request, .module(category)))
+        }
+        for index in selection.channelIndices.sorted() where (0..<8).contains(index) {
+            var request = Meshtastic_AdminMessage()
+            request.getChannelRequest = UInt32(index + 1)
+            requestQueue.append((request, .channel(index)))
+        }
+        if selection.includeMetadata {
+            var request = Meshtastic_AdminMessage()
+            request.getDeviceMetadataRequest = true
+            requestQueue.append((request, .metadata))
+        }
+        if selection.includeCannedMessages {
+            var request = Meshtastic_AdminMessage()
+            request.getCannedMessageModuleMessagesRequest = true
+            requestQueue.append((request, .cannedMessages))
+        }
+        if selection.includeRingtone {
+            var request = Meshtastic_AdminMessage()
+            request.getRingtoneRequest = true
+            requestQueue.append((request, .ringtone))
+        }
+
+        var snapshot = MeshConfigurationSnapshot()
+        let clock = ContinuousClock()
+        let overallDeadline = clock.now.advanced(by: timeout)
+        var receivedResponse = false
+
+        // Radios have a shallow admin queue. Send exactly one request and wait
+        // for its response (or the Windows-compatible 8-second category
+        // timeout) before advancing to the next category.
+        for (rawRequest, kind) in requestQueue {
+            try Task.checkCancellation()
+            guard clock.now < overallDeadline else { break }
+            let baselineSequence = adminResponseSequence
+            var request = rawRequest
+            request.sessionPasskey = key
+            guard let requestID = await sendAdminPacket(
+                request,
+                toNodeID: destination,
+                wantResponse: true
+            ) else {
+                throw DeviceConfigError.requestFailed
+            }
+
+            let categoryDeadline = min(overallDeadline, clock.now.advanced(by: .seconds(8)))
+            var matchingRecord: AdminResponseRecord?
+            while clock.now < categoryDeadline {
+                try Task.checkCancellation()
+                matchingRecord = adminResponses.first { record in
+                    guard record.sequence > baselineSequence,
+                          record.sourceNodeID == destination
+                            || (!target.isRemote && record.sourceNodeID == 0)
+                    else { return false }
+                    let requestMatches = record.requestID != 0 && record.requestID == requestID
+                    let kindMatches = inferredRequestKind(for: record.message) == kind
+                    return requestMatches || kindMatches
+                }
+                if matchingRecord != nil { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+
+            if let matchingRecord {
+                apply(matchingRecord.message, kind: kind, to: &snapshot)
+                receivedResponse = true
+            } else {
+                AppLogger.shared.log(
+                    "[Admin] No response for \(String(describing: kind)); continuing sequential load",
+                    debug: SettingsService.shared.debugDevice
+                )
+            }
+        }
+
+        if selection == .all, !receivedResponse {
+            throw DeviceConfigError.adminTimedOut(String(localized: "Read configuration"))
+        }
+
+        snapshot.channels.sort { $0.index < $1.index }
+        if snapshot.position.fixedPosition,
+           let node = appState?.node(forId: destination),
+           let latitude = node.latitude,
+           let longitude = node.longitude {
+            var fixed = Meshtastic_Position()
+            fixed.latitudeI = Int32((latitude * 1e7).rounded())
+            fixed.longitudeI = Int32((longitude * 1e7).rounded())
+            fixed.altitude = Int32(clamping: node.altitude ?? 0)
+            snapshot.fixedPosition = fixed
+        }
+        return snapshot
+    }
+
+    /// Writes the exact diff in one firmware edit transaction. A failed category
+    /// aborts before commit so a partially loaded snapshot can never reset other
+    /// settings to protobuf defaults.
+    @discardableResult
+    func saveCompleteConfiguration(
+        _ snapshot: MeshConfigurationSnapshot,
+        replacing original: MeshConfigurationSnapshot,
+        to target: AdminTarget = .local,
+        timeout: Duration = .seconds(30)
+    ) async throws -> MeshConfigurationDiff {
+        let diff = MeshConfigurationDiff.between(snapshot, and: original)
+        guard !diff.isEmpty else { return diff }
+        guard connectionService?.isConnected == true else {
+            throw DeviceConfigError.notConnected
+        }
+        guard let destination = target.destination(localNodeID: myNodeId) else {
+            throw DeviceConfigError.invalidTarget
+        }
+        let key = try await ensureAdminSession(for: target, destination: destination, timeout: timeout)
+
+        func write(_ message: Meshtastic_AdminMessage, label: String) async throws {
+            var authenticated = message
+            authenticated.sessionPasskey = key
+            guard await sendAdminPacket(
+                authenticated,
+                toNodeID: destination,
+                wantResponse: false
+            ) != nil else {
+                throw DeviceConfigError.writeFailed(label)
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+
+        var begin = Meshtastic_AdminMessage()
+        begin.beginEditSettings = true
+        try await write(begin, label: String(localized: "Begin Edit"))
+
+        for category in diff.changedConfigCategories {
+            // SessionkeyConfig carries no editable values; the actual key is in
+            // AdminMessage.sessionPasskey and must not be set as normal config.
+            guard category != .session else { continue }
+            var message = Meshtastic_AdminMessage()
+            message.setConfig = snapshot.config(for: category)
+            try await write(message, label: category.title)
+        }
+
+        for category in diff.changedModuleCategories {
+            var message = Meshtastic_AdminMessage()
+            message.setModuleConfig = snapshot.moduleConfig(for: category)
+            try await write(message, label: category.title)
+        }
+
+        if diff.ownerChanged {
+            var message = Meshtastic_AdminMessage()
+            message.setOwner = snapshot.owner
+            try await write(message, label: String(localized: "Owner"))
+        }
+
+        if diff.channelsChanged {
+            for channel in snapshot.channels.sorted(by: { $0.index < $1.index }) {
+                var message = Meshtastic_AdminMessage()
+                message.setChannel = channel
+                try await write(message, label: String(localized: "Channel \(channel.index)"))
+            }
+        }
+
+        if diff.cannedMessageTextChanged {
+            var message = Meshtastic_AdminMessage()
+            message.setCannedMessageModuleMessages = snapshot.cannedMessageText
+            try await write(message, label: String(localized: "Canned messages"))
+        }
+
+        if diff.ringtoneChanged {
+            var message = Meshtastic_AdminMessage()
+            message.setRingtoneMessage = snapshot.ringtone
+            try await write(message, label: String(localized: "Ringtone"))
+        }
+
+        if diff.fixedPositionChanged {
+            var message = Meshtastic_AdminMessage()
+            if let position = snapshot.fixedPosition {
+                message.setFixedPosition = position
+            } else {
+                message.removeFixedPosition = true
+            }
+            try await write(message, label: String(localized: "Fixed position"))
+        }
+
+        var commit = Meshtastic_AdminMessage()
+        commit.commitEditSettings = true
+        try await write(commit, label: String(localized: "Commit"))
+        if target.isRemote {
+            clearRemoteAdminSession(for: destination)
+        } else {
+            sessionPasskey = Data()
+            localSessionPasskeyDate = nil
+        }
+        return diff
+    }
+
+    @discardableResult
+    func performAdminAction(
+        _ action: AdminNodeAction,
+        on target: AdminTarget = .local,
+        timeout: Duration = .seconds(30)
+    ) async throws -> Bool {
+        guard connectionService?.isConnected == true else {
+            throw DeviceConfigError.notConnected
+        }
+        guard let destination = target.destination(localNodeID: myNodeId) else {
+            throw DeviceConfigError.invalidTarget
+        }
+        let key = try await ensureAdminSession(for: target, destination: destination, timeout: timeout)
+        var message = action.adminMessage()
+        message.sessionPasskey = key
+        guard await sendAdminPacket(message, toNodeID: destination, wantResponse: false) != nil else {
+            throw DeviceConfigError.writeFailed(String(localized: "Administrative action"))
+        }
+        return true
+    }
+
+    /// Windows parity quick setup: SHORT_SLOW, EU_868 when unset, hop limit 7,
+    /// and the Mesh Hessen channel in the first free secondary slot.
+    @discardableResult
+    func applyMeshHessenQuickConfiguration(
+        to target: AdminTarget = .local,
+        timeout: Duration = .seconds(30)
+    ) async throws -> MeshConfigurationDiff {
+        let original = try await requestCompleteConfiguration(from: target, timeout: timeout)
+        var updated = original
+        updated.lora.usePreset = true
+        updated.lora.modemPreset = .shortSlow
+        if updated.lora.region == .unset { updated.lora.region = .eu868 }
+        updated.lora.hopLimit = 7
+
+        let meshPSK = Data(base64Encoded: Self.meshHessenPSK) ?? Data()
+        let alreadyPresent = updated.channels.contains { $0.settings.psk == meshPSK }
+        if !alreadyPresent,
+           let freeIndex = (1..<8).first(where: { index in
+               !updated.channels.contains { $0.index == Int32(index) && $0.role != .disabled }
+           }) {
+            var settings = Meshtastic_ChannelSettings()
+            settings.name = Self.meshHessenChannelName
+            settings.psk = meshPSK
+            settings.uplinkEnabled = true
+            settings.downlinkEnabled = true
+            var channel = Meshtastic_Channel()
+            channel.index = Int32(freeIndex)
+            channel.role = .secondary
+            channel.settings = settings
+            updated.channels.removeAll { $0.index == Int32(freeIndex) }
+            updated.channels.append(channel)
+        }
+        return try await saveCompleteConfiguration(
+            updated,
+            replacing: original,
+            to: target,
+            timeout: timeout
+        )
+    }
+
+    func clearRemoteAdminSession(for nodeID: UInt32) {
+        remoteSessionPasskeys.removeValue(forKey: nodeID)
+        remoteSessionPasskeyDates.removeValue(forKey: nodeID)
+    }
+
+    private func ensureAdminSession(
+        for target: AdminTarget,
+        destination: UInt32,
+        timeout: Duration
+    ) async throws -> Data {
+        let now = Date()
+        if target.isRemote,
+           let key = remoteSessionPasskeys[destination],
+           !key.isEmpty,
+           now.timeIntervalSince(remoteSessionPasskeyDates[destination] ?? .distantPast) < 240 {
+            return key
+        }
+        if !target.isRemote,
+           !sessionPasskey.isEmpty,
+           localSessionPasskeyDate == nil
+                || now.timeIntervalSince(localSessionPasskeyDate ?? .distantPast) < 240 {
+            return sessionPasskey
+        }
+
+        if target.isRemote {
+            clearRemoteAdminSession(for: destination)
+        } else {
+            sessionPasskey = Data()
+            localSessionPasskeyDate = nil
+        }
+
+        let baseline = adminResponseSequence
+        var request = Meshtastic_AdminMessage()
+        request.getConfigRequest = .sessionkeyConfig
+        guard await sendAdminPacket(request, toNodeID: destination, wantResponse: true) != nil else {
+            throw DeviceConfigError.requestFailed
+        }
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while clock.now < deadline {
+            try Task.checkCancellation()
+            if target.isRemote,
+               let key = remoteSessionPasskeys[destination], !key.isEmpty {
+                return key
+            }
+            if !target.isRemote, !sessionPasskey.isEmpty { return sessionPasskey }
+
+            if let response = adminResponses.last(where: {
+                $0.sequence > baseline
+                    && ($0.sourceNodeID == destination || (!target.isRemote && $0.sourceNodeID == 0))
+                    && !$0.message.sessionPasskey.isEmpty
+            }) {
+                return response.message.sessionPasskey
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        throw DeviceConfigError.missingSessionKey
+    }
+
+    private func inferredRequestKind(for message: Meshtastic_AdminMessage) -> CompleteAdminRequestKind? {
+        switch message.payloadVariant {
+        case .getOwnerResponse: return .owner
+        case .getConfigResponse(let config):
+            guard let category = configCategory(for: config) else { return nil }
+            return .config(category)
+        case .getModuleConfigResponse(let config):
+            guard let category = moduleCategory(for: config) else { return nil }
+            return .module(category)
+        case .getChannelResponse(let channel): return .channel(Int(channel.index))
+        case .getDeviceMetadataResponse: return .metadata
+        case .getCannedMessageModuleMessagesResponse: return .cannedMessages
+        case .getRingtoneResponse: return .ringtone
+        case .getUiConfigResponse: return .config(.deviceUI)
+        default: return nil
+        }
+    }
+
+    private func apply(
+        _ message: Meshtastic_AdminMessage,
+        kind: CompleteAdminRequestKind,
+        to snapshot: inout MeshConfigurationSnapshot
+    ) {
+        switch (kind, message.payloadVariant) {
+        case (.owner, .getOwnerResponse(let owner)):
+            snapshot.owner = owner
+            snapshot.ownerLoaded = true
+        case (.config(let category), .getConfigResponse(let config)):
+            snapshot.apply(config)
+            snapshot.loadedConfigCategories.insert(category)
+        case (.config(.deviceUI), .getUiConfigResponse(let config)):
+            snapshot.deviceUI = config
+            snapshot.loadedConfigCategories.insert(.deviceUI)
+        case (.module(let category), .getModuleConfigResponse(let config)):
+            snapshot.apply(config)
+            snapshot.loadedModuleCategories.insert(category)
+        case (.channel, .getChannelResponse(let channel)):
+            snapshot.channels.removeAll { $0.index == channel.index }
+            snapshot.channels.append(channel)
+            snapshot.channelsLoaded = true
+        case (.metadata, .getDeviceMetadataResponse(let metadata)):
+            snapshot.metadata = metadata
+            snapshot.metadataLoaded = true
+        case (.cannedMessages, .getCannedMessageModuleMessagesResponse(let text)):
+            snapshot.cannedMessageText = text
+            snapshot.cannedMessageTextLoaded = true
+        case (.ringtone, .getRingtoneResponse(let ringtone)):
+            snapshot.ringtone = ringtone
+            snapshot.ringtoneLoaded = true
+        default:
+            break
+        }
+    }
+
+    private func configCategory(for config: Meshtastic_Config) -> MeshConfigCategory? {
+        switch config.payloadVariant {
+        case .device: return .device
+        case .position: return .position
+        case .power: return .power
+        case .network: return .network
+        case .display: return .display
+        case .lora: return .lora
+        case .bluetooth: return .bluetooth
+        case .security: return .security
+        case .sessionkey: return .session
+        case .deviceUi: return .deviceUI
+        case nil: return nil
+        }
+    }
+
+    private func moduleCategory(for config: Meshtastic_ModuleConfig) -> MeshModuleConfigCategory? {
+        switch config.payloadVariant {
+        case .mqtt: return .mqtt
+        case .serial: return .serial
+        case .externalNotification: return .externalNotification
+        case .storeForward: return .storeForward
+        case .rangeTest: return .rangeTest
+        case .telemetry: return .telemetry
+        case .cannedMessage: return .cannedMessage
+        case .audio: return .audio
+        case .remoteHardware: return .remoteHardware
+        case .neighborInfo: return .neighborInfo
+        case .ambientLighting: return .ambientLighting
+        case .detectionSensor: return .detectionSensor
+        case .paxcounter: return .paxcounter
+        case .statusmessage: return .statusMessage
+        case .trafficManagement: return .trafficManagement
+        case .tak: return .tak
+        case nil: return nil
+        }
+    }
+
     // MARK: - NeighborInfo (portnum 71)
 
     private func handleNeighborInfoPacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
@@ -1520,6 +2301,42 @@ final class MeshtasticProtocolService {
     }
 
     // MARK: - Raw Protobuf Field Parsers (for messages not in our generated code)
+
+    private func parseVarintField(_ data: Data, fieldNumber: UInt64) -> UInt64? {
+        var index = data.startIndex
+        while index < data.endIndex {
+            let (tag, tagByteCount) = decodeVarint(data, from: index)
+            guard tagByteCount > 0 else { return nil }
+            index += tagByteCount
+
+            let currentField = tag >> 3
+            let wireType = tag & 0x07
+            if currentField == fieldNumber && wireType == 0 {
+                let (value, valueByteCount) = decodeVarint(data, from: index)
+                return valueByteCount > 0 ? value : nil
+            }
+
+            switch wireType {
+            case 0:
+                let (_, byteCount) = decodeVarint(data, from: index)
+                guard byteCount > 0 else { return nil }
+                index += byteCount
+            case 1:
+                guard index + 8 <= data.endIndex else { return nil }
+                index += 8
+            case 2:
+                let (length, byteCount) = decodeVarint(data, from: index)
+                guard byteCount > 0, length <= UInt64(data.endIndex - index - byteCount) else { return nil }
+                index += byteCount + Int(length)
+            case 5:
+                guard index + 4 <= data.endIndex else { return nil }
+                index += 4
+            default:
+                return nil
+            }
+        }
+        return nil
+    }
 
     /// Parse a fixed32 (wire type 5) at the given field number.
     private func parseFixed32(_ data: Data, fieldNumber: UInt64) -> UInt32 {
@@ -1590,6 +2407,7 @@ final class MeshtasticProtocolService {
         // Node position for day/night classification
         let lat = node.latitude ?? 0
         let lon = node.longitude ?? 0
+        let timestamp = Date()
 
         // Parse the Telemetry envelope (contains a variant oneof)
         guard let telemetry = try? Meshtastic_Telemetry(serializedBytes: data.payload) else {
@@ -1599,43 +2417,288 @@ final class MeshtasticProtocolService {
 
         switch telemetry.variant {
         case .deviceMetrics(let metrics):
-            if metrics.batteryLevel > 0 {
+            if metrics.hasBatteryLevel, metrics.batteryLevel > 0 {
                 node.batteryLevel = metrics.batteryLevel
                 node.battery = metrics.batteryLevel <= 100 ? "\(metrics.batteryLevel)%" : "-"
             }
-            if metrics.voltage > 0 {
+            if metrics.hasVoltage, metrics.voltage > 0 {
                 node.voltage = metrics.voltage
             }
-            node.channelUtilization = metrics.channelUtilization
-            node.airUtilTx = metrics.airUtilTx
+            if metrics.hasChannelUtilization {
+                node.channelUtilization = metrics.channelUtilization
+            }
+            if metrics.hasAirUtilTx {
+                node.airUtilTx = metrics.airUtilTx
+            }
 
-            TelemetryDatabaseService.shared.insertDeviceTelemetry(
+            TelemetryDatabaseService.shared.insertDeviceTelemetrySample(
                 nodeId: packet.from,
-                batteryPercent: metrics.batteryLevel,
-                voltage: metrics.voltage,
-                channelUtilization: metrics.channelUtilization,
-                airUtilTx: metrics.airUtilTx,
-                uptimeSeconds: metrics.uptimeSeconds,
+                timestamp: timestamp,
+                batteryPercent: metrics.hasBatteryLevel ? Double(metrics.batteryLevel) : nil,
+                voltage: metrics.hasVoltage ? Double(metrics.voltage) : nil,
+                channelUtilization: metrics.hasChannelUtilization ? Double(metrics.channelUtilization) : nil,
+                airUtilTx: metrics.hasAirUtilTx ? Double(metrics.airUtilTx) : nil,
+                uptimeSeconds: metrics.hasUptimeSeconds ? Double(metrics.uptimeSeconds) : nil,
                 latitude: lat, longitude: lon
             )
 
             AppLogger.shared.log("[Protocol] DeviceMetrics from \(nodeDisplayName(packet.from)): bat=\(metrics.batteryLevel)% v=\(String(format: "%.2f", metrics.voltage))V chUtil=\(String(format: "%.1f", metrics.channelUtilization))% airTx=\(String(format: "%.1f", metrics.airUtilTx))%", debug: SettingsService.shared.debugDevice)
 
         case .environmentMetrics(let env):
-            TelemetryDatabaseService.shared.insertEnvironmentTelemetry(
+            if env.hasTemperature { node.temperature = env.temperature }
+            if env.hasRelativeHumidity { node.relativeHumidity = env.relativeHumidity }
+            if env.hasBarometricPressure { node.barometricPressure = env.barometricPressure }
+            if env.hasIaq { node.airQualityIndex = env.iaq }
+
+            TelemetryDatabaseService.shared.insertEnvironmentTelemetrySample(
                 nodeId: packet.from,
-                temperature: env.temperature,
-                relativeHumidity: env.relativeHumidity,
-                barometricPressure: env.barometricPressure,
-                iaq: env.iaq,
+                timestamp: timestamp,
+                sample: EnvironmentTelemetrySample(
+                    temperature: env.hasTemperature ? Double(env.temperature) : nil,
+                    relativeHumidity: env.hasRelativeHumidity ? Double(env.relativeHumidity) : nil,
+                    barometricPressure: env.hasBarometricPressure ? Double(env.barometricPressure) : nil,
+                    gasResistance: env.hasGasResistance ? Double(env.gasResistance) : nil,
+                    voltage: env.hasVoltage ? Double(env.voltage) : nil,
+                    current: env.hasCurrent ? Double(env.current) : nil,
+                    iaq: env.hasIaq ? Double(env.iaq) : nil,
+                    distance: env.hasDistance ? Double(env.distance) : nil,
+                    lux: env.hasLux ? Double(env.lux) : nil,
+                    whiteLux: env.hasWhiteLux ? Double(env.whiteLux) : nil,
+                    irLux: env.hasIrLux ? Double(env.irLux) : nil,
+                    uvLux: env.hasUvLux ? Double(env.uvLux) : nil,
+                    windDirection: env.hasWindDirection ? Double(env.windDirection) : nil,
+                    windSpeed: env.hasWindSpeed ? Double(env.windSpeed) : nil,
+                    weight: env.hasWeight ? Double(env.weight) : nil,
+                    windGust: env.hasWindGust ? Double(env.windGust) : nil,
+                    windLull: env.hasWindLull ? Double(env.windLull) : nil,
+                    radiation: env.hasRadiation ? Double(env.radiation) : nil,
+                    rainfall1Hour: env.hasRainfall1H ? Double(env.rainfall1H) : nil,
+                    rainfall24Hours: env.hasRainfall24H ? Double(env.rainfall24H) : nil,
+                    soilMoisture: env.hasSoilMoisture ? Double(env.soilMoisture) : nil,
+                    soilTemperature: env.hasSoilTemperature ? Double(env.soilTemperature) : nil
+                ),
                 latitude: lat, longitude: lon
             )
 
             AppLogger.shared.log("[Protocol] EnvironmentMetrics from \(nodeDisplayName(packet.from)): temp=\(String(format: "%.1f", env.temperature))°C hum=\(String(format: "%.0f", env.relativeHumidity))% pres=\(String(format: "%.0f", env.barometricPressure))hPa", debug: SettingsService.shared.debugDevice)
 
-        default:
-            AppLogger.shared.log("[Protocol] Telemetry variant \(String(describing: telemetry.variant)) from \(nodeDisplayName(packet.from))", debug: SettingsService.shared.debugDevice)
+        case .airQualityMetrics(let air):
+            if air.hasPm25Standard { node.pm25 = air.pm25Standard }
+            if air.hasPm100Standard { node.pm10 = air.pm100Standard }
+
+            var values: [TelemetrySeriesMetric: Double] = [:]
+            func store(_ metric: TelemetrySeriesMetric, _ present: Bool, _ value: Double) {
+                if present { values[metric] = value }
+            }
+            store(.pm10Standard, air.hasPm10Standard, Double(air.pm10Standard))
+            store(.pm25Standard, air.hasPm25Standard, Double(air.pm25Standard))
+            store(.pm100Standard, air.hasPm100Standard, Double(air.pm100Standard))
+            store(.pm40Standard, air.hasPm40Standard, Double(air.pm40Standard))
+            store(.pm10Environmental, air.hasPm10Environmental, Double(air.pm10Environmental))
+            store(.pm25Environmental, air.hasPm25Environmental, Double(air.pm25Environmental))
+            store(.pm100Environmental, air.hasPm100Environmental, Double(air.pm100Environmental))
+            store(.particles03Um, air.hasParticles03Um, Double(air.particles03Um))
+            store(.particles05Um, air.hasParticles05Um, Double(air.particles05Um))
+            store(.particles10Um, air.hasParticles10Um, Double(air.particles10Um))
+            store(.particles25Um, air.hasParticles25Um, Double(air.particles25Um))
+            store(.particles40Um, air.hasParticles40Um, Double(air.particles40Um))
+            store(.particles50Um, air.hasParticles50Um, Double(air.particles50Um))
+            store(.particles100Um, air.hasParticles100Um, Double(air.particles100Um))
+            store(.particlesTypicalSize, air.hasParticlesTps, Double(air.particlesTps))
+            store(.co2, air.hasCo2, Double(air.co2))
+            store(.co2Temperature, air.hasCo2Temperature, Double(air.co2Temperature))
+            store(.co2Humidity, air.hasCo2Humidity, Double(air.co2Humidity))
+            store(.formaldehyde, air.hasFormFormaldehyde, Double(air.formFormaldehyde))
+            store(.formaldehydeHumidity, air.hasFormHumidity, Double(air.formHumidity))
+            store(.formaldehydeTemperature, air.hasFormTemperature, Double(air.formTemperature))
+            store(.pmTemperature, air.hasPmTemperature, Double(air.pmTemperature))
+            store(.pmHumidity, air.hasPmHumidity, Double(air.pmHumidity))
+            store(.pmVocIndex, air.hasPmVocIdx, Double(air.pmVocIdx))
+            store(.pmNoxIndex, air.hasPmNoxIdx, Double(air.pmNoxIdx))
+            TelemetryDatabaseService.shared.insertAirQualityTelemetry(
+                nodeId: packet.from,
+                timestamp: timestamp,
+                sample: AirQualityTelemetrySample(values: values),
+                latitude: lat,
+                longitude: lon
+            )
+            AppLogger.shared.log(
+                "[Protocol] AirQualityMetrics from \(nodeDisplayName(packet.from)): PM2.5=\(air.pm25Standard) PM10=\(air.pm100Standard)",
+                debug: SettingsService.shared.debugDevice
+            )
+
+        case .powerMetrics(let power):
+            let channels: [(Int, Float, Float, Bool)] = [
+                (1, power.ch1Voltage, power.ch1Current, power.hasCh1Voltage || power.hasCh1Current),
+                (2, power.ch2Voltage, power.ch2Current, power.hasCh2Voltage || power.hasCh2Current),
+                (3, power.ch3Voltage, power.ch3Current, power.hasCh3Voltage || power.hasCh3Current),
+                (4, power.ch4Voltage, power.ch4Current, power.hasCh4Voltage || power.hasCh4Current),
+                (5, power.ch5Voltage, power.ch5Current, power.hasCh5Voltage || power.hasCh5Current),
+                (6, power.ch6Voltage, power.ch6Current, power.hasCh6Voltage || power.hasCh6Current),
+                (7, power.ch7Voltage, power.ch7Current, power.hasCh7Voltage || power.hasCh7Current),
+                (8, power.ch8Voltage, power.ch8Current, power.hasCh8Voltage || power.hasCh8Current)
+            ]
+            node.powerMetrics = channels.compactMap { channel, voltage, current, isPresent in
+                guard isPresent else { return nil }
+                return PowerChannelMetric(channel: channel, voltage: voltage, current: current)
+            }
+            TelemetryDatabaseService.shared.insertPowerTelemetry(
+                nodeId: packet.from,
+                timestamp: timestamp,
+                channels: [
+                    PowerChannelTelemetrySample(channel: 1, voltage: power.hasCh1Voltage ? Double(power.ch1Voltage) : nil, current: power.hasCh1Current ? Double(power.ch1Current) : nil),
+                    PowerChannelTelemetrySample(channel: 2, voltage: power.hasCh2Voltage ? Double(power.ch2Voltage) : nil, current: power.hasCh2Current ? Double(power.ch2Current) : nil),
+                    PowerChannelTelemetrySample(channel: 3, voltage: power.hasCh3Voltage ? Double(power.ch3Voltage) : nil, current: power.hasCh3Current ? Double(power.ch3Current) : nil),
+                    PowerChannelTelemetrySample(channel: 4, voltage: power.hasCh4Voltage ? Double(power.ch4Voltage) : nil, current: power.hasCh4Current ? Double(power.ch4Current) : nil),
+                    PowerChannelTelemetrySample(channel: 5, voltage: power.hasCh5Voltage ? Double(power.ch5Voltage) : nil, current: power.hasCh5Current ? Double(power.ch5Current) : nil),
+                    PowerChannelTelemetrySample(channel: 6, voltage: power.hasCh6Voltage ? Double(power.ch6Voltage) : nil, current: power.hasCh6Current ? Double(power.ch6Current) : nil),
+                    PowerChannelTelemetrySample(channel: 7, voltage: power.hasCh7Voltage ? Double(power.ch7Voltage) : nil, current: power.hasCh7Current ? Double(power.ch7Current) : nil),
+                    PowerChannelTelemetrySample(channel: 8, voltage: power.hasCh8Voltage ? Double(power.ch8Voltage) : nil, current: power.hasCh8Current ? Double(power.ch8Current) : nil)
+                ],
+                latitude: lat,
+                longitude: lon
+            )
+
+        case .localStats(let stats):
+            node.localStats = NodeLocalStats(
+                uptimeSeconds: stats.uptimeSeconds,
+                channelUtilization: stats.channelUtilization,
+                airUtilTx: stats.airUtilTx,
+                packetsTx: stats.numPacketsTx,
+                packetsRx: stats.numPacketsRx,
+                packetsRxBad: stats.numPacketsRxBad,
+                onlineNodes: stats.numOnlineNodes,
+                totalNodes: stats.numTotalNodes,
+                duplicatePackets: stats.numRxDupe,
+                relayedPackets: stats.numTxRelay,
+                canceledRelays: stats.numTxRelayCanceled,
+                heapTotalBytes: stats.heapTotalBytes,
+                heapFreeBytes: stats.heapFreeBytes,
+                droppedTransmissions: stats.numTxDropped,
+                noiseFloor: stats.noiseFloor
+            )
+            TelemetryDatabaseService.shared.insertLocalStatsTelemetry(
+                nodeId: packet.from,
+                timestamp: timestamp,
+                sample: LocalTelemetrySample(
+                    uptimeSeconds: Double(stats.uptimeSeconds),
+                    channelUtilization: Double(stats.channelUtilization),
+                    airUtilTx: Double(stats.airUtilTx),
+                    packetsTx: Double(stats.numPacketsTx),
+                    packetsRx: Double(stats.numPacketsRx),
+                    packetsRxBad: Double(stats.numPacketsRxBad),
+                    onlineNodes: Double(stats.numOnlineNodes),
+                    totalNodes: Double(stats.numTotalNodes),
+                    rxDuplicates: Double(stats.numRxDupe),
+                    txRelays: Double(stats.numTxRelay),
+                    canceledRelays: Double(stats.numTxRelayCanceled),
+                    heapTotalBytes: Double(stats.heapTotalBytes),
+                    heapFreeBytes: Double(stats.heapFreeBytes),
+                    txDropped: Double(stats.numTxDropped),
+                    noiseFloor: Double(stats.noiseFloor)
+                ),
+                latitude: lat,
+                longitude: lon
+            )
+
+        case .healthMetrics(let health):
+            node.healthMetrics = NodeHealthMetrics(
+                heartRateBPM: health.heartBpm,
+                oxygenSaturation: health.spO2,
+                temperature: health.temperature
+            )
+            TelemetryDatabaseService.shared.insertHealthTelemetry(
+                nodeId: packet.from,
+                timestamp: timestamp,
+                sample: HealthTelemetrySample(
+                    heartRate: health.hasHeartBpm ? Double(health.heartBpm) : nil,
+                    spO2: health.hasSpO2 ? Double(health.spO2) : nil,
+                    temperature: health.hasTemperature ? Double(health.temperature) : nil
+                ),
+                latitude: lat,
+                longitude: lon
+            )
+
+        case .hostMetrics(let host):
+            node.hostMetrics = NodeHostMetrics(
+                uptimeSeconds: host.uptimeSeconds,
+                freeMemoryBytes: host.freememBytes,
+                diskFreeBytes: host.diskfree1Bytes,
+                load1: host.load1,
+                load5: host.load5,
+                load15: host.load15,
+                userString: host.userString
+            )
+            TelemetryDatabaseService.shared.insertHostTelemetry(
+                nodeId: packet.from,
+                timestamp: timestamp,
+                sample: HostTelemetrySample(
+                    uptimeSeconds: Double(host.uptimeSeconds),
+                    freeMemoryBytes: Double(host.freememBytes),
+                    disk1FreeBytes: Double(host.diskfree1Bytes),
+                    disk2FreeBytes: host.hasDiskfree2Bytes ? Double(host.diskfree2Bytes) : nil,
+                    disk3FreeBytes: host.hasDiskfree3Bytes ? Double(host.diskfree3Bytes) : nil,
+                    load1: Double(host.load1) / 100,
+                    load5: Double(host.load5) / 100,
+                    load15: Double(host.load15) / 100,
+                    userString: host.hasUserString ? host.userString : nil
+                ),
+                latitude: lat,
+                longitude: lon
+            )
+
+        case .trafficManagementStats(let stats):
+            node.trafficStats = NodeTrafficStats(
+                packetsInspected: stats.packetsInspected,
+                positionDedupDrops: stats.positionDedupDrops,
+                nodeInfoCacheHits: stats.nodeinfoCacheHits,
+                rateLimitDrops: stats.rateLimitDrops,
+                unknownPacketDrops: stats.unknownPacketDrops,
+                hopExhaustedPackets: stats.hopExhaustedPackets,
+                routerHopsPreserved: stats.routerHopsPreserved
+            )
+            TelemetryDatabaseService.shared.insertTrafficTelemetry(
+                nodeId: packet.from,
+                timestamp: timestamp,
+                sample: TrafficTelemetrySample(
+                    packetsInspected: Double(stats.packetsInspected),
+                    positionDedupDrops: Double(stats.positionDedupDrops),
+                    nodeInfoCacheHits: Double(stats.nodeinfoCacheHits),
+                    rateLimitDrops: Double(stats.rateLimitDrops),
+                    unknownPacketDrops: Double(stats.unknownPacketDrops),
+                    hopExhaustedPackets: Double(stats.hopExhaustedPackets),
+                    routerHopsPreserved: Double(stats.routerHopsPreserved)
+                ),
+                latitude: lat,
+                longitude: lon
+            )
+
+        case nil:
+            AppLogger.shared.log(
+                "[Protocol] Empty telemetry response from \(nodeDisplayName(packet.from))",
+                debug: SettingsService.shared.debugDevice
+            )
         }
+    }
+
+    private func handlePaxCounter(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
+        guard let node = appState?.node(forId: packet.from) else { return }
+        let wifi = UInt32(clamping: parseVarintField(data.payload, fieldNumber: 1) ?? 0)
+        let ble = UInt32(clamping: parseVarintField(data.payload, fieldNumber: 2) ?? 0)
+        let uptimeSeconds = UInt32(clamping: parseVarintField(data.payload, fieldNumber: 3) ?? 0)
+        node.paxMetrics = NodePaxMetrics(wifi: wifi, ble: ble, uptimeSeconds: uptimeSeconds)
+        node.lastSeen = formatTime()
+        node.lastHeard = Int32(Date().timeIntervalSince1970)
+        TelemetryDatabaseService.shared.insertPaxTelemetry(
+            nodeId: packet.from,
+            sample: PaxTelemetrySample(
+                wifiCount: Double(wifi),
+                bleCount: Double(ble),
+                uptimeSeconds: Double(uptimeSeconds)
+            ),
+            latitude: node.latitude ?? 0,
+            longitude: node.longitude ?? 0
+        )
     }
 
     // MARK: - Channel Requests
@@ -1680,6 +2743,94 @@ final class MeshtasticProtocolService {
     }
 
     // MARK: - Send Methods
+
+    @discardableResult
+    func sendMqttProxyMessage(_ message: Meshtastic_MqttClientProxyMessage) async -> Bool {
+        var toRadio = Meshtastic_ToRadio()
+        toRadio.mqttClientProxyMessage = message
+        return await sendRaw(toRadio)
+    }
+
+    @discardableResult
+    func requestNodeInfo(_ type: NodeInfoRequestType, from destinationId: UInt32) async -> Bool {
+        guard myNodeId != 0, destinationId != 0 else { return false }
+
+        let data: Meshtastic_Data
+        do {
+            data = try Self.makeNodeInfoRequestData(
+                type,
+                destinationId: destinationId,
+                timestamp: UInt32(clamping: Int(Date().timeIntervalSince1970))
+            )
+        } catch {
+            AppLogger.shared.log("[Protocol] Could not encode \(type.rawValue) request: \(error.localizedDescription)")
+            return false
+        }
+
+        var packet = Meshtastic_MeshPacket()
+        packet.from = myNodeId
+        packet.to = destinationId
+        packet.channel = 0
+        packet.id = UInt32.random(in: 1..<UInt32.max)
+        packet.wantAck = false
+        packet.hopLimit = 7
+        packet.hopStart = 7
+        packet.decoded = data
+
+        let sent = await sendToRadio(packet: packet)
+        if sent {
+            AppLogger.shared.log("[Protocol] \(type.rawValue) request sent to \(nodeDisplayName(destinationId))", debug: true)
+        }
+        return sent
+    }
+
+    nonisolated static func makeNodeInfoRequestData(
+        _ type: NodeInfoRequestType,
+        destinationId: UInt32,
+        timestamp: UInt32
+    ) throws -> Meshtastic_Data {
+        var data = Meshtastic_Data()
+        data.wantResponse = true
+        data.dest = destinationId
+
+        switch type {
+        case .userInfo:
+            data.portnum = .nodeinfoApp
+
+        case .position:
+            var position = Meshtastic_Position()
+            position.time = timestamp
+            data.portnum = .positionApp
+            data.payload = try position.serializedData()
+
+        case .paxCounter:
+            data.portnum = .paxcounterApp
+
+        case .deviceMetrics, .environmentMetrics, .airQualityMetrics,
+             .powerMetrics, .localStats, .hostMetrics:
+            var telemetry = Meshtastic_Telemetry()
+            switch type {
+            case .deviceMetrics:
+                telemetry.deviceMetrics = Meshtastic_DeviceMetrics()
+            case .environmentMetrics:
+                telemetry.environmentMetrics = Meshtastic_EnvironmentMetrics()
+            case .airQualityMetrics:
+                telemetry.airQualityMetrics = Meshtastic_AirQualityMetrics()
+            case .powerMetrics:
+                telemetry.powerMetrics = Meshtastic_PowerMetrics()
+            case .localStats:
+                telemetry.localStats = Meshtastic_LocalStats()
+            case .hostMetrics:
+                telemetry.hostMetrics = Meshtastic_HostMetrics()
+            default:
+                break
+            }
+            data.portnum = .telemetryApp
+            data.payload = try telemetry.serializedData()
+        }
+
+        return data
+    }
 
     func sendTextMessage(
         _ text: String,
@@ -1739,8 +2890,15 @@ final class MeshtasticProtocolService {
         let sent = await sendToRadio(packet: packet)
         if !sent {
             let failState: MessageDeliveryState = .failed(String(localized: "Not connected"))
-            appState?.updateDeliveryState(requestId: packetId, state: failState)
-            coreDataStore?.updateDeliveryState(requestId: packetId, state: failState)
+            let storageContext: MessageStorageContext = isBroadcast
+                ? .channel(channelIndex)
+                : .directMessage(partnerNodeId: toNodeId)
+            appState?.updateDeliveryState(requestId: packetId, state: failState, context: storageContext)
+            coreDataStore?.updateDeliveryState(
+                requestId: packetId,
+                state: failState,
+                storageContext: storageContext
+            )
         }
     }
 
@@ -1762,9 +2920,99 @@ final class MeshtasticProtocolService {
         await sendAdminMessage(admin)
     }
 
-    func sendSOSAlert(_ customText: String? = nil) async {
+    func sendSOSAlert(_ customText: String? = nil, channelIndex: Int = 0) async {
         let msg = customText.map { "🔔 \($0)" } ?? "🔔 Alert Bell Character!"
-        await sendTextMessage(msg)
+        await sendTextMessage(msg, channelIndex: channelIndex)
+    }
+
+    @discardableResult
+    func setFavorite(_ isFavorite: Bool, nodeId: UInt32) async -> Bool {
+        await ensureSessionKey()
+        guard !sessionPasskey.isEmpty, nodeId != 0 else { return false }
+
+        var admin = Meshtastic_AdminMessage()
+        if isFavorite {
+            admin.setFavoriteNode = nodeId
+        } else {
+            admin.removeFavoriteNode = nodeId
+        }
+        admin.sessionPasskey = sessionPasskey
+
+        let sent = await sendAdminMessage(admin)
+        if sent { appState?.node(forId: nodeId)?.isFavorite = isFavorite }
+        return sent
+    }
+
+    /// Adds or removes a favorite in the NodeDB of the selected admin target.
+    /// For a remote target the command is authenticated with that node's own
+    /// session key and routed to it instead of mutating the locally connected
+    /// radio.
+    @discardableResult
+    func setFavorite(
+        _ isFavorite: Bool,
+        nodeId: UInt32,
+        on target: AdminTarget,
+        timeout: Duration = .seconds(30)
+    ) async throws -> Bool {
+        guard nodeId != 0,
+              let destination = target.destination(localNodeID: myNodeId)
+        else { throw DeviceConfigError.invalidTarget }
+        if !target.isRemote {
+            return await setFavorite(isFavorite, nodeId: nodeId)
+        }
+
+        let key = try await ensureAdminSession(
+            for: target,
+            destination: destination,
+            timeout: timeout
+        )
+        var admin = Meshtastic_AdminMessage()
+        if isFavorite {
+            admin.setFavoriteNode = nodeId
+        } else {
+            admin.removeFavoriteNode = nodeId
+        }
+        admin.sessionPasskey = key
+        return await sendAdminPacket(admin, toNodeID: destination, wantResponse: true) != nil
+    }
+
+    @discardableResult
+    func synchronizeDeviceTime(to date: Date = Date()) async -> Bool {
+        await ensureSessionKey()
+        guard !sessionPasskey.isEmpty else { return false }
+        var admin = Meshtastic_AdminMessage()
+        admin.setTimeOnly = UInt32(clamping: Int(date.timeIntervalSince1970))
+        admin.sessionPasskey = sessionPasskey
+        return await sendAdminMessage(admin)
+    }
+
+    @discardableResult
+    func setFixedPosition(latitude: Double, longitude: Double, altitude: Int) async -> Bool {
+        await ensureSessionKey()
+        guard !sessionPasskey.isEmpty,
+              (-90...90).contains(latitude),
+              (-180...180).contains(longitude) else { return false }
+
+        var position = Meshtastic_Position()
+        position.latitudeI = Int32((latitude * 1e7).rounded())
+        position.longitudeI = Int32((longitude * 1e7).rounded())
+        position.altitude = Int32(clamping: altitude)
+        position.time = UInt32(clamping: Int(Date().timeIntervalSince1970))
+
+        var admin = Meshtastic_AdminMessage()
+        admin.setFixedPosition = position
+        admin.sessionPasskey = sessionPasskey
+        return await sendAdminMessage(admin)
+    }
+
+    @discardableResult
+    func removeFixedPosition() async -> Bool {
+        await ensureSessionKey()
+        guard !sessionPasskey.isEmpty else { return false }
+        var admin = Meshtastic_AdminMessage()
+        admin.removeFixedPosition = true
+        admin.sessionPasskey = sessionPasskey
+        return await sendAdminMessage(admin)
     }
 
     @discardableResult
@@ -1810,26 +3058,55 @@ final class MeshtasticProtocolService {
             AppLogger.shared.log("[Protocol] deleteChannel aborted: no session key", debug: true)
             return
         }
-        // Shift channels down and disable last
-        let maxIdx = (appState?.channels.count ?? 1)
-        for i in index..<maxIdx {
-            if let ch = appState?.channels.first(where: { $0.id == i + 1 }) {
-                await setChannel(index: i, name: ch.name,
-                                 psk: Data(base64Encoded: ch.psk) ?? Data(),
-                                 isSecondary: ch.role == "SECONDARY",
-                                 uplinkEnabled: ch.uplinkEnabled,
-                                 downlinkEnabled: ch.downlinkEnabled)
-                try? await Task.sleep(for: .milliseconds(300))
-            }
+
+        let remaining = (appState?.channels ?? [])
+            .filter { $0.id != index }
+            .sorted { $0.id < $1.id }
+
+        for (newIndex, channelInfo) in remaining.enumerated() {
+            var settings = Meshtastic_ChannelSettings()
+            settings.name = channelInfo.name
+            settings.psk = Data(base64Encoded: channelInfo.psk) ?? Data()
+            settings.uplinkEnabled = channelInfo.uplinkEnabled
+            settings.downlinkEnabled = channelInfo.downlinkEnabled
+
+            var channel = Meshtastic_Channel()
+            channel.index = Int32(newIndex)
+            channel.settings = settings
+            channel.role = newIndex == 0 ? .primary : .secondary
+
+            var admin = Meshtastic_AdminMessage()
+            admin.setChannel = channel
+            admin.sessionPasskey = sessionPasskey
+            guard await sendAdminMessage(admin) else { return }
         }
-        // Disable last channel
-        var admin = Meshtastic_AdminMessage()
-        var ch = Meshtastic_Channel()
-        ch.index = Int32(maxIdx - 1)
-        ch.role = .disabled
-        admin.setChannel = ch
-        admin.sessionPasskey = sessionPasskey
-        await sendAdminMessage(admin)
+
+        // Always disable all trailing slots. This also handles sparse channel
+        // indices correctly; using `channels.count - 1` disabled the wrong slot.
+        for trailingIndex in remaining.count..<8 {
+            var channel = Meshtastic_Channel()
+            channel.index = Int32(trailingIndex)
+            channel.role = .disabled
+
+            var admin = Meshtastic_AdminMessage()
+            admin.setChannel = channel
+            admin.sessionPasskey = sessionPasskey
+            guard await sendAdminMessage(admin) else { return }
+        }
+
+        let normalized = remaining.enumerated().map { newIndex, channel in
+            ChannelInfo(
+                id: newIndex,
+                name: channel.name,
+                psk: channel.psk,
+                role: newIndex == 0 ? "PRIMARY" : "SECONDARY",
+                uplinkEnabled: channel.uplinkEnabled,
+                downlinkEnabled: channel.downlinkEnabled
+            )
+        }
+        appState?.channels = normalized
+        normalized.forEach { coreDataStore?.upsertChannel($0) }
+        coreDataStore?.removeChannelsNotIn(indices: Set(normalized.map(\.id)))
     }
 
     @discardableResult
@@ -1998,22 +3275,52 @@ final class MeshtasticProtocolService {
 
     @discardableResult
     private func sendAdminMessage(_ admin: Meshtastic_AdminMessage) async -> Bool {
-        guard let data = try? admin.serializedData() else { return false }
+        await sendAdminPacket(admin, toNodeID: myNodeId, wantResponse: true) != nil
+    }
+
+    /// Pure packet construction is kept separate so destination/session behavior
+    /// can be covered without a physical radio in unit tests.
+    nonisolated static func makeAdminMeshPacket(
+        payload: Data,
+        fromNodeID: UInt32,
+        toNodeID: UInt32,
+        packetID: UInt32,
+        wantResponse: Bool
+    ) -> Meshtastic_MeshPacket {
         var innerData = Meshtastic_Data()
         innerData.portnum = .adminApp
-        innerData.payload = data
-        innerData.wantResponse = true
+        innerData.payload = payload
+        innerData.wantResponse = wantResponse
 
         var packet = Meshtastic_MeshPacket()
-        packet.from = myNodeId
-        packet.to = myNodeId   // admin messages go to self
-        packet.id = UInt32.random(in: 1..<UInt32(Int32.max))
-        // Leave hopLimit, wantAck, priority at defaults (0/false/unset)
-        // to match the Windows client pattern for local admin messages over TCP.
+        packet.from = fromNodeID
+        packet.to = toNodeID
+        packet.id = packetID
         packet.decoded = innerData
+        return packet
+    }
+
+    @discardableResult
+    private func sendAdminPacket(
+        _ admin: Meshtastic_AdminMessage,
+        toNodeID: UInt32,
+        wantResponse: Bool
+    ) async -> UInt32? {
+        guard let data = try? admin.serializedData() else { return nil }
+        guard myNodeId != 0, toNodeID != 0, toNodeID != UInt32.max else { return nil }
+        let packetID = UInt32.random(in: 1..<UInt32(Int32.max))
+        let packet = Self.makeAdminMeshPacket(
+            payload: data,
+            fromNodeID: myNodeId,
+            toNodeID: toNodeID,
+            packetID: packetID,
+            wantResponse: wantResponse
+        )
+        // Leave hopLimit, wantAck, priority at defaults (0/false/unset)
+        // to match the Windows client's local and remote admin packets.
 
         AppLogger.shared.log("[Protocol] Sending admin message (id=\(packet.id), from=\(String(format: "!%08x", packet.from)), payloadSize=\(data.count))", debug: true)
-        return await sendToRadio(packet: packet)
+        return await sendToRadio(packet: packet) ? packetID : nil
     }
 
     @discardableResult
@@ -2074,6 +3381,10 @@ final class MeshtasticProtocolService {
             shortName: user.shortName,
             longName: user.longName
         )
+        node.hardwareModel = hardwareModelName(user.hwModel)
+        node.role = String(describing: user.role)
+        node.isInfrastructure = Self.isInfrastructureRole(user.role)
+        node.isOwnNode = num == myNodeId
         node.colorHex = SettingsService.shared.colorHex(for: num)
         node.note = SettingsService.shared.note(for: num)
         if !user.publicKey.isEmpty {
@@ -2086,6 +3397,15 @@ final class MeshtasticProtocolService {
             )
         }
         return node
+    }
+
+    nonisolated private static func isInfrastructureRole(_ role: Meshtastic_Config.DeviceConfig.Role) -> Bool {
+        switch role {
+        case .router, .routerClient, .repeater, .routerLate, .clientBase:
+            return true
+        default:
+            return false
+        }
     }
 
     private func nodeDisplayName(_ nodeId: UInt32) -> String {

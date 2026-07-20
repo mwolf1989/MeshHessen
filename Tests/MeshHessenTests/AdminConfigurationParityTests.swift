@@ -1,0 +1,110 @@
+import Foundation
+import Testing
+
+@testable import MeshHessen
+
+@Suite("Complete Configuration and Remote Admin")
+struct AdminConfigurationParityTests {
+    @Test("Diff includes only categories that were actually loaded")
+    func diffHonorsAvailability() {
+        var original = MeshConfigurationSnapshot()
+        original.loadedConfigCategories = [.device, .lora]
+        original.loadedModuleCategories = [.mqtt]
+        original.ownerLoaded = true
+        original.channelsLoaded = true
+
+        var updated = original
+        updated.device.nodeInfoBroadcastSecs = 900
+        updated.lora.hopLimit = 7
+        updated.network.wifiEnabled = true // unavailable: must never be written
+        updated.mqtt.enabled = true
+        updated.telemetry.deviceTelemetryEnabled = true // unavailable
+        updated.owner.longName = "Mesh Hessen"
+
+        let diff = MeshConfigurationDiff.between(updated, and: original)
+
+        #expect(Set(diff.changedConfigCategories) == [.device, .lora])
+        #expect(diff.changedModuleCategories == [.mqtt])
+        #expect(diff.ownerChanged)
+        #expect(!diff.channelsChanged)
+        #expect(!diff.labels.contains(String(localized: "Network")))
+        #expect(!diff.labels.contains(String(localized: "Telemetry")))
+    }
+
+    @Test("Every generated config and module category round-trips through a snapshot")
+    func everyCategoryRoundTrips() {
+        let snapshot = MeshConfigurationSnapshot()
+
+        for category in MeshConfigCategory.allCases {
+            var decoded = MeshConfigurationSnapshot()
+            decoded.apply(snapshot.config(for: category))
+            #expect(decoded.config(for: category) == snapshot.config(for: category))
+        }
+        for category in MeshModuleConfigCategory.allCases {
+            var decoded = MeshConfigurationSnapshot()
+            decoded.apply(snapshot.moduleConfig(for: category))
+            #expect(decoded.moduleConfig(for: category) == snapshot.moduleConfig(for: category))
+        }
+    }
+
+    @Test("Admin packet preserves the explicit remote request target")
+    func requestTarget() {
+        let payload = Data([0x08, 0x01])
+        let packet = MeshtasticProtocolService.makeAdminMeshPacket(
+            payload: payload,
+            fromNodeID: 0x1122_3344,
+            toNodeID: 0xAABB_CCDD,
+            packetID: 42,
+            wantResponse: true
+        )
+
+        #expect(packet.from == 0x1122_3344)
+        #expect(packet.to == 0xAABB_CCDD)
+        #expect(packet.id == 42)
+        #expect(packet.decoded.portnum == .adminApp)
+        #expect(packet.decoded.payload == payload)
+        #expect(packet.decoded.wantResponse)
+    }
+
+    @Test("Local and remote target validation rejects broadcast and unknown IDs")
+    func targetValidation() {
+        #expect(AdminTarget.local.destination(localNodeID: 0x1234) == 0x1234)
+        #expect(AdminTarget.local.destination(localNodeID: 0) == nil)
+        #expect(AdminTarget.remote(0xABCD).destination(localNodeID: 0x1234) == 0xABCD)
+        #expect(AdminTarget.remote(0).destination(localNodeID: 0x1234) == nil)
+        #expect(AdminTarget.remote(UInt32.max).destination(localNodeID: 0x1234) == nil)
+    }
+
+    @Test("Administrative actions map to the exact protobuf oneof")
+    func actionMessages() {
+        #expect(AdminNodeAction.reboot(afterSeconds: 2).adminMessage().payloadVariant == .rebootSeconds(2))
+        #expect(AdminNodeAction.shutdown(afterSeconds: 3).adminMessage().payloadVariant == .shutdownSeconds(3))
+        #expect(
+            AdminNodeAction.resetNodeDatabase(preserveFavorites: true).adminMessage().payloadVariant
+                == .nodedbReset(true)
+        )
+        #expect(
+            AdminNodeAction.resetConfiguration(afterSeconds: 4).adminMessage().payloadVariant
+                == .factoryResetConfig(4)
+        )
+        #expect(
+            AdminNodeAction.factoryResetDevice(afterSeconds: 5).adminMessage().payloadVariant
+                == .factoryResetDevice(5)
+        )
+        #expect(
+            AdminNodeAction.removeFixedPosition.adminMessage().payloadVariant
+                == .removeFixedPosition(true)
+        )
+        #expect(AdminNodeAction.factoryResetDevice(afterSeconds: 2).requiresDestructiveConfirmation)
+        #expect(!AdminNodeAction.reboot(afterSeconds: 2).requiresDestructiveConfirmation)
+    }
+
+    @Test("Time synchronization uses Unix seconds")
+    func timeSynchronization() {
+        let date = Date(timeIntervalSince1970: 1_700_000_123)
+        #expect(
+            AdminNodeAction.synchronizeTime(date).adminMessage().payloadVariant
+                == .setTimeOnly(1_700_000_123)
+        )
+    }
+}

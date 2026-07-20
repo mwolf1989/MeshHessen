@@ -14,7 +14,14 @@ final class AppCoordinator {
     let persistenceController: PersistenceController
     let coreDataStore: MeshCoreDataStore
     let backgroundContext: NSManagedObjectContext
+    @ObservationIgnored let virtualNodeService = VirtualNodeService()
+    @ObservationIgnored let mqttProxyService = MqttProxyService()
     private var activeConnection: (any ConnectionService)?
+
+    private(set) var virtualNodeClients: [VirtualNodeService.ClientInfo] = []
+    private(set) var virtualNodeError: String?
+    private(set) var mqttProxyState: MqttProxyService.State = .stopped
+    private var latestMqttConfiguration: Meshtastic_ModuleConfig.MQTTConfig?
 
     // Persistent BLE service for scanning + connecting
     private let bleService: BluetoothConnectionService = BluetoothConnectionService()
@@ -58,7 +65,10 @@ final class AppCoordinator {
 
     init(persistenceController: PersistenceController = .shared) {
         self.persistenceController = persistenceController
-        self.coreDataStore = MeshCoreDataStore(persistenceController: persistenceController)
+        self.coreDataStore = MeshCoreDataStore(
+            persistenceController: persistenceController,
+            isMessageHistoryEnabled: { SettingsService.shared.messageHistoryEnabled }
+        )
         self.backgroundContext = persistenceController.newBackgroundContext()
         appState = AppState()
         router = Router()
@@ -66,6 +76,30 @@ final class AppCoordinator {
         protocol_ = MeshtasticProtocolService()
         protocol_.appState = appState
         protocol_.coreDataStore = coreDataStore
+        let messageStore = coreDataStore
+        appState.onMessageMutation = { message, context in
+            messageStore.replaceReactions(for: message, context: context)
+        }
+
+        let virtualNodeService = self.virtualNodeService
+        protocol_.onFromRadioPayloadReceived = { payload in
+            Task {
+                try? await virtualNodeService.ingestPhysicalPayload(payload)
+            }
+        }
+        let mqttProxyService = self.mqttProxyService
+        protocol_.onMqttProxyMessageReceived = { message in
+            Task { await mqttProxyService.ingestRadioMessage(message) }
+        }
+        protocol_.onMqttConfigurationReceived = { [weak self] configuration in
+            Task { @MainActor in
+                await self?.applyMqttConfiguration(configuration)
+            }
+        }
+
+        Task { @MainActor [weak self] in
+            await self?.configureAuxiliaryServiceHandlers()
+        }
 
         AppLogger.shared.log("[Coordinator] Persistence initialized", debug: true)
 
@@ -91,7 +125,120 @@ final class AppCoordinator {
             coreDataStore.clearStaleNodes()
             // Trim old messages
             coreDataStore.trimOldMessages()
+            if SettingsService.shared.messageHistoryEnabled {
+                let retention = MessageHistoryRetention(
+                    rawValue: SettingsService.shared.messageRetentionDays
+                ) ?? .ninetyDays
+                coreDataStore.enforceMessageRetention(retention)
+            }
         }
+    }
+
+    // MARK: - Virtual Node / MQTT Proxy
+
+    private func configureAuxiliaryServiceHandlers() async {
+        await virtualNodeService.setPhysicalFrameHandler { [weak self] frame in
+            guard let self else { throw AuxiliaryServiceError.physicalNodeUnavailable }
+            try await self.forwardVirtualNodeFrame(frame)
+        }
+        await virtualNodeService.setLocalPacketHandler { [weak self] payload in
+            await self?.consumeVirtualNodePacket(payload)
+        }
+        await virtualNodeService.setEventHandler { [weak self] event in
+            await self?.handleVirtualNodeEvent(event)
+        }
+
+        await mqttProxyService.setRadioMessageHandler { [weak self] message in
+            guard let self else { return }
+            _ = await self.protocol_.sendMqttProxyMessage(message)
+        }
+        await mqttProxyService.setStateHandler { [weak self] state in
+            await self?.setMqttProxyState(state)
+        }
+    }
+
+    func applyAuxiliaryServiceSettings() async {
+        let settings = SettingsService.shared
+        let configuration = VirtualNodeService.Configuration(
+            port: UInt16(clamping: settings.virtualNodePort),
+            blockAdminCommands: KioskState.shared.effectiveVirtualNodeBlockAdmin
+        )
+        await virtualNodeService.setBlockAdminCommands(configuration.blockAdminCommands)
+
+        if settings.virtualNodeEnabled, activeConnection?.isConnected == true {
+            let currentConfiguration = await virtualNodeService.currentConfiguration()
+            if await virtualNodeService.isRunning, currentConfiguration != configuration {
+                await virtualNodeService.stop()
+            }
+            do {
+                try await virtualNodeService.start(configuration: configuration)
+                virtualNodeError = nil
+                virtualNodeClients = await virtualNodeService.connectedClients()
+            } catch {
+                virtualNodeError = error.localizedDescription
+                AppLogger.shared.log("[VirtualNode] \(error.localizedDescription)")
+            }
+        } else {
+            await virtualNodeService.stop()
+            virtualNodeClients = []
+            virtualNodeError = nil
+        }
+
+        if let latestMqttConfiguration {
+            await applyMqttConfiguration(latestMqttConfiguration)
+        } else if activeConnection?.isConnected != true {
+            await mqttProxyService.stop()
+        }
+    }
+
+    private func applyMqttConfiguration(_ configuration: Meshtastic_ModuleConfig.MQTTConfig) async {
+        latestMqttConfiguration = configuration
+        guard activeConnection?.isConnected == true, protocol_.currentNodeId != 0 else {
+            await mqttProxyService.stop()
+            return
+        }
+
+        do {
+            try await mqttProxyService.start(
+                mqttConfig: configuration,
+                myNodeID: protocol_.currentNodeId
+            )
+        } catch {
+            AppLogger.shared.log("[MQTT Proxy] \(error.localizedDescription)")
+        }
+    }
+
+    private func forwardVirtualNodeFrame(_ frame: Data) async throws {
+        guard let connection = activeConnection, connection.isConnected else {
+            throw AuxiliaryServiceError.physicalNodeUnavailable
+        }
+        let outgoing = connection.type == .bluetooth
+            ? try MeshtasticStreamFrameCodec.payload(from: frame)
+            : frame
+        try await connection.write(outgoing)
+    }
+
+    private func consumeVirtualNodePacket(_ payload: Data) {
+        protocol_.onVirtualFromRadioPayload(payload)
+    }
+
+    private func handleVirtualNodeEvent(_ event: VirtualNodeService.Event) async {
+        switch event {
+        case .clientConnected, .clientDisconnected:
+            virtualNodeClients = await virtualNodeService.connectedClients()
+        case .forwardingFailed(let message), .listenerFailed(let message):
+            virtualNodeError = message
+        case .started:
+            virtualNodeError = nil
+        case .stopped:
+            virtualNodeClients = []
+        case .adminCommandBlocked, .physicalQueueDroppedOldest:
+            break
+        }
+    }
+
+    private func setMqttProxyState(_ state: MqttProxyService.State) {
+        mqttProxyState = state
     }
 
     // MARK: - Connect
@@ -121,6 +268,10 @@ final class AppCoordinator {
         cancelProtocolInitialization()
 
         protocol_.disconnect()
+        await virtualNodeService.stop()
+        await mqttProxyService.stop()
+        virtualNodeClients = []
+        mqttProxyState = .stopped
         activeConnection?.disconnect()
         activeConnection = nil
         protocol_.connectionService = nil
@@ -173,6 +324,20 @@ final class AppCoordinator {
         await protocol_.setOwner(shortName: shortName, longName: longName)
     }
 
+    @discardableResult
+    func setFavorite(
+        _ isFavorite: Bool,
+        nodeId: UInt32,
+        on target: AdminTarget
+    ) async throws -> Bool {
+        try await protocol_.setFavorite(
+            isFavorite,
+            nodeId: nodeId,
+            on: target,
+            timeout: .seconds(SettingsService.shared.remoteAdminTimeoutSeconds)
+        )
+    }
+
     // MARK: - Device Configuration
 
     func requestDeviceConfig() async throws -> MeshtasticProtocolService.DeviceConfigSnapshot {
@@ -202,6 +367,79 @@ final class AppCoordinator {
             return true
         } catch {
             clearExpectedSettingsWriteDisconnect()
+            throw error
+        }
+    }
+
+    /// Full-schema configuration entry point used by the native local and
+    /// remote administration views.
+    func requestCompleteConfiguration(
+        from target: AdminTarget = .local,
+        selection: MeshConfigurationRequestSelection = .all
+    ) async throws -> MeshConfigurationSnapshot {
+        let timeout = Duration.seconds(SettingsService.shared.remoteAdminTimeoutSeconds)
+        return try await protocol_.requestCompleteConfiguration(
+            from: target,
+            selection: selection,
+            timeout: timeout
+        )
+    }
+
+    @discardableResult
+    func saveCompleteConfiguration(
+        _ snapshot: MeshConfigurationSnapshot,
+        replacing original: MeshConfigurationSnapshot,
+        to target: AdminTarget = .local
+    ) async throws -> MeshConfigurationDiff {
+        let expectedDiff = MeshConfigurationDiff.between(snapshot, and: original)
+        guard !expectedDiff.isEmpty else { return expectedDiff }
+
+        if !target.isRemote { expectSettingsWriteDisconnect() }
+        do {
+            let timeout = Duration.seconds(SettingsService.shared.remoteAdminTimeoutSeconds)
+            let writtenDiff = try await protocol_.saveCompleteConfiguration(
+                snapshot,
+                replacing: original,
+                to: target,
+                timeout: timeout
+            )
+            try await verifyCompleteConfiguration(
+                snapshot,
+                changedLabels: Set(writtenDiff.labels),
+                target: target
+            )
+            if !target.isRemote { clearExpectedSettingsWriteDisconnect() }
+            return writtenDiff
+        } catch {
+            if !target.isRemote { clearExpectedSettingsWriteDisconnect() }
+            throw error
+        }
+    }
+
+    @discardableResult
+    func performAdminAction(_ action: AdminNodeAction, on target: AdminTarget) async throws -> Bool {
+        let timeout = Duration.seconds(SettingsService.shared.remoteAdminTimeoutSeconds)
+        if !target.isRemote {
+            switch action {
+            case .reboot, .shutdown, .resetConfiguration, .factoryResetDevice:
+                expectSettingsWriteDisconnect()
+            case .resetNodeDatabase, .synchronizeTime, .removeFixedPosition:
+                break
+            }
+        }
+        return try await protocol_.performAdminAction(action, on: target, timeout: timeout)
+    }
+
+    @discardableResult
+    func applyMeshHessenQuickConfiguration(to target: AdminTarget) async throws -> MeshConfigurationDiff {
+        if !target.isRemote { expectSettingsWriteDisconnect() }
+        do {
+            let timeout = Duration.seconds(SettingsService.shared.remoteAdminTimeoutSeconds)
+            let diff = try await protocol_.applyMeshHessenQuickConfiguration(to: target, timeout: timeout)
+            if !target.isRemote { clearExpectedSettingsWriteDisconnect() }
+            return diff
+        } catch {
+            if !target.isRemote { clearExpectedSettingsWriteDisconnect() }
             throw error
         }
     }
@@ -282,27 +520,98 @@ final class AppCoordinator {
 
     // MARK: - Message history
 
+    /// Loads the next older persisted page for a channel and prepends it to
+    /// the live message collection without creating duplicates.
+    @discardableResult
+    func loadOlderChannelMessages(_ channelIndex: Int, limit: Int = 50) -> MessagePage {
+        let context = MessageStorageContext.channel(channelIndex)
+        let cursor = appState.channelMessages[channelIndex]?.first.map {
+            MessagePageCursor(
+                createdAt: $0.createdAt,
+                persistenceKey: $0.persistenceKey(in: context)
+            )
+        }
+        let page = coreDataStore.fetchChannelMessagePage(
+            channelIndex: channelIndex,
+            limit: limit,
+            before: cursor
+        )
+        appState.prependChannelMessages(page.messages, channelIndex: channelIndex)
+        return page
+    }
+
+    /// Loads the next older persisted page for a direct conversation.
+    @discardableResult
+    func loadOlderDirectMessages(for nodeId: UInt32, limit: Int = 50) -> MessagePage {
+        let context = MessageStorageContext.directMessage(partnerNodeId: nodeId)
+        let cursor = appState.dmConversations[nodeId]?.messages.first.map {
+            MessagePageCursor(
+                createdAt: $0.createdAt,
+                persistenceKey: $0.persistenceKey(in: context)
+            )
+        }
+        let page = coreDataStore.fetchDirectMessagePage(
+            partnerNodeId: nodeId,
+            limit: limit,
+            before: cursor
+        )
+        appState.prependDirectMessages(page.messages, partnerNodeId: nodeId)
+        return page
+    }
+
     /// Deletes channel history from every persistence layer before returning.
-    func clearChannelMessages(_ channelIndex: Int) {
-        appState.clearChannelMessages(channelIndex)
-        coreDataStore.deleteChannelMessages(channelIndex: channelIndex)
-        let deletedLogs = MessageLogger.shared.deleteChannelMessages(channelIndex: channelIndex)
+    @discardableResult
+    func clearChannelMessages(
+        _ channelIndex: Int,
+        scope: MessageHistoryDeletionScope = .all
+    ) -> Int {
+        let referenceDate = Date()
+        if let cutoff = scope.cutoffDate(relativeTo: referenceDate) {
+            appState.clearChannelMessages(channelIndex, olderThan: cutoff)
+        } else {
+            appState.clearChannelMessages(channelIndex)
+        }
+        let deleted = coreDataStore.deleteChannelMessages(
+            channelIndex: channelIndex,
+            scope: scope,
+            relativeTo: referenceDate
+        )
+        let deletedLogs = scope == .all
+            ? MessageLogger.shared.deleteChannelMessages(channelIndex: channelIndex)
+            : 0
         AppLogger.shared.log(
-            "[History] Cleared channel \(channelIndex) history and \(deletedLogs) legacy log file(s)",
+            "[History] Deleted \(deleted) channel \(channelIndex) messages and \(deletedLogs) legacy log file(s)",
             debug: true
         )
+        return deleted
     }
 
     /// Deletes direct-message history from every persistence layer before returning.
-    func clearDirectMessages(for nodeId: UInt32) {
-        appState.clearDMMessages(for: nodeId)
-        coreDataStore.deleteConversationMessages(partnerNodeId: nodeId)
-        let deletedLogs = MessageLogger.shared.deleteDirectMessages(partnerNodeId: nodeId)
+    @discardableResult
+    func clearDirectMessages(
+        for nodeId: UInt32,
+        scope: MessageHistoryDeletionScope = .all
+    ) -> Int {
+        let referenceDate = Date()
+        if let cutoff = scope.cutoffDate(relativeTo: referenceDate) {
+            appState.clearDMMessages(for: nodeId, olderThan: cutoff)
+        } else {
+            appState.clearDMMessages(for: nodeId)
+        }
+        let deleted = coreDataStore.deleteConversationMessages(
+            partnerNodeId: nodeId,
+            scope: scope,
+            relativeTo: referenceDate
+        )
+        let deletedLogs = scope == .all
+            ? MessageLogger.shared.deleteDirectMessages(partnerNodeId: nodeId)
+            : 0
         let formattedNodeId = String(format: "!%08x", nodeId)
         AppLogger.shared.log(
-            "[History] Cleared direct-message history for \(formattedNodeId) and \(deletedLogs) legacy log file(s)",
+            "[History] Deleted \(deleted) direct messages for \(formattedNodeId) and \(deletedLogs) legacy log file(s)",
             debug: true
         )
+        return deleted
     }
 
     /// Loads previous messages from CoreData into app state.
@@ -530,6 +839,10 @@ final class AppCoordinator {
                 }
 
                 self.loadMessageHistory()
+                await self.applyAuxiliaryServiceSettings()
+                if SettingsService.shared.autoTimeSyncOnConnect {
+                    _ = await self.protocol_.synchronizeDeviceTime()
+                }
                 self.protocolInitializationTask = nil
             }
         } catch {
@@ -569,6 +882,12 @@ final class AppCoordinator {
         // Clean up the dead connection
         activeConnection = nil
         protocol_.connectionService = nil
+        Task { [virtualNodeService, mqttProxyService] in
+            await virtualNodeService.stop()
+            await mqttProxyService.stop()
+        }
+        virtualNodeClients = []
+        mqttProxyState = .stopped
 
         guard autoReconnectEnabled,
               lastConnectionType != nil,
@@ -660,6 +979,49 @@ final class AppCoordinator {
         throw MeshtasticProtocolService.DeviceConfigError.verificationTimedOut
     }
 
+    private func verifyCompleteConfiguration(
+        _ expected: MeshConfigurationSnapshot,
+        changedLabels: Set<String>,
+        target: AdminTarget
+    ) async throws {
+        guard !changedLabels.isEmpty else { return }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(60))
+        var lastMismatches = changedLabels
+
+        // A commit normally restarts the target. For remote nodes the local
+        // transport remains ready; for local nodes this loop naturally waits for
+        // AppCoordinator's reconnect sequence to finish.
+        try await Task.sleep(for: .seconds(1))
+        while clock.now < deadline {
+            try Task.checkCancellation()
+            guard appState.protocolReady, protocol_.connectionService?.isConnected == true else {
+                try await Task.sleep(for: .milliseconds(250))
+                continue
+            }
+
+            do {
+                let timeout = Duration.seconds(SettingsService.shared.remoteAdminTimeoutSeconds)
+                let actual = try await protocol_.requestCompleteConfiguration(from: target, timeout: timeout)
+                let readbackDiff = MeshConfigurationDiff.between(actual, and: expected)
+                let mismatches = Set(readbackDiff.labels).intersection(changedLabels)
+                if mismatches.isEmpty { return }
+                lastMismatches = mismatches
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // A reboot or a renewed remote session can temporarily interrupt
+                // readback. Retry until the overall verification deadline.
+            }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+
+        if !lastMismatches.isEmpty {
+            throw MeshtasticProtocolService.DeviceConfigError.verificationFailed(lastMismatches.sorted())
+        }
+        throw MeshtasticProtocolService.DeviceConfigError.verificationTimedOut
+    }
+
     /// Schedules the next reconnect attempt with exponential backoff.
     private func scheduleReconnect() {
         guard !userRequestedDisconnect,
@@ -717,10 +1079,22 @@ final class AppCoordinator {
         let wasAutoReconnect = userRequestedDisconnect
         userRequestedDisconnect = true  // Suppress reconnect during teardown
         cancelProtocolInitialization()
+        await virtualNodeService.stop()
+        await mqttProxyService.stop()
+        virtualNodeClients = []
+        mqttProxyState = .stopped
         protocol_.disconnect()
         activeConnection?.disconnect()
         activeConnection = nil
         protocol_.connectionService = nil
         userRequestedDisconnect = wasAutoReconnect
+    }
+}
+
+private enum AuxiliaryServiceError: LocalizedError {
+    case physicalNodeUnavailable
+
+    var errorDescription: String? {
+        String(localized: "No physical Meshtastic node is connected.")
     }
 }

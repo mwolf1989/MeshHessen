@@ -13,6 +13,7 @@ struct CoreDataHydrationStats {
 
 final class MeshCoreDataStore {
     private let persistenceController: PersistenceController
+    private let isMessageHistoryEnabled: () -> Bool
 
     /// Maximum number of messages to keep per channel / conversation.
     /// Older messages are trimmed during retention passes.
@@ -21,8 +22,16 @@ final class MeshCoreDataStore {
     /// Nodes not heard from in this many days are considered stale.
     private let staleNodeDays = 90
 
-    init(persistenceController: PersistenceController) {
+    /// Initial hydration mirrors the Windows client: recent history is shown
+    /// immediately and older messages are available through cursor paging.
+    private let initialMessageHistoryInterval: TimeInterval = 24 * 60 * 60
+
+    init(
+        persistenceController: PersistenceController,
+        isMessageHistoryEnabled: @escaping () -> Bool = { true }
+    ) {
         self.persistenceController = persistenceController
+        self.isMessageHistoryEnabled = isMessageHistoryEnabled
     }
 
     // MARK: - UserDefaults → CoreData Migration
@@ -115,6 +124,33 @@ final class MeshCoreDataStore {
 
     // MARK: - Message Retention / Trimming
 
+    /// Applies the user-selected age retention to all persisted messages.
+    /// `unlimited` deliberately performs no write.
+    @discardableResult
+    func enforceMessageRetention(
+        _ retention: MessageHistoryRetention,
+        relativeTo referenceDate: Date = Date()
+    ) -> Int {
+        guard let cutoff = retention.cutoffDate(relativeTo: referenceDate) else { return 0 }
+
+        let context = persistenceController.newBackgroundContext()
+        var deleted = 0
+        context.performAndWait {
+            let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
+            request.predicate = NSPredicate(format: "createdAt < %@", cutoff as NSDate)
+            guard let messages = try? context.fetch(request) else { return }
+            messages.forEach(context.delete)
+            deleted = messages.count
+            self.removeEmptyConversations(in: context)
+            self.save(context: context, label: "message-retention")
+        }
+
+        if deleted > 0 {
+            AppLogger.shared.log("[Retention] Removed \(deleted) messages older than \(retention.rawValue) days")
+        }
+        return deleted
+    }
+
     /// Trims old messages so each channel/conversation keeps at most `maxMessagesPerBucket`.
     func trimOldMessages() {
         let context = persistenceController.newBackgroundContext()
@@ -194,61 +230,93 @@ final class MeshCoreDataStore {
     /// Updates the `hasUnread` flag in CoreData for a conversation.
     func setConversationUnread(partnerNodeId: UInt32, hasUnread: Bool) {
         let context = persistenceController.newBackgroundContext()
-        context.perform {
+        context.performAndWait {
             let request = NSFetchRequest<NSManagedObject>(entityName: "MHConversationEntity")
             request.fetchLimit = 1
             request.predicate = NSPredicate(format: "partnerNodeId == %lld", Int64(partnerNodeId))
 
-            if let object = try? context.fetch(request).first {
-                let current = object.value(forKey: "hasUnread") as? Bool ?? false
-                if current != hasUnread {
-                    object.setValue(hasUnread, forKey: "hasUnread")
-                    self.save(context: context, label: "unread")
-                }
+            let existingObject = try? context.fetch(request).first
+            let object = existingObject
+                ?? NSEntityDescription.insertNewObject(forEntityName: "MHConversationEntity", into: context)
+            if (object.value(forKey: "partnerNodeId") as? Int64 ?? 0) == 0 {
+                object.setValue(Int64(partnerNodeId), forKey: "partnerNodeId")
+                object.setValue("Node \(partnerNodeId)", forKey: "nodeName")
+                object.setValue(Date(), forKey: "updatedAt")
             }
+            let current = object.value(forKey: "hasUnread") as? Bool ?? false
+            if current != hasUnread {
+                object.setValue(hasUnread, forKey: "hasUnread")
+            }
+            self.save(context: context, label: "unread")
         }
     }
 
     // MARK: - Batch Operations
 
     /// Deletes all messages for a specific channel.
-    func deleteChannelMessages(channelIndex: Int) {
+    @discardableResult
+    func deleteChannelMessages(
+        channelIndex: Int,
+        scope: MessageHistoryDeletionScope = .all,
+        relativeTo referenceDate: Date = Date()
+    ) -> Int {
         let context = persistenceController.newBackgroundContext()
+        var deleted = 0
         context.performAndWait {
             let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
-            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            var predicates = [
                 NSPredicate(format: "isDirect == NO"),
                 NSPredicate(format: "channelIndex == %d", Int32(channelIndex))
-            ])
+            ]
+            if let cutoff = scope.cutoffDate(relativeTo: referenceDate) {
+                predicates.append(NSPredicate(format: "createdAt < %@", cutoff as NSDate))
+            }
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
             if let messages = try? context.fetch(request) {
                 for obj in messages { context.delete(obj) }
+                deleted = messages.count
                 self.save(context: context, label: "delete-channel-msgs")
                 AppLogger.shared.log("[Persistence] Deleted \(messages.count) messages for channel \(channelIndex)", debug: true)
             }
         }
+        return deleted
     }
 
     /// Deletes all DM messages for a specific conversation partner.
-    func deleteConversationMessages(partnerNodeId: UInt32) {
+    @discardableResult
+    func deleteConversationMessages(
+        partnerNodeId: UInt32,
+        scope: MessageHistoryDeletionScope = .all,
+        relativeTo referenceDate: Date = Date()
+    ) -> Int {
         let context = persistenceController.newBackgroundContext()
+        var deleted = 0
         context.performAndWait {
             let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
-            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            var predicates = [
                 NSPredicate(format: "isDirect == YES"),
                 NSPredicate(format: "partnerNodeId == %lld", Int64(partnerNodeId))
-            ])
+            ]
+            if let cutoff = scope.cutoffDate(relativeTo: referenceDate) {
+                predicates.append(NSPredicate(format: "createdAt < %@", cutoff as NSDate))
+            }
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
             if let messages = try? context.fetch(request) {
                 for obj in messages { context.delete(obj) }
+                deleted = messages.count
             }
-            // Also delete the conversation entity
-            let convRequest = NSFetchRequest<NSManagedObject>(entityName: "MHConversationEntity")
-            convRequest.fetchLimit = 1
-            convRequest.predicate = NSPredicate(format: "partnerNodeId == %lld", Int64(partnerNodeId))
-            if let conv = try? context.fetch(convRequest).first {
-                context.delete(conv)
+
+            if scope == .all {
+                let convRequest = NSFetchRequest<NSManagedObject>(entityName: "MHConversationEntity")
+                convRequest.fetchLimit = 1
+                convRequest.predicate = NSPredicate(format: "partnerNodeId == %lld", Int64(partnerNodeId))
+                if let conv = try? context.fetch(convRequest).first {
+                    context.delete(conv)
+                }
             }
             self.save(context: context, label: "delete-conv-msgs")
         }
+        return deleted
     }
 
     /// Nuclear option: clears the entire database.
@@ -268,15 +336,52 @@ final class MeshCoreDataStore {
 
     // MARK: - Paged Message Fetch
 
+    /// Cursor-based page of channel history. Results are returned oldest to
+    /// newest so they can be prepended directly to the visible conversation.
+    func fetchChannelMessagePage(
+        channelIndex: Int,
+        limit: Int = 50,
+        before cursor: MessagePageCursor? = nil
+    ) -> MessagePage {
+        fetchMessagePage(
+            predicate: NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "isDirect == NO"),
+                NSPredicate(format: "channelIndex == %d", Int32(channelIndex)),
+            ]),
+            limit: limit,
+            before: cursor
+        )
+    }
+
+    /// Cursor-based page of direct-message history.
+    func fetchDirectMessagePage(
+        partnerNodeId: UInt32,
+        limit: Int = 50,
+        before cursor: MessagePageCursor? = nil
+    ) -> MessagePage {
+        fetchMessagePage(
+            predicate: NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "isDirect == YES"),
+                NSPredicate(format: "partnerNodeId == %lld", Int64(partnerNodeId)),
+            ]),
+            limit: limit,
+            before: cursor
+        )
+    }
+
     /// Fetches channel messages with paging support.
     func fetchChannelMessages(channelIndex: Int, limit: Int = 200, offset: Int = 0) -> [MessageItem] {
+        backfillMessageMetadataIfNeeded()
         let context = persistenceController.container.viewContext
         let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
             NSPredicate(format: "isDirect == NO"),
             NSPredicate(format: "channelIndex == %d", Int32(channelIndex))
         ])
-        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
+        request.sortDescriptors = [
+            NSSortDescriptor(key: "createdAt", ascending: false),
+            NSSortDescriptor(key: "persistenceKey", ascending: false),
+        ]
         request.fetchLimit = limit
         request.fetchOffset = offset
 
@@ -286,13 +391,17 @@ final class MeshCoreDataStore {
 
     /// Fetches DM messages for a conversation with paging support.
     func fetchDirectMessages(partnerNodeId: UInt32, limit: Int = 200, offset: Int = 0) -> [MessageItem] {
+        backfillMessageMetadataIfNeeded()
         let context = persistenceController.container.viewContext
         let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
             NSPredicate(format: "isDirect == YES"),
             NSPredicate(format: "partnerNodeId == %lld", Int64(partnerNodeId))
         ])
-        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
+        request.sortDescriptors = [
+            NSSortDescriptor(key: "createdAt", ascending: false),
+            NSSortDescriptor(key: "persistenceKey", ascending: false),
+        ]
         request.fetchLimit = limit
         request.fetchOffset = offset
 
@@ -382,58 +491,137 @@ final class MeshCoreDataStore {
     }
 
     func upsertMessage(_ message: MessageItem, isDirect: Bool, partnerNodeId: UInt32?, partnerName: String? = nil) {
-        guard let packetId = message.packetId, packetId != 0 else { return }
+        guard isMessageHistoryEnabled() else { return }
+        let storageContext = messageStorageContext(
+            isDirect: isDirect,
+            partnerNodeId: partnerNodeId,
+            channelIndex: message.channelIndex
+        )
+        let persistenceKey = message.persistenceKey(in: storageContext)
 
         let context = persistenceController.newBackgroundContext()
-        context.perform {
+        context.performAndWait {
             let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
             request.fetchLimit = 1
-            request.predicate = NSPredicate(format: "packetId == %lld", Int64(packetId))
+            request.predicate = NSPredicate(format: "persistenceKey == %@", persistenceKey)
 
-            let object = (try? context.fetch(request).first) ?? NSEntityDescription.insertNewObject(forEntityName: "MHMessageEntity", into: context)
+            var object = try? context.fetch(request).first
+            if object == nil, let packetId = message.packetId, packetId != 0 {
+                object = self.findLegacyMessage(
+                    in: context,
+                    packetId: packetId,
+                    senderId: message.fromId,
+                    storageContext: storageContext
+                )
+            }
+            let isNewMessage = object == nil
+            let messageObject = object
+                ?? NSEntityDescription.insertNewObject(forEntityName: "MHMessageEntity", into: context)
 
-            object.setValue(Int64(packetId), forKey: "packetId")
+            if messageObject.value(forKey: "messageUUID") == nil {
+                messageObject.setValue(message.id, forKey: "messageUUID")
+            }
+            messageObject.setValue(persistenceKey, forKey: "persistenceKey")
+            messageObject.setValue(message.packetId.map(Int64.init) ?? 0, forKey: "packetId")
             // A later duplicate/echo without reply metadata must not erase the
             // target captured from the original packet or optimistic send.
             if let replyToPacketId = message.replyToPacketId {
-                object.setValue(Int64(replyToPacketId), forKey: "replyToPacketId")
+                messageObject.setValue(Int64(replyToPacketId), forKey: "replyToPacketId")
             }
-            object.setValue(Date(), forKey: "createdAt")
-            object.setValue(message.time, forKey: "timeText")
-            object.setValue(message.from, forKey: "fromName")
-            object.setValue(Int64(message.fromId), forKey: "fromId")
-            object.setValue(Int64(message.toId), forKey: "toId")
-            object.setValue(message.message, forKey: "messageText")
-            object.setValue(Int32(message.channelIndex), forKey: "channelIndex")
-            object.setValue(message.channelName, forKey: "channelName")
-            object.setValue(message.isEncrypted, forKey: "isEncrypted")
-            object.setValue(message.isViaMqtt, forKey: "isViaMqtt")
-            object.setValue(message.senderShortName, forKey: "senderShortName")
-            object.setValue(message.senderColorHex, forKey: "senderColorHex")
-            object.setValue(message.senderNote, forKey: "senderNote")
-            object.setValue(message.hasAlertBell, forKey: "hasAlertBell")
-            object.setValue(Self.deliveryStateString(from: message.deliveryState), forKey: "deliveryState")
-            object.setValue(Self.deliveryErrorString(from: message.deliveryState), forKey: "deliveryError")
-            object.setValue(isDirect, forKey: "isDirect")
-            object.setValue(partnerNodeId.map { Int64($0) } ?? 0, forKey: "partnerNodeId")
+            if messageObject.value(forKey: "createdAt") == nil {
+                messageObject.setValue(message.createdAt, forKey: "createdAt")
+            }
+            messageObject.setValue(message.time, forKey: "timeText")
+            messageObject.setValue(message.from, forKey: "fromName")
+            messageObject.setValue(Int64(message.fromId), forKey: "fromId")
+            messageObject.setValue(Int64(message.toId), forKey: "toId")
+            messageObject.setValue(message.message, forKey: "messageText")
+            messageObject.setValue(Int32(message.channelIndex), forKey: "channelIndex")
+            messageObject.setValue(message.channelName, forKey: "channelName")
+            messageObject.setValue(message.isEncrypted, forKey: "isEncrypted")
+            messageObject.setValue(message.isViaMqtt, forKey: "isViaMqtt")
+            messageObject.setValue(message.senderShortName, forKey: "senderShortName")
+            messageObject.setValue(message.senderColorHex, forKey: "senderColorHex")
+            messageObject.setValue(message.senderNote, forKey: "senderNote")
+            messageObject.setValue(message.hasAlertBell, forKey: "hasAlertBell")
+            if message.deliveryState != .none || messageObject.value(forKey: "deliveryState") == nil {
+                messageObject.setValue(Self.deliveryStateString(from: message.deliveryState), forKey: "deliveryState")
+                messageObject.setValue(Self.deliveryErrorString(from: message.deliveryState), forKey: "deliveryError")
+            }
+            messageObject.setValue(isDirect, forKey: "isDirect")
+            messageObject.setValue(partnerNodeId.map { Int64($0) } ?? 0, forKey: "partnerNodeId")
+            if let hopCount = message.hopCount {
+                messageObject.setValue(Int32(clamping: hopCount), forKey: "hopCount")
+            }
+            if let receivedSnr = message.receivedSnr {
+                messageObject.setValue(receivedSnr, forKey: "receivedSnr")
+            }
+            if let receivedRssi = message.receivedRssi {
+                messageObject.setValue(Int32(clamping: receivedRssi), forKey: "receivedRssi")
+            }
+
+            let persistedReactions = Self.decodeReactions(messageObject.value(forKey: "reactionsData") as? Data)
+            let mergedReactions = Self.mergingReactions(persistedReactions, with: message.reactionsByEmoji)
+            messageObject.setValue(Self.encodeReactions(mergedReactions), forKey: "reactionsData")
 
             if isDirect, let partnerNodeId {
                 let resolvedPartnerName = partnerName ?? message.from
-                self.upsertConversation(in: context, partnerNodeId: partnerNodeId, nodeName: resolvedPartnerName, colorHex: message.senderColorHex)
+                self.upsertConversation(
+                    in: context,
+                    partnerNodeId: partnerNodeId,
+                    nodeName: resolvedPartnerName,
+                    colorHex: message.senderColorHex,
+                    markUnread: isNewMessage && message.fromId == partnerNodeId
+                )
             }
 
             self.save(context: context, label: "message")
         }
     }
 
-    func updateDeliveryState(requestId: UInt32, state: MessageDeliveryState) {
-        guard requestId != 0 else { return }
+    /// Replaces reaction state after an in-memory reaction mutation. Unlike
+    /// `upsertMessage`, this exact replacement also supports reaction removal.
+    func replaceReactions(for message: MessageItem, context storageContext: MessageStorageContext) {
+        guard isMessageHistoryEnabled() else { return }
+        let persistenceKey = message.persistenceKey(in: storageContext)
+        let context = persistenceController.newBackgroundContext()
+        context.performAndWait {
+            let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
+            request.fetchLimit = 1
+            request.predicate = NSPredicate(format: "persistenceKey == %@", persistenceKey)
+            guard let object = try? context.fetch(request).first else { return }
+            object.setValue(Self.encodeReactions(message.reactionsByEmoji), forKey: "reactionsData")
+            self.save(context: context, label: "message-reactions")
+        }
+    }
+
+    func updateDeliveryState(
+        requestId: UInt32,
+        state: MessageDeliveryState,
+        storageContext: MessageStorageContext? = nil
+    ) {
+        guard requestId != 0, isMessageHistoryEnabled() else { return }
 
         let context = persistenceController.newBackgroundContext()
         context.perform {
             let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
             request.fetchLimit = 1
-            request.predicate = NSPredicate(format: "packetId == %lld", Int64(requestId))
+            switch storageContext {
+            case .channel(let channelIndex):
+                request.predicate = NSPredicate(
+                    format: "packetId == %lld AND isDirect == NO AND channelIndex == %d",
+                    Int64(requestId),
+                    channelIndex
+                )
+            case .directMessage(let partnerNodeId):
+                request.predicate = NSPredicate(
+                    format: "packetId == %lld AND isDirect == YES AND partnerNodeId == %lld",
+                    Int64(requestId),
+                    Int64(partnerNodeId)
+                )
+            case nil:
+                request.predicate = NSPredicate(format: "packetId == %lld", Int64(requestId))
+            }
 
             guard let object = try? context.fetch(request).first else { return }
 
@@ -449,7 +637,13 @@ final class MeshCoreDataStore {
         }
     }
 
-    private func upsertConversation(in context: NSManagedObjectContext, partnerNodeId: UInt32, nodeName: String, colorHex: String) {
+    private func upsertConversation(
+        in context: NSManagedObjectContext,
+        partnerNodeId: UInt32,
+        nodeName: String,
+        colorHex: String,
+        markUnread: Bool
+    ) {
         let request = NSFetchRequest<NSManagedObject>(entityName: "MHConversationEntity")
         request.fetchLimit = 1
         request.predicate = NSPredicate(format: "partnerNodeId == %lld", Int64(partnerNodeId))
@@ -460,6 +654,9 @@ final class MeshCoreDataStore {
         object.setValue(nodeName, forKey: "nodeName")
         object.setValue(colorHex, forKey: "colorHex")
         object.setValue(Date(), forKey: "updatedAt")
+        if markUnread {
+            object.setValue(true, forKey: "hasUnread")
+        }
     }
 
     private func save(context: NSManagedObjectContext, label: String) {
@@ -489,6 +686,7 @@ final class MeshCoreDataStore {
 
     @MainActor
     func hydrate(appState: AppState) -> CoreDataHydrationStats {
+        backfillMessageMetadataIfNeeded()
         let context = persistenceController.container.viewContext
         var stats = CoreDataHydrationStats()
 
@@ -547,25 +745,41 @@ final class MeshCoreDataStore {
         // 4. Hydrate messages (with limit for performance)
         let messageRequest = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
         messageRequest.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
+        let recentCutoff = Date().addingTimeInterval(-initialMessageHistoryInterval)
+        messageRequest.predicate = NSCompoundPredicate(orPredicateWithSubpredicates: [
+            NSPredicate(format: "createdAt >= %@", recentCutoff as NSDate),
+            NSPredicate(format: "createdAt == nil"),
+        ])
         messageRequest.fetchLimit = 10_000 // Safety cap for large databases
         if let messages = try? context.fetch(messageRequest) {
-            var seenPacketIds = Set<UInt32>()
+            var seenPersistenceKeys = Set<String>()
             for object in messages {
                 guard let message = makeMessage(from: object) else { continue }
 
-                // Deduplicate by packetId
-                if let packetId = message.packetId, packetId != 0 {
-                    guard seenPacketIds.insert(packetId).inserted else { continue }
+                let isDirect = object.value(forKey: "isDirect") as? Bool ?? false
+                let storedPartnerNodeId = UInt32(clamping: (object.value(forKey: "partnerNodeId") as? Int64) ?? 0)
+                let partnerNodeId = storedPartnerNodeId == 0
+                    ? (message.fromId == appState.myNodeInfo?.nodeId ? message.toId : message.fromId)
+                    : storedPartnerNodeId
+                let storageContext = messageStorageContext(
+                    isDirect: isDirect,
+                    partnerNodeId: partnerNodeId,
+                    channelIndex: message.channelIndex
+                )
+                guard seenPersistenceKeys.insert(message.persistenceKey(in: storageContext)).inserted else {
+                    continue
                 }
 
-                let isDirect = object.value(forKey: "isDirect") as? Bool ?? false
                 if isDirect {
-                    _ = UInt32((object.value(forKey: "partnerNodeId") as? Int64) ?? Int64(message.fromId))
-                    appState.addOrUpdateDM(message, myNodeId: appState.myNodeInfo?.nodeId ?? 0)
-                    // Preserve unread state from conversation entity (already loaded above)
+                    appState.addOrUpdateDM(
+                        message,
+                        myNodeId: appState.myNodeInfo?.nodeId ?? 0,
+                        partnerNodeId: partnerNodeId,
+                        markUnread: false
+                    )
                     stats.directMessages += 1
                 } else {
-                    appState.appendMessage(message)
+                    appState.appendMessage(message, markUnread: false)
                     stats.channelMessages += 1
                 }
             }
@@ -639,8 +853,15 @@ final class MeshCoreDataStore {
         let packetId = UInt32(exactly: rawPacketId).flatMap { $0 == 0 ? nil : $0 }
         let rawReplyToPacketId = object.value(forKey: "replyToPacketId") as? Int64 ?? 0
         let replyToPacketId = UInt32(exactly: rawReplyToPacketId).flatMap { $0 == 0 ? nil : $0 }
+        let messageId = object.value(forKey: "messageUUID") as? UUID ?? UUID()
+        let createdAt = object.value(forKey: "createdAt") as? Date ?? .distantPast
+        let hopCount = (object.value(forKey: "hopCount") as? NSNumber).map(\.intValue)
+        let receivedSnr = (object.value(forKey: "receivedSnr") as? NSNumber).map(\.floatValue)
+        let receivedRssi = (object.value(forKey: "receivedRssi") as? NSNumber).map(\.intValue)
 
         return MessageItem(
+            id: messageId,
+            createdAt: createdAt,
             packetId: packetId,
             replyToPacketId: replyToPacketId,
             time: object.value(forKey: "timeText") as? String ?? "",
@@ -657,7 +878,11 @@ final class MeshCoreDataStore {
             senderNote: object.value(forKey: "senderNote") as? String ?? "",
             hasAlertBell: object.value(forKey: "hasAlertBell") as? Bool ?? false,
             deliveryState: Self.deliveryState(from: object.value(forKey: "deliveryState") as? String,
-                                             error: object.value(forKey: "deliveryError") as? String)
+                                             error: object.value(forKey: "deliveryError") as? String),
+            hopCount: hopCount,
+            receivedSnr: receivedSnr,
+            receivedRssi: receivedRssi,
+            reactionsByEmoji: Self.decodeReactions(object.value(forKey: "reactionsData") as? Data)
         )
     }
 
@@ -672,6 +897,183 @@ final class MeshCoreDataStore {
         default:
             return .none
         }
+    }
+
+    // MARK: - Message Identity / Paging Helpers
+
+    private func messageStorageContext(
+        isDirect: Bool,
+        partnerNodeId: UInt32?,
+        channelIndex: Int
+    ) -> MessageStorageContext {
+        if isDirect {
+            return .directMessage(partnerNodeId: partnerNodeId ?? 0)
+        }
+        return .channel(channelIndex)
+    }
+
+    private func findLegacyMessage(
+        in context: NSManagedObjectContext,
+        packetId: UInt32,
+        senderId: UInt32,
+        storageContext: MessageStorageContext
+    ) -> NSManagedObject? {
+        var predicates = [
+            NSPredicate(format: "packetId == %lld", Int64(packetId)),
+            NSPredicate(format: "fromId == %lld", Int64(senderId)),
+        ]
+        switch storageContext {
+        case .channel(let channelIndex):
+            predicates.append(NSPredicate(format: "isDirect == NO"))
+            predicates.append(NSPredicate(format: "channelIndex == %d", Int32(channelIndex)))
+        case .directMessage(let partnerNodeId):
+            predicates.append(NSPredicate(format: "isDirect == YES"))
+            predicates.append(NSPredicate(format: "partnerNodeId == %lld", Int64(partnerNodeId)))
+        }
+
+        let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
+        request.fetchLimit = 1
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+        return try? context.fetch(request).first
+    }
+
+    /// Backfills optional v3 attributes after an inferred lightweight
+    /// migration. This is idempotent and intentionally does not rewrite
+    /// message content or timestamps that already exist.
+    private func backfillMessageMetadataIfNeeded() {
+        let context = persistenceController.newBackgroundContext()
+        context.performAndWait {
+            let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
+            request.predicate = NSCompoundPredicate(orPredicateWithSubpredicates: [
+                NSPredicate(format: "messageUUID == nil"),
+                NSPredicate(format: "persistenceKey == nil"),
+                NSPredicate(format: "createdAt == nil"),
+            ])
+            guard let objects = try? context.fetch(request), !objects.isEmpty else { return }
+
+            for object in objects {
+                let messageId = object.value(forKey: "messageUUID") as? UUID ?? UUID()
+                object.setValue(messageId, forKey: "messageUUID")
+                if object.value(forKey: "createdAt") == nil {
+                    object.setValue(Date.distantPast, forKey: "createdAt")
+                }
+
+                guard object.value(forKey: "persistenceKey") as? String == nil else { continue }
+                let fromId = UInt32(clamping: object.value(forKey: "fromId") as? Int64 ?? 0)
+                let rawPacketId = object.value(forKey: "packetId") as? Int64 ?? 0
+                let packetId = UInt32(exactly: rawPacketId).flatMap { $0 == 0 ? nil : $0 }
+                let isDirect = object.value(forKey: "isDirect") as? Bool ?? false
+                let channelIndex = Int(object.value(forKey: "channelIndex") as? Int32 ?? 0)
+                let partnerNodeId = UInt32(clamping: object.value(forKey: "partnerNodeId") as? Int64 ?? 0)
+                let storageContext = self.messageStorageContext(
+                    isDirect: isDirect,
+                    partnerNodeId: partnerNodeId,
+                    channelIndex: channelIndex
+                )
+                var message = MessageItem(
+                    id: messageId,
+                    packetId: packetId,
+                    time: "",
+                    from: "",
+                    fromId: fromId,
+                    toId: 0,
+                    message: "",
+                    channelIndex: channelIndex,
+                    channelName: ""
+                )
+                message.createdAt = object.value(forKey: "createdAt") as? Date ?? .distantPast
+                object.setValue(message.persistenceKey(in: storageContext), forKey: "persistenceKey")
+            }
+            self.save(context: context, label: "message-v3-backfill")
+        }
+    }
+
+    private func fetchMessagePage(
+        predicate basePredicate: NSPredicate,
+        limit: Int,
+        before cursor: MessagePageCursor?
+    ) -> MessagePage {
+        guard limit > 0 else { return MessagePage(messages: [], nextCursor: nil) }
+        backfillMessageMetadataIfNeeded()
+
+        let context = persistenceController.newBackgroundContext()
+        var page = MessagePage(messages: [], nextCursor: nil)
+        context.performAndWait {
+            var predicates = [basePredicate]
+            if let cursor {
+                predicates.append(NSPredicate(
+                    format: "(createdAt < %@) OR (createdAt == %@ AND persistenceKey < %@)",
+                    cursor.createdAt as NSDate,
+                    cursor.createdAt as NSDate,
+                    cursor.persistenceKey
+                ))
+            }
+
+            let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+            request.sortDescriptors = [
+                NSSortDescriptor(key: "createdAt", ascending: false),
+                NSSortDescriptor(key: "persistenceKey", ascending: false),
+            ]
+            request.fetchLimit = limit + 1
+
+            guard let results = try? context.fetch(request) else { return }
+            let hasMore = results.count > limit
+            let selected = Array(results.prefix(limit))
+            let messages = selected.reversed().compactMap(self.makeMessage(from:))
+            let nextCursor: MessagePageCursor?
+            if hasMore,
+               let oldest = selected.last,
+               let createdAt = oldest.value(forKey: "createdAt") as? Date,
+               let persistenceKey = oldest.value(forKey: "persistenceKey") as? String {
+                nextCursor = MessagePageCursor(createdAt: createdAt, persistenceKey: persistenceKey)
+            } else {
+                nextCursor = nil
+            }
+            page = MessagePage(messages: messages, nextCursor: nextCursor)
+        }
+        return page
+    }
+
+    private func removeEmptyConversations(in context: NSManagedObjectContext) {
+        let request = NSFetchRequest<NSManagedObject>(entityName: "MHConversationEntity")
+        guard let conversations = try? context.fetch(request) else { return }
+        for conversation in conversations {
+            let partnerNodeId = conversation.value(forKey: "partnerNodeId") as? Int64 ?? 0
+            let countRequest = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
+            countRequest.fetchLimit = 1
+            countRequest.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "isDirect == YES"),
+                NSPredicate(format: "partnerNodeId == %lld", partnerNodeId),
+            ])
+            if (try? context.count(for: countRequest)) == 0 {
+                context.delete(conversation)
+            }
+        }
+    }
+
+    private static func encodeReactions(_ reactions: [String: [UInt32]]) -> Data? {
+        try? JSONEncoder().encode(reactions)
+    }
+
+    private static func decodeReactions(_ data: Data?) -> [String: [UInt32]] {
+        guard let data else { return [:] }
+        return (try? JSONDecoder().decode([String: [UInt32]].self, from: data)) ?? [:]
+    }
+
+    private static func mergingReactions(
+        _ existing: [String: [UInt32]],
+        with incoming: [String: [UInt32]]
+    ) -> [String: [UInt32]] {
+        var merged = existing
+        for (emoji, senders) in incoming {
+            var mergedSenders = merged[emoji, default: []]
+            for sender in senders where !mergedSenders.contains(sender) {
+                mergedSenders.append(sender)
+            }
+            merged[emoji] = mergedSenders
+        }
+        return merged
     }
 
     // MARK: - Targeted Node Customization
@@ -750,6 +1152,32 @@ final class MeshCoreDataStore {
         let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
         request.fetchLimit = 1
         request.predicate = NSPredicate(format: "packetId == %lld", Int64(packetId))
+        return (try? context.count(for: request)) ?? 0 > 0
+    }
+
+    /// Context-aware existence check for callers that have the complete mesh
+    /// identity. Prefer this overload to the legacy packet-only query.
+    func messageExists(
+        packetId: UInt32,
+        senderId: UInt32,
+        context storageContext: MessageStorageContext
+    ) -> Bool {
+        guard packetId != 0, senderId != 0 else { return false }
+        let probe = MessageItem(
+            packetId: packetId,
+            time: "",
+            from: "",
+            fromId: senderId,
+            toId: 0,
+            message: "",
+            channelIndex: 0,
+            channelName: ""
+        )
+        let persistenceKey = probe.persistenceKey(in: storageContext)
+        let context = persistenceController.container.viewContext
+        let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
+        request.fetchLimit = 1
+        request.predicate = NSPredicate(format: "persistenceKey == %@", persistenceKey)
         return (try? context.count(for: request)) ?? 0 > 0
     }
 }

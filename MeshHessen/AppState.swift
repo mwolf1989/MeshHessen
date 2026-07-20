@@ -40,6 +40,12 @@ final class AppState {
     var channelMessages: [Int: [MessageItem]] = [:]
     var allMessages: [MessageItem] = []   // unified feed
 
+    /// Persistence hook installed by AppCoordinator. Keeping the callback on
+    /// state avoids coupling this UI model directly to CoreData while allowing
+    /// reaction mutations to be stored immediately.
+    @ObservationIgnored
+    var onMessageMutation: ((MessageItem, MessageStorageContext) -> Void)?
+
     /// Number of unread messages per channel index.
     /// Only incremented for incoming messages (not from self) while that channel is not active.
     var channelUnreadCounts: [Int: Int] = [:]
@@ -60,6 +66,8 @@ final class AppState {
     var showMap: Bool = false
     /// Set to a node ID to have MapView center on that node's position.
     var mapFocusNodeId: UInt32?
+    /// One-shot request from another view to toggle a node's position track.
+    var mapPathToggleNodeId: UInt32?
 
     // MARK: - DM Window Target
     /// Set before opening the DM window to auto-select a conversation.
@@ -99,14 +107,19 @@ final class AppState {
 
     // MARK: - Message helpers
 
-    func appendMessage(_ msg: MessageItem) {
-        if let packetId = msg.packetId,
-           let existingIdx = allMessages.firstIndex(where: { $0.packetId == packetId }) {
+    func appendMessage(_ msg: MessageItem, markUnread: Bool = true) {
+        let storageContext = MessageStorageContext.channel(msg.channelIndex)
+        let persistenceKey = msg.persistenceKey(in: storageContext)
+        if let existingIdx = allMessages.firstIndex(where: {
+            $0.persistenceKey(in: .channel($0.channelIndex)) == persistenceKey
+        }) {
             let merged = mergeMessage(existing: allMessages[existingIdx], incoming: msg)
             allMessages[existingIdx] = merged
 
             let existingChannel = merged.channelIndex
-            if let channelIdx = channelMessages[existingChannel]?.firstIndex(where: { $0.packetId == packetId }) {
+            if let channelIdx = channelMessages[existingChannel]?.firstIndex(where: {
+                $0.persistenceKey(in: .channel(existingChannel)) == persistenceKey
+            }) {
                 channelMessages[existingChannel]?[channelIdx] = merged
             }
             return
@@ -118,9 +131,39 @@ final class AppState {
         // Increment unread counter for incoming messages that arrive in an inactive channel
         let isOwn = msg.fromId != 0 && msg.fromId == myNodeInfo?.nodeId
         let isActive = selectedTab == .messages && msg.channelIndex == selectedChannelIndex
-        if !isOwn && !isActive {
+        if markUnread && !isOwn && !isActive {
             channelUnreadCounts[msg.channelIndex, default: 0] += 1
         }
+    }
+
+    /// Prepends an older persisted channel page without duplicating live or
+    /// previously hydrated messages.
+    func prependChannelMessages(_ messages: [MessageItem], channelIndex: Int) {
+        let context = MessageStorageContext.channel(channelIndex)
+        let existingKeys = Set(
+            (channelMessages[channelIndex] ?? []).map { $0.persistenceKey(in: context) }
+        )
+        let uniqueOlder = messages.filter { !existingKeys.contains($0.persistenceKey(in: context)) }
+        guard !uniqueOlder.isEmpty else { return }
+
+        channelMessages[channelIndex, default: []].insert(contentsOf: uniqueOlder, at: 0)
+        let allKeys = Set(allMessages.map {
+            $0.persistenceKey(in: .channel($0.channelIndex))
+        })
+        allMessages.append(contentsOf: uniqueOlder.filter {
+            !allKeys.contains($0.persistenceKey(in: context))
+        })
+        allMessages.sort { $0.createdAt < $1.createdAt }
+    }
+
+    /// Prepends an older persisted direct-message page to the selected partner.
+    func prependDirectMessages(_ messages: [MessageItem], partnerNodeId: UInt32) {
+        let conversation = ensureDMConversation(for: partnerNodeId)
+        let context = MessageStorageContext.directMessage(partnerNodeId: partnerNodeId)
+        let existingKeys = Set(conversation.messages.map { $0.persistenceKey(in: context) })
+        let uniqueOlder = messages.filter { !existingKeys.contains($0.persistenceKey(in: context)) }
+        guard !uniqueOlder.isEmpty else { return }
+        conversation.messages.insert(contentsOf: uniqueOlder, at: 0)
     }
 
     /// Mark all messages in `index` as read.
@@ -135,23 +178,42 @@ final class AppState {
         channelUnreadCounts[index] = 0
     }
 
+    /// Removes only channel messages older than `cutoff`, keeping the live
+    /// in-memory view consistent with a scoped persistence deletion.
+    func clearChannelMessages(_ index: Int, olderThan cutoff: Date) {
+        channelMessages[index]?.removeAll { $0.createdAt < cutoff }
+        allMessages.removeAll { $0.channelIndex == index && $0.createdAt < cutoff }
+    }
+
     /// Remove all in-memory messages for a DM conversation.
     func clearDMMessages(for nodeId: UInt32) {
         dmConversations[nodeId]?.messages.removeAll()
     }
 
-    func addOrUpdateDM(_ msg: MessageItem, myNodeId: UInt32) {
-        let partnerId = msg.fromId == myNodeId ? msg.toId : msg.fromId
+    func clearDMMessages(for nodeId: UInt32, olderThan cutoff: Date) {
+        dmConversations[nodeId]?.messages.removeAll { $0.createdAt < cutoff }
+    }
+
+    func addOrUpdateDM(
+        _ msg: MessageItem,
+        myNodeId: UInt32,
+        partnerNodeId: UInt32? = nil,
+        markUnread: Bool = true
+    ) {
+        let partnerId = partnerNodeId ?? (msg.fromId == myNodeId ? msg.toId : msg.fromId)
         let partnerName = nodes[partnerId]?.name ?? msg.from
         let colorHex = nodes[partnerId]?.colorHex ?? ""
+        let storageContext = MessageStorageContext.directMessage(partnerNodeId: partnerId)
+        let persistenceKey = msg.persistenceKey(in: storageContext)
 
         if dmConversations[partnerId] == nil {
             dmConversations[partnerId] = DirectMessageConversation(
                 nodeId: partnerId, nodeName: partnerName, colorHex: colorHex
             )
         }
-        if let packetId = msg.packetId,
-           let existing = dmConversations[partnerId]?.messages.firstIndex(where: { $0.packetId == packetId }) {
+        if let existing = dmConversations[partnerId]?.messages.firstIndex(where: {
+            $0.persistenceKey(in: storageContext) == persistenceKey
+        }) {
             if let current = dmConversations[partnerId]?.messages[existing] {
                 dmConversations[partnerId]?.messages[existing] = mergeMessage(existing: current, incoming: msg)
             }
@@ -159,17 +221,22 @@ final class AppState {
             dmConversations[partnerId]?.messages.append(msg)
         }
         // Only mark unread for incoming messages, not our own
-        if msg.fromId != myNodeId {
+        if markUnread && msg.fromId != myNodeId {
             dmConversations[partnerId]?.hasUnread = true
         }
     }
 
     /// Look up a message by its packet ID, searching channel messages first, then DMs.
-    func findMessageByPacketId(_ packetId: UInt32) -> MessageItem? {
-        if let msg = allMessages.first(where: { $0.packetId == packetId }) {
+    func findMessageByPacketId(
+        _ packetId: UInt32,
+        context: MessageStorageContext? = nil
+    ) -> MessageItem? {
+        if let msg = allMessages.first(where: {
+            $0.packetId == packetId && (context == nil || context == .channel($0.channelIndex))
+        }) {
             return msg
         }
-        for conv in dmConversations.values {
+        for conv in dmConversations.values where context == nil || context == .directMessage(partnerNodeId: conv.id) {
             if let msg = conv.messages.first(where: { $0.packetId == packetId }) {
                 return msg
             }
@@ -177,22 +244,42 @@ final class AppState {
         return nil
     }
 
-    func addReaction(emoji: String, from senderId: UInt32, toPacketId: UInt32) {
-        if let allIdx = allMessages.firstIndex(where: { $0.packetId == toPacketId }) {
+    func addReaction(
+        emoji: String,
+        from senderId: UInt32,
+        toPacketId: UInt32,
+        context: MessageStorageContext? = nil
+    ) {
+        if let allIdx = allMessages.firstIndex(where: {
+            $0.packetId == toPacketId && (context == nil || context == .channel($0.channelIndex))
+        }) {
             allMessages[allIdx].addReaction(emoji: emoji, from: senderId)
             let channelIndex = allMessages[allIdx].channelIndex
-            if let channelMsgIdx = channelMessages[channelIndex]?.firstIndex(where: { $0.packetId == toPacketId }) {
+            if let channelMsgIdx = channelMessages[channelIndex]?.firstIndex(where: {
+                $0.persistenceKey(in: .channel(channelIndex))
+                    == allMessages[allIdx].persistenceKey(in: .channel(channelIndex))
+            }) {
                 channelMessages[channelIndex]?[channelMsgIdx].addReaction(emoji: emoji, from: senderId)
             }
+            onMessageMutation?(allMessages[allIdx], .channel(channelIndex))
         }
-        for key in dmConversations.keys {
+        for key in dmConversations.keys where context == nil || context == .directMessage(partnerNodeId: key) {
             guard let msgIdx = dmConversations[key]?.messages.firstIndex(where: { $0.packetId == toPacketId }) else { continue }
             dmConversations[key]?.messages[msgIdx].addReaction(emoji: emoji, from: senderId)
+            if let message = dmConversations[key]?.messages[msgIdx] {
+                onMessageMutation?(message, .directMessage(partnerNodeId: key))
+            }
         }
     }
 
-    func updateDeliveryState(requestId: UInt32, state: MessageDeliveryState) {
-        if let allIdx = allMessages.firstIndex(where: { $0.packetId == requestId }) {
+    func updateDeliveryState(
+        requestId: UInt32,
+        state: MessageDeliveryState,
+        context: MessageStorageContext? = nil
+    ) {
+        if let allIdx = allMessages.firstIndex(where: {
+            $0.packetId == requestId && (context == nil || context == .channel($0.channelIndex))
+        }) {
             let mergedState = allMessages[allIdx].deliveryState.merging(state)
             allMessages[allIdx].deliveryState = mergedState
             let channelIndex = allMessages[allIdx].channelIndex
@@ -201,7 +288,7 @@ final class AppState {
             }
         }
 
-        for key in dmConversations.keys {
+        for key in dmConversations.keys where context == nil || context == .directMessage(partnerNodeId: key) {
             guard let msgIndex = dmConversations[key]?.messages.firstIndex(where: { $0.packetId == requestId }) else {
                 continue
             }
@@ -230,9 +317,22 @@ final class AppState {
         merged.isEncrypted = incoming.isEncrypted
         merged.isViaMqtt = incoming.isViaMqtt
         merged.hasAlertBell = incoming.hasAlertBell
+        if let hopCount = incoming.hopCount { merged.hopCount = hopCount }
+        if let receivedSnr = incoming.receivedSnr { merged.receivedSnr = receivedSnr }
+        if let receivedRssi = incoming.receivedRssi { merged.receivedRssi = receivedRssi }
 
         if incoming.deliveryState != .none {
             merged.deliveryState = incoming.deliveryState
+        }
+
+        for (emoji, senders) in incoming.reactionsByEmoji {
+            for senderId in senders {
+                merged.addReaction(emoji: emoji, from: senderId)
+            }
+        }
+
+        if incoming.createdAt < merged.createdAt {
+            merged.createdAt = incoming.createdAt
         }
 
         return merged
