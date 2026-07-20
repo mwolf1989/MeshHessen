@@ -14,8 +14,8 @@ struct TelemetryView: View {
     @State private var powerStats = PowerStats()
     @State private var airtimeStats = AirtimeStats()
     @State private var routingStats = RoutingStats()
-
-    private let dayOptions = [7, 30, 90, 0]
+    @State private var directContacts: [DirectNeighborContact] = []
+    @State private var traceroutes: [TracerouteResult] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,6 +39,7 @@ struct TelemetryView: View {
                         .font(.headline)
                     Picker("", selection: $selectedDays) {
                         Text("7 Days").tag(7)
+                        Text("14 Days").tag(14)
                         Text("30 Days").tag(30)
                         Text("90 Days").tag(90)
                         Text("All").tag(0)
@@ -114,6 +115,37 @@ struct TelemetryView: View {
                         }
                     }
                 }
+
+                GroupBox("Neighbors and Path Stability") {
+                    statsGrid {
+                        statRow("Direct RF contacts", value: "\(directContacts.count)")
+                        statRow("Traceroutes", value: "\(traceroutes.count)")
+                        statRow("Path changes", value: "\(pathChangeCount)")
+                        statRow("Path stability", value: pathStabilityText)
+                    }
+
+                    if !directContacts.isEmpty {
+                        Divider()
+                        Text("Latest Direct Neighbor Contacts")
+                            .font(.subheadline.bold())
+                        ForEach(directContacts.prefix(12)) { contact in
+                            HStack {
+                                Text(String(format: "!%08x", contact.nodeId))
+                                    .font(.caption.monospaced())
+                                Spacer()
+                                if let snr = contact.snr {
+                                    Text(String(format: "SNR %.1f dB", snr))
+                                }
+                                if let rssi = contact.rssi {
+                                    Text("RSSI \(rssi) dBm")
+                                }
+                                Text(contact.timestamp, style: .relative)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .font(.caption)
+                        }
+                    }
+                }
             }
                 .padding()
             }
@@ -145,13 +177,38 @@ struct TelemetryView: View {
             let power = db.getPowerStats(nodeId: nodeId, days: days)
             let airtime = db.getAirtimeStats(nodeId: nodeId, days: days)
             let routing = db.getRoutingStats(nodeId: nodeId, days: days)
+            let cutoff = Date().addingTimeInterval(-Double(days) * 86_400)
+            let contacts = db.getDirectNeighborContacts(since: cutoff).filter { $0.nodeId == nodeId }
+            let traces = TracerouteStore.shared.loadAll().filter {
+                ($0.targetNodeId == nodeId || $0.sourceNodeId == nodeId)
+                    && $0.receivedAt >= cutoff
+            }
             await MainActor.run {
                 signalStats = signal
                 powerStats = power
                 airtimeStats = airtime
                 routingStats = routing
+                directContacts = contacts
+                traceroutes = traces.sorted { $0.receivedAt > $1.receivedAt }
             }
         }
+    }
+
+    private var pathChangeCount: Int {
+        guard traceroutes.count > 1 else { return 0 }
+        let chronological = traceroutes.sorted { $0.receivedAt < $1.receivedAt }
+        return zip(chronological, chronological.dropFirst()).reduce(0) { count, pair in
+            let previousPath = pair.0.hops.map(\.nodeId)
+            let nextPath = pair.1.hops.map(\.nodeId)
+            return count + (previousPath == nextPath ? 0 : 1)
+        }
+    }
+
+    private var pathStabilityText: String {
+        guard traceroutes.count > 1 else { return String(localized: "No comparison") }
+        let comparisons = traceroutes.count - 1
+        let stable = max(0, comparisons - pathChangeCount)
+        return "\(Int((Double(stable) / Double(comparisons) * 100).rounded()))%"
     }
 
     // MARK: - Formatting Helpers
