@@ -4,6 +4,7 @@ import SwiftUI
 /// and routing metrics split by day and night.
 struct TelemetryView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openWindow) private var openWindow
 
     let nodeId: UInt32
     let nodeName: String
@@ -13,7 +14,6 @@ struct TelemetryView: View {
     @State private var powerStats = PowerStats()
     @State private var airtimeStats = AirtimeStats()
     @State private var routingStats = RoutingStats()
-    @State private var showChart = false
 
     private let dayOptions = [7, 30, 90, 0]
 
@@ -48,9 +48,7 @@ struct TelemetryView: View {
 
                     Spacer()
 
-                    Button {
-                        showChart = true
-                    } label: {
+                    Button(action: openTelemetryChart) {
                         Label("Charts", systemImage: "chart.xyaxis.line")
                     }
                 }
@@ -123,13 +121,20 @@ struct TelemetryView: View {
         .frame(minWidth: 500, minHeight: 400)
         .onAppear { loadStats() }
         .onChange(of: selectedDays) { loadStats() }
-        .sheet(isPresented: $showChart) {
-            TelemetryChartView(nodeId: nodeId, nodeName: nodeName, days: effectiveDays)
-        }
     }
 
     private var effectiveDays: Int {
         selectedDays == 0 ? 3650 : selectedDays  // "All" = 10 years
+    }
+
+    private func openTelemetryChart() {
+        openWindow(
+            value: TelemetryChartWindowRequest(
+                nodeId: nodeId,
+                nodeName: nodeName,
+                days: effectiveDays
+            )
+        )
     }
 
     private func loadStats() {

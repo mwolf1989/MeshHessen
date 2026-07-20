@@ -1,5 +1,12 @@
-import SwiftUI
 import Charts
+import SwiftUI
+
+/// Value used to open or focus a telemetry chart window for a node and time range.
+struct TelemetryChartWindowRequest: Codable, Hashable {
+    let nodeId: UInt32
+    let nodeName: String
+    let days: Int
+}
 
 /// Time-series chart view for node telemetry data using Swift Charts.
 struct TelemetryChartView: View {
@@ -7,10 +14,14 @@ struct TelemetryChartView: View {
     let nodeName: String
     let days: Int
 
-    @State private var selectedMetrics: Set<TelemetryMetric> = [.snr]
+    @State private var settings = SettingsService.shared
     @State private var dataPoints: [TelemetryMetric: [TimeSeriesPoint]] = [:]
     @State private var isLoading = false
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissWindow) private var dismissWindow
+
+    private var selectedMetrics: Set<TelemetryMetric> {
+        settings.telemetryChartMetrics
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -19,7 +30,7 @@ struct TelemetryChartView: View {
                 Text("Charts — \(nodeName)")
                     .font(.headline)
                 Spacer()
-                Button("Close") { dismiss() }
+                Button("Close") { dismissWindow() }
             }
             .padding(.horizontal)
 
@@ -29,10 +40,7 @@ struct TelemetryChartView: View {
                     ForEach(TelemetryMetric.allCases) { metric in
                         Toggle(metric.rawValue, isOn: Binding(
                             get: { selectedMetrics.contains(metric) },
-                            set: { isOn in
-                                if isOn { selectedMetrics.insert(metric) }
-                                else { selectedMetrics.remove(metric) }
-                            }
+                            set: { setMetric(metric, isSelected: $0) }
                         ))
                         .toggleStyle(.button)
                         .controlSize(.small)
@@ -58,9 +66,19 @@ struct TelemetryChartView: View {
             }
         }
         .padding(.vertical)
-        .frame(minWidth: 850, idealWidth: 950, minHeight: 450)
+        .frame(minWidth: 520, minHeight: 360)
         .onAppear { loadData() }
         .onChange(of: selectedMetrics) { loadData() }
+    }
+
+    private func setMetric(_ metric: TelemetryMetric, isSelected: Bool) {
+        var metrics = selectedMetrics
+        if isSelected {
+            metrics.insert(metric)
+        } else {
+            metrics.remove(metric)
+        }
+        settings.telemetryChartMetrics = metrics
     }
 
     @ViewBuilder
@@ -125,7 +143,11 @@ struct TelemetryChartView: View {
 
     private func loadData() {
         let metricsToLoad = selectedMetrics
-        guard !metricsToLoad.isEmpty else { return }
+        guard !metricsToLoad.isEmpty else {
+            dataPoints = [:]
+            isLoading = false
+            return
+        }
         isLoading = true
 
         Task.detached { [nodeId, days] in
@@ -134,6 +156,7 @@ struct TelemetryChartView: View {
                 dict[metric] = db.getTimeSeries(nodeId: nodeId, metric: metric, days: days)
             }
             await MainActor.run {
+                guard selectedMetrics == metricsToLoad else { return }
                 dataPoints = loaded
                 isLoading = false
             }

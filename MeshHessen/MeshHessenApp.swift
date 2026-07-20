@@ -93,6 +93,22 @@ struct MeshHessenApp: App {
         .windowStyle(.titleBar)
         .defaultSize(width: 750, height: 520)
 
+        // MARK: - Telemetry Chart Windows
+        WindowGroup("Telemetry Charts", for: TelemetryChartWindowRequest.self) { request in
+            if let request = request.wrappedValue {
+                TelemetryChartView(
+                    nodeId: request.nodeId,
+                    nodeName: request.nodeName,
+                    days: request.days
+                )
+                .font(settings.scaledBodyFont)
+                .environment(\.dynamicTypeSize, settings.dynamicTypeSize)
+            }
+        }
+        .windowStyle(.titleBar)
+        .defaultSize(width: 950, height: 650)
+        .windowResizability(.contentMinSize)
+
         // MARK: - Settings (⌘,)
         Settings {
             SettingsView()

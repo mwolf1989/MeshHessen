@@ -6,13 +6,23 @@ import SwiftUI
 final class SettingsService {
     static let shared = SettingsService()
 
-    private let defaults = UserDefaults.standard
+    private static let telemetryChartMetricsKey = "telemetryChartMetrics"
 
-    private init() {
+    private let defaults: UserDefaults
+
+    private convenience init() {
+        self.init(defaults: .standard)
+    }
+
+    /// Creates settings backed by the supplied defaults store.
+    /// A separate suite keeps tests isolated from the app-wide singleton.
+    init(defaults: UserDefaults) {
+        self.defaults = defaults
         self.fontSizeStep = defaults.integer(forKey: "fontSizeStep")
         self.nodeSortOrder = NodeSortOrder(
             rawValue: defaults.string(forKey: "nodeSortOrder") ?? ""
         ) ?? .name
+        self.telemetryChartMetrics = Self.loadTelemetryChartMetrics(from: defaults)
     }
 
     // MARK: - General
@@ -246,6 +256,31 @@ final class SettingsService {
             return val > 0 ? val : 90
         }
         set { defaults.set(newValue, forKey: "telemetryRetentionDays") }
+    }
+
+    /// Metrics selected in telemetry charts, shared across nodes and app launches.
+    var telemetryChartMetrics: Set<TelemetryMetric> {
+        didSet {
+            guard telemetryChartMetrics != oldValue else { return }
+            let rawValues = telemetryChartMetrics.map(\.rawValue).sorted()
+            defaults.set(rawValues, forKey: Self.telemetryChartMetricsKey)
+            AppLogger.shared.log(
+                "[Settings] telemetryChartMetrics: \(rawValues.joined(separator: ", "))",
+                debug: true
+            )
+        }
+    }
+
+    private static func loadTelemetryChartMetrics(from defaults: UserDefaults) -> Set<TelemetryMetric> {
+        guard let rawValues = defaults.stringArray(forKey: telemetryChartMetricsKey) else {
+            return [.snr]
+        }
+
+        // An empty array is a deliberate choice: the chart shows its metric picker empty.
+        guard !rawValues.isEmpty else { return [] }
+
+        let metrics = Set(rawValues.compactMap(TelemetryMetric.init(rawValue:)))
+        return metrics.isEmpty ? [.snr] : metrics
     }
 
     // MARK: - Per-node color / note
