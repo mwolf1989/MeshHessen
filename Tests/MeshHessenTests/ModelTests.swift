@@ -146,6 +146,25 @@ struct ModelTests {
         #expect(node.name == "SH")
     }
 
+    @Test("NodeInfo name falls back to its formatted node ID when names are empty")
+    func nodeInfoNameFallsBackToNodeId() {
+        let node = NodeInfo(id: 0x2A, nodeId: "", shortName: "", longName: "")
+        #expect(node.name == "!0000002a")
+    }
+
+    @Test("NodeInfo treats whitespace-only names as missing")
+    func nodeInfoWhitespaceNameFallsBackToNodeId() {
+        let node = NodeInfo(id: 0x2A, nodeId: "", shortName: "  ", longName: "\n")
+        #expect(node.name == "!0000002a")
+    }
+
+    @Test("NodeInfo keeps the node ID fallback when assigned an empty display name")
+    func nodeInfoRejectsEmptyDisplayName() {
+        let node = NodeInfo(id: 0x1234, nodeId: "!00001234", shortName: "", longName: "")
+        node.name = ""
+        #expect(node.name == "!00001234")
+    }
+
     @Test("NodeInfo color returns nil when colorHex is empty")
     func nodeInfoColorNil() {
         let node = NodeInfo(id: 1, nodeId: "!00000001", shortName: "A", longName: "B")
@@ -190,6 +209,33 @@ struct ModelTests {
             message: "test", channelIndex: 0, channelName: "ch0"
         )
         #expect(dm.isDirect)
+    }
+
+    @Test("Only real mesh packet IDs can be used as reply targets")
+    func messageRoutablePacketId() {
+        let networkMessage = MessageItem(
+            packetId: 42,
+            time: "12:00",
+            from: "A",
+            fromId: 1,
+            toId: 0xFFFFFFFF,
+            message: "test",
+            channelIndex: 0,
+            channelName: "ch0"
+        )
+        let importedMessage = MessageItem(
+            packetId: 42,
+            time: "12:00",
+            from: "Legacy",
+            fromId: 0,
+            toId: 0,
+            message: "old",
+            channelIndex: 0,
+            channelName: "ch0"
+        )
+
+        #expect(networkMessage.routablePacketId == 42)
+        #expect(importedMessage.routablePacketId == nil)
     }
 
     @Test("ChannelInfo displayName uses name when set")

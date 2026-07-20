@@ -40,7 +40,13 @@ final class NodeInfo: Identifiable {
     var nodeId: String      // "!xxxxxxxx" hex string
     var shortName: String
     var longName: String
-    var name: String        // display name (longName or shortName fallback)
+    var name: String {      // display name (longName, shortName, or node ID fallback)
+        didSet {
+            if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                name = Self.resolvedName(id: id, shortName: shortName, longName: longName)
+            }
+        }
+    }
 
     // Telemetry (string for display)
     var distance: String = "-"
@@ -78,7 +84,18 @@ final class NodeInfo: Identifiable {
         self.nodeId = nodeId
         self.shortName = shortName
         self.longName = longName
-        self.name = longName.isEmpty ? shortName : longName
+        self.name = Self.resolvedName(id: id, shortName: shortName, longName: longName)
+    }
+
+    /// Resolves the stable display name used when a node does not advertise a name.
+    static func resolvedName(id: UInt32, shortName: String, longName: String) -> String {
+        let trimmedLongName = longName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedLongName.isEmpty { return trimmedLongName }
+
+        let trimmedShortName = shortName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedShortName.isEmpty { return trimmedShortName }
+
+        return String(format: "!%08x", id)
     }
 
     /// NSColor / Color from colorHex, or nil if not set

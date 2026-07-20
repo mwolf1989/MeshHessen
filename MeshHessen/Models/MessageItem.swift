@@ -29,6 +29,9 @@ enum MessageDeliveryState: Equatable {
 struct MessageItem: Identifiable {
     let id: UUID = UUID()
     var packetId: UInt32? = nil
+    /// Packet ID of the message this text message replies to.
+    /// Emoji reactions use the same Meshtastic field but are handled separately.
+    var replyToPacketId: UInt32? = nil
     var time: String
     var from: String
     var fromId: UInt32
@@ -49,6 +52,14 @@ struct MessageItem: Identifiable {
 
     /// true if this is a direct message (not broadcast)
     var isDirect: Bool { toId != 0xFFFFFFFF && toId != 0 }
+
+    /// Packet ID that can be referenced by another mesh packet.
+    /// Legacy log imports use synthetic IDs for local persistence and have no
+    /// recoverable sender node ID, so they must not be used for replies/reactions.
+    var routablePacketId: UInt32? {
+        guard fromId != 0, let packetId, packetId != 0 else { return nil }
+        return packetId
+    }
 
     /// Add a reaction from a sender
     mutating func addReaction(emoji: String, from senderId: UInt32) {

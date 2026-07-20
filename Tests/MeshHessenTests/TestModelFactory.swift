@@ -16,6 +16,14 @@ enum TestModelFactory {
         return model
     }
 
+    /// Schema shipped before 1.0.18, used to verify the additive message migration.
+    static func makeLegacyModel() -> NSManagedObjectModel {
+        let model = makeModel()
+        guard let messageEntity = model.entitiesByName["MHMessageEntity"] else { return model }
+        messageEntity.properties.removeAll { $0.name == "replyToPacketId" }
+        return model
+    }
+
     // MARK: - Entities
 
     private static func nodeEntity() -> NSEntityDescription {
@@ -76,6 +84,7 @@ enum TestModelFactory {
         e.managedObjectClassName = NSStringFromClass(NSManagedObject.self)
         e.properties = [
             int64("packetId"),
+            int64("replyToPacketId"),
             date("createdAt"),
             string("timeText"),
             string("fromName"),

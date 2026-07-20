@@ -44,6 +44,18 @@ struct PersistenceTests {
         )
     }
 
+    private func loadPersistentStores(for container: NSPersistentContainer) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            container.loadPersistentStores { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+    }
+
     // MARK: - Node CRUD
 
     @Test("upsertNode persists a node")
@@ -129,6 +141,86 @@ struct PersistenceTests {
         #expect(results.count == 1)
         #expect(results[0].value(forKey: "messageText") as? String == "Hello from tests")
         #expect(results[0].value(forKey: "isDirect") as? Bool == false)
+    }
+
+    @Test("message reply target survives persistence hydration")
+    @MainActor
+    func messageReplyTargetRoundTrip() async throws {
+        let (store, _) = makeStore()
+        var message = sampleMessage(packetId: 43)
+        message.replyToPacketId = 42
+
+        store.upsertMessage(message, isDirect: false, partnerNodeId: nil)
+        try await Task.sleep(for: .milliseconds(200))
+
+        // A duplicate transport echo can omit reply metadata. It must not clear
+        // the original relation before the next app launch.
+        store.upsertMessage(sampleMessage(packetId: 43), isDirect: false, partnerNodeId: nil)
+        try await Task.sleep(for: .milliseconds(200))
+
+        let restartedState = AppState()
+        _ = store.hydrate(appState: restartedState)
+
+        let hydrated = try #require(restartedState.channelMessages[0]?.first)
+        #expect(hydrated.packetId == 43)
+        #expect(hydrated.replyToPacketId == 42)
+    }
+
+    @Test("pre-1.0.18 message stores migrate to the reply-capable schema")
+    func legacyMessageStoreMigration() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MeshHessenMigrationTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let legacyURL = directory.appendingPathComponent("legacy.sqlite")
+        let migratedURL = directory.appendingPathComponent("migrated.sqlite")
+        let legacyModel = TestModelFactory.makeLegacyModel()
+        let currentModel = TestModelFactory.makeModel()
+
+        let legacyContainer = NSPersistentContainer(name: "MeshHessenLegacy", managedObjectModel: legacyModel)
+        let legacyDescription = NSPersistentStoreDescription(url: legacyURL)
+        legacyDescription.type = NSSQLiteStoreType
+        legacyContainer.persistentStoreDescriptions = [legacyDescription]
+        try await loadPersistentStores(for: legacyContainer)
+
+        let legacyMessage = NSEntityDescription.insertNewObject(
+            forEntityName: "MHMessageEntity",
+            into: legacyContainer.viewContext
+        )
+        legacyMessage.setValue(Int64(77), forKey: "packetId")
+        legacyMessage.setValue("before migration", forKey: "messageText")
+        try legacyContainer.viewContext.save()
+
+        let legacyStore = try #require(legacyContainer.persistentStoreCoordinator.persistentStores.first)
+        try legacyContainer.persistentStoreCoordinator.remove(legacyStore)
+
+        let mapping = try NSMappingModel.inferredMappingModel(
+            forSourceModel: legacyModel,
+            destinationModel: currentModel
+        )
+        let migrationManager = NSMigrationManager(sourceModel: legacyModel, destinationModel: currentModel)
+        try migrationManager.migrateStore(
+            from: legacyURL,
+            sourceType: NSSQLiteStoreType,
+            options: nil,
+            with: mapping,
+            toDestinationURL: migratedURL,
+            destinationType: NSSQLiteStoreType,
+            destinationOptions: nil
+        )
+
+        let currentContainer = NSPersistentContainer(name: "MeshHessenCurrent", managedObjectModel: currentModel)
+        let currentDescription = NSPersistentStoreDescription(url: migratedURL)
+        currentDescription.type = NSSQLiteStoreType
+        currentContainer.persistentStoreDescriptions = [currentDescription]
+        try await loadPersistentStores(for: currentContainer)
+
+        let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
+        let migratedMessage = try #require(currentContainer.viewContext.fetch(request).first)
+        #expect(migratedMessage.value(forKey: "packetId") as? Int64 == 77)
+        #expect((migratedMessage.value(forKey: "replyToPacketId") as? Int64 ?? 0) == 0)
+        #expect(migratedMessage.value(forKey: "messageText") as? String == "before migration")
     }
 
     @Test("messageExists returns true for existing packetId")
@@ -243,6 +335,53 @@ struct PersistenceTests {
         _ = store.hydrate(appState: restartedState)
 
         #expect(restartedState.node(forId: node.id)?.isPinned == true)
+    }
+
+    @Test("hydration overlays persisted local fields onto an existing live node")
+    @MainActor
+    func hydrationMergesLocalFieldsIntoLiveNode() async throws {
+        let (store, _) = makeStore()
+        let persistedNode = sampleNode()
+        persistedNode.snr = "1.0 dB"
+        persistedNode.snrFloat = 1
+        persistedNode.lastHeard = 100
+        store.upsertNode(persistedNode)
+        try await Task.sleep(for: .milliseconds(200))
+        store.updateNodePinState(nodeId: persistedNode.id, isPinned: true)
+        try await Task.sleep(for: .milliseconds(200))
+        store.updateNodeTracerouteHopCount(nodeId: persistedNode.id, hopCount: 5)
+        try await Task.sleep(for: .milliseconds(200))
+
+        let liveNode = NodeInfo(
+            id: persistedNode.id,
+            nodeId: persistedNode.nodeId,
+            shortName: "LIVE",
+            longName: "Fresh Live Node"
+        )
+        liveNode.snr = "9.0 dB"
+        liveNode.snrFloat = 9
+        liveNode.lastHeard = 900
+        liveNode.latitude = 51.5
+        liveNode.colorHex = "#0000FF"
+        liveNode.note = "Live placeholder"
+
+        let restartedState = AppState()
+        restartedState.upsertNode(liveNode)
+        let stats = store.hydrate(appState: restartedState)
+        let hydratedNode = try #require(restartedState.node(forId: persistedNode.id))
+
+        #expect(hydratedNode === liveNode)
+        #expect(hydratedNode.name == "Fresh Live Node")
+        #expect(hydratedNode.shortName == "LIVE")
+        #expect(hydratedNode.snr == "9.0 dB")
+        #expect(hydratedNode.snrFloat == 9)
+        #expect(hydratedNode.lastHeard == 900)
+        #expect(hydratedNode.latitude == 51.5)
+        #expect(hydratedNode.colorHex == "#FF0000")
+        #expect(hydratedNode.note == "A test note")
+        #expect(hydratedNode.isPinned)
+        #expect(hydratedNode.lastTracerouteHopCount == 5)
+        #expect(stats.nodes == 1)
     }
 
     @Test("last traceroute hop count survives app state hydration")

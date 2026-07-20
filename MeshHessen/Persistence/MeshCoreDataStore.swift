@@ -393,6 +393,11 @@ final class MeshCoreDataStore {
             let object = (try? context.fetch(request).first) ?? NSEntityDescription.insertNewObject(forEntityName: "MHMessageEntity", into: context)
 
             object.setValue(Int64(packetId), forKey: "packetId")
+            // A later duplicate/echo without reply metadata must not erase the
+            // target captured from the original packet or optimistic send.
+            if let replyToPacketId = message.replyToPacketId {
+                object.setValue(Int64(replyToPacketId), forKey: "replyToPacketId")
+            }
             object.setValue(Date(), forKey: "createdAt")
             object.setValue(message.time, forKey: "timeText")
             object.setValue(message.from, forKey: "fromName")
@@ -487,16 +492,22 @@ final class MeshCoreDataStore {
         let context = persistenceController.container.viewContext
         var stats = CoreDataHydrationStats()
 
-        // 1. Hydrate nodes
-        if appState.nodes.isEmpty {
-            let request = NSFetchRequest<NSManagedObject>(entityName: "MHNodeEntity")
-            request.sortDescriptors = [NSSortDescriptor(key: "lastHeard", ascending: false)]
-            if let nodes = try? context.fetch(request) {
-                for object in nodes {
-                    guard let node = makeNode(from: object) else { continue }
+        // 1. Hydrate nodes. Live node packets may arrive before hydration finishes,
+        // so merge local-only fields without replacing fresher network data.
+        let request = NSFetchRequest<NSManagedObject>(entityName: "MHNodeEntity")
+        request.sortDescriptors = [NSSortDescriptor(key: "lastHeard", ascending: false)]
+        if let nodes = try? context.fetch(request) {
+            for object in nodes {
+                guard let node = makeNode(from: object) else { continue }
+                if let liveNode = appState.node(forId: node.id) {
+                    liveNode.colorHex = node.colorHex
+                    liveNode.note = node.note
+                    liveNode.isPinned = node.isPinned
+                    liveNode.lastTracerouteHopCount = node.lastTracerouteHopCount
+                } else {
                     appState.upsertNode(node)
-                    stats.nodes += 1
                 }
+                stats.nodes += 1
             }
         }
 
@@ -572,7 +583,10 @@ final class MeshCoreDataStore {
         let nodeId = object.value(forKey: "nodeId") as? String ?? String(format: "!%08x", UInt32(nodeNum))
 
         let node = NodeInfo(id: UInt32(nodeNum), nodeId: nodeId, shortName: shortName, longName: longName)
-        node.name = object.value(forKey: "displayName") as? String ?? (longName.isEmpty ? shortName : longName)
+        let persistedName = object.value(forKey: "displayName") as? String ?? ""
+        node.name = persistedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? NodeInfo.resolvedName(id: node.id, shortName: shortName, longName: longName)
+            : persistedName
         node.distance = object.value(forKey: "distanceText") as? String ?? "-"
         node.snr = object.value(forKey: "snrText") as? String ?? "-"
         node.rssi = object.value(forKey: "rssiText") as? String ?? "-"
@@ -621,9 +635,14 @@ final class MeshCoreDataStore {
         let fromId = UInt32((object.value(forKey: "fromId") as? Int64) ?? 0)
         let toId = UInt32((object.value(forKey: "toId") as? Int64) ?? 0)
         let channelIndex = Int((object.value(forKey: "channelIndex") as? Int32) ?? 0)
+        let rawPacketId = object.value(forKey: "packetId") as? Int64 ?? 0
+        let packetId = UInt32(exactly: rawPacketId).flatMap { $0 == 0 ? nil : $0 }
+        let rawReplyToPacketId = object.value(forKey: "replyToPacketId") as? Int64 ?? 0
+        let replyToPacketId = UInt32(exactly: rawReplyToPacketId).flatMap { $0 == 0 ? nil : $0 }
 
         return MessageItem(
-            packetId: UInt32((object.value(forKey: "packetId") as? Int64) ?? 0),
+            packetId: packetId,
+            replyToPacketId: replyToPacketId,
             time: object.value(forKey: "timeText") as? String ?? "",
             from: object.value(forKey: "fromName") as? String ?? "",
             fromId: fromId,
