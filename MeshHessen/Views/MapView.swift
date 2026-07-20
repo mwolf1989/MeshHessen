@@ -1,153 +1,771 @@
-import SwiftUI
+import AppKit
+import CoreLocation
 import MapKit
+import SwiftUI
 
-/// Map tab — native Apple Maps with node annotations.
+/// Native MapKit map with online/offline raster tiles, native vector rendering,
+/// node history, waypoints, direct-neighbor contacts, and traceroutes.
 struct MapView: View {
     @Environment(\.appState) private var appState
     @Environment(\.openWindow) private var openWindow
-    @State private var mapStyle: MapStyle
+    @Environment(AppCoordinator.self) private var coordinator
+    @State private var settings = SettingsService.shared
+    @State private var offlineManager = OfflineMapManager()
+    @State private var emergencyStore = EmergencyFeatureStore()
     @State private var region = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 50.9, longitude: 9.5),
-        span: MKCoordinateSpan(latitudeDelta: 2.0, longitudeDelta: 2.0)
+        span: MKCoordinateSpan(latitudeDelta: 2, longitudeDelta: 2)
     )
+    @State private var currentZoom = 10
     @State private var showNodeInfo: NodeInfo?
-    @State private var currentZoom: Int = 10
+    @State private var tracerouteTarget: NodeInfo?
+    @State private var telemetryTarget: NodeInfo?
+    @State private var remoteAdminTarget: NodeInfo?
+    @State private var showWaypointInfo: MeshWaypoint?
+    @State private var waypointDraft: WaypointCoordinateDraft?
+    @State private var storedWaypoints: [UInt32: MeshWaypoint] = [:]
+    @State private var hiddenWaypointIDs: Set<UInt32> = []
     @State private var pathNodeIds: Set<UInt32> = []
+    @State private var showOfflineManager = false
+    @State private var showLayerControls = false
+    @State private var showTrackPicker = false
+    @State private var showWaypoints = true
+    @State private var showNeighbors = false
+    @State private var showNeighborsPermanently = false
+    @State private var neighborColorMode = NeighborLineColorMode.signalQuality
+    @State private var showTraceroutes = false
+    @State private var persistedDirectContacts: [DirectNeighborContact] = []
+    @State private var tracerouteSelection = TracerouteMapSelectionStore.shared
+    @State private var errorMessage: String?
 
-    init() {
-        _mapStyle = State(initialValue: MapStyle.from(settingsValue: SettingsService.shared.mapSource))
+    private var runtimeConfiguration: MapRuntimeConfiguration {
+        MapRuntimeConfiguration(settings: settings)
     }
 
-    enum MapStyle: String, CaseIterable, Identifiable {
-        case standard = "standard"
-        case satellite = "satellite"
-        case hybrid = "hybrid"
-        case topography = "topography"
-        var id: String { rawValue }
-
-        static func from(settingsValue: String) -> Self {
-            switch settingsValue.lowercased() {
-            case "satellite":  return .satellite
-            case "hybrid":     return .hybrid
-            case "topography": return .topography
-            default:           return .standard
-            }
+    private var waypoints: [MeshWaypoint] {
+        var merged = storedWaypoints
+        for (id, waypoint) in coordinator.protocol_.waypoints {
+            merged[id] = waypoint
         }
+        return merged.values
+            .filter { !hiddenWaypointIDs.contains($0.id) && !$0.isExpired }
+            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    }
 
-        var settingsValue: String { rawValue }
+    private var ownCoordinate: MapPointCoordinate? {
+        guard let value = appState.effectiveOwnCoordinate() else { return nil }
+        return .init(latitude: value.latitude, longitude: value.longitude)
+    }
 
-        var label: String {
-            switch self {
-            case .standard:   return String(localized: "Standard")
-            case .satellite:  return String(localized: "Satellite")
-            case .hybrid:     return String(localized: "Hybrid")
-            case .topography: return String(localized: "Topografie")
-            }
-        }
+    private var directContacts: [DirectNeighborContact] {
+        coordinator.protocol_.directNeighborContacts + persistedDirectContacts
+    }
 
-        var preferredConfiguration: MKMapConfiguration {
-            switch self {
-            case .standard:   return MKStandardMapConfiguration(elevationStyle: .flat)
-            case .satellite:  return MKImageryMapConfiguration(elevationStyle: .flat)
-            case .hybrid:     return MKHybridMapConfiguration(elevationStyle: .flat)
-            case .topography: return MKStandardMapConfiguration(elevationStyle: .flat)
-            }
-        }
-
-        /// Whether this style uses a custom tile overlay instead of Apple Maps tiles.
-        var usesCustomTileOverlay: Bool { self == .topography }
+    private var displayedTraceroutes: [TracerouteResult] {
+        if !tracerouteSelection.results.isEmpty { return tracerouteSelection.results }
+        return Array(coordinator.tracerouteResults.prefix(10))
     }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            MeshMapViewRepresentable(
-                region: $region,
-                currentZoom: $currentZoom,
-                mapStyle: mapStyle,
-                nodes: appState.filteredNodes,
-                focusNodeId: appState.mapFocusNodeId,
-                appState: appState,
-                pathNodeIds: pathNodeIds,
-                onSendDM: { nodeId in
-                    appState.ensureDMConversation(for: nodeId)
-                    appState.dmTargetNodeId = nodeId
-                    openWindow(id: "dm")
-                },
-                onShowNodeInfo: { nodeId in
-                    if let node = appState.node(forId: nodeId) {
-                        showNodeInfo = node
-                    }
-                },
-                onTogglePath: { nodeId in
-                    if pathNodeIds.contains(nodeId) {
-                        pathNodeIds.remove(nodeId)
-                    } else {
-                        pathNodeIds.insert(nodeId)
-                    }
-                }
-            )
-
-            // Style picker + zoom indicator
-            HStack(spacing: 8) {
-                Text("Z\(currentZoom)")
-                    .font(.caption.monospacedDigit())
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
-
-                Picker("Map style", selection: $mapStyle) {
-                    ForEach(MapStyle.allCases) { style in
-                        Text(style.label).tag(style)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 300)
+            if runtimeConfiguration.effectiveRenderMode == .vector {
+                VectorMeshMapViewRepresentable(
+                    region: $region,
+                    currentZoom: $currentZoom,
+                    configuration: runtimeConfiguration,
+                    nodes: appState.filteredNodes,
+                    waypoints: showWaypoints ? waypoints : [],
+                    emergencyFeatures: settings.mapOverlays.contains(.emergency) ? emergencyStore.features : [],
+                    directContacts: directContacts,
+                    traceroutes: displayedTraceroutes,
+                    ownCoordinate: ownCoordinate,
+                    focusNodeId: appState.mapFocusNodeId,
+                    appState: appState,
+                    pathNodeIds: pathNodeIds,
+                    positionHistoryHours: settings.positionHistoryHours,
+                    showNeighbors: showNeighbors,
+                    showNeighborsPermanently: showNeighborsPermanently,
+                    neighborColorMode: neighborColorMode,
+                    showTraceroutes: showTraceroutes,
+                    emergencyOverlayEnabled: settings.mapOverlays.contains(.emergency),
+                    onSendDM: openDirectMessage,
+                    onShowNodeInfo: showNode,
+                    onToggleFavorite: toggleFavorite,
+                    onTogglePin: togglePin,
+                    onTraceroute: showTraceroute,
+                    onTelemetry: showTelemetry,
+                    onRemoteAdmin: showRemoteAdmin,
+                    onRequestInfo: requestInfo,
+                    onTogglePath: togglePath,
+                    onSetOwnPosition: setOwnPosition,
+                    onCreateWaypoint: { coordinate in
+                        waypointDraft = .init(coordinate: coordinate)
+                    },
+                    onShowWaypoint: showWaypoint,
+                    onDeleteWaypoint: deleteWaypoint,
+                    onVisibleRegionChanged: updateVisibleRegion,
+                    onError: { errorMessage = $0 }
+                )
+            } else {
+                MeshMapViewRepresentable(
+                    region: $region,
+                    currentZoom: $currentZoom,
+                    configuration: runtimeConfiguration,
+                    packageDirectories: offlineManager.packageDirectories,
+                    liveCacheDirectory: offlineManager.liveCacheDirectory,
+                    nodes: appState.filteredNodes,
+                    waypoints: showWaypoints ? waypoints : [],
+                    emergencyFeatures: settings.mapOverlays.contains(.emergency) ? emergencyStore.features : [],
+                    directContacts: directContacts,
+                    traceroutes: displayedTraceroutes,
+                    ownCoordinate: ownCoordinate,
+                    focusNodeId: appState.mapFocusNodeId,
+                    appState: appState,
+                    pathNodeIds: pathNodeIds,
+                    positionHistoryHours: settings.positionHistoryHours,
+                    showNeighbors: showNeighbors,
+                    showNeighborsPermanently: showNeighborsPermanently,
+                    neighborColorMode: neighborColorMode,
+                    showTraceroutes: showTraceroutes,
+                    onSendDM: openDirectMessage,
+                    onShowNodeInfo: showNode,
+                    onToggleFavorite: toggleFavorite,
+                    onTogglePin: togglePin,
+                    onTraceroute: showTraceroute,
+                    onTelemetry: showTelemetry,
+                    onRemoteAdmin: showRemoteAdmin,
+                    onRequestInfo: requestInfo,
+                    onTogglePath: togglePath,
+                    onSetOwnPosition: setOwnPosition,
+                    onCreateWaypoint: { coordinate in
+                        waypointDraft = .init(coordinate: coordinate)
+                    },
+                    onShowWaypoint: showWaypoint,
+                    onDeleteWaypoint: deleteWaypoint,
+                    onVisibleRegionChanged: updateVisibleRegion
+                )
             }
+
+            MapControlBar(
+                settings: settings,
+                currentZoom: currentZoom,
+                effectiveRenderMode: runtimeConfiguration.effectiveRenderMode,
+                onShowLayers: { showLayerControls.toggle() },
+                onShowOfflineMaps: { showOfflineManager = true }
+            )
             .padding(10)
+            .popover(isPresented: $showLayerControls, arrowEdge: .top) {
+                MapLayerControls(
+                    settings: settings,
+                    showWaypoints: $showWaypoints,
+                    showNeighbors: $showNeighbors,
+                    showNeighborsPermanently: $showNeighborsPermanently,
+                    neighborColorMode: $neighborColorMode,
+                    showTraceroutes: $showTraceroutes,
+                    selectedTraceroutes: tracerouteSelection.results,
+                    pathCount: pathNodeIds.count,
+                    emergencyFeatureCount: emergencyStore.features.count,
+                    emergencyIsLoading: emergencyStore.isLoading,
+                    onRemoveTraceroute: { id in
+                        tracerouteSelection.remove(ids: [id])
+                    },
+                    onClearTraceroutes: tracerouteSelection.clear,
+                    onChooseTracks: { showTrackPicker = true },
+                    onClearTracks: { pathNodeIds.removeAll() }
+                )
+            }
+
+            VStack {
+                Spacer()
+                HStack(alignment: .bottom) {
+                    MapAttributionView(
+                        text: runtimeConfiguration.attribution,
+                        includesEmergencyLayer: settings.mapOverlays.contains(.emergency)
+                    )
+                    Spacer()
+                    if showNeighbors {
+                        NeighborLegend(mode: neighborColorMode)
+                    }
+                }
+                .padding(10)
+            }
+            .allowsHitTesting(true)
         }
         .sheet(item: $showNodeInfo) { node in
             NodeInfoSheet(node: node)
         }
-        .onChange(of: mapStyle) { _, newStyle in
-            SettingsService.shared.mapSource = newStyle.settingsValue
+        .sheet(item: $tracerouteTarget) { node in
+            TracerouteSheet(targetNodeId: node.id, targetName: node.name)
         }
-        .onAppear {
-            let fromSettings = MapStyle.from(settingsValue: SettingsService.shared.mapSource)
-            if mapStyle != fromSettings {
-                mapStyle = fromSettings
-            }
+        .sheet(item: $telemetryTarget) { node in
+            TelemetryView(nodeId: node.id, nodeName: node.name)
+        }
+        .sheet(item: $remoteAdminTarget) { node in
+            RemoteAdminView(nodeID: node.id, nodeName: node.name)
+        }
+        .sheet(item: $showWaypointInfo) { waypoint in
+            WaypointDetailSheet(waypoint: waypoint)
+        }
+        .sheet(item: $waypointDraft) { draft in
+            WaypointEditorSheet(
+                coordinate: draft.coordinate,
+                sourceNodeId: coordinator.protocol_.currentNodeId,
+                onSave: saveWaypoint
+            )
+        }
+        .sheet(isPresented: $showOfflineManager) {
+            OfflineMapManagerView(manager: offlineManager)
+        }
+        .sheet(isPresented: $showTrackPicker) {
+            NodeTrackPickerView(
+                nodes: appState.filteredNodes,
+                selectedNodeIDs: $pathNodeIds
+            )
+        }
+        .task {
+            await offlineManager.refresh()
+            await loadStoredWaypoints()
+            persistProtocolWaypoints(coordinator.protocol_.waypoints)
+            persistedDirectContacts = await Task.detached(priority: .utility) {
+                TelemetryDatabaseService.shared.getDirectNeighborContacts()
+            }.value
+        }
+        .onChange(of: coordinator.protocol_.waypoints) { _, newValue in
+            persistProtocolWaypoints(newValue)
         }
         .onChange(of: appState.mapFocusNodeId) { _, newValue in
-            if let nodeId = newValue,
-               let node = appState.nodes[nodeId],
-               let lat = node.latitude, let lon = node.longitude {
-                region = MKCoordinateRegion(
-                    center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
-                    span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-                )
-            }
-            if newValue != nil {
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(500))
-                    appState.mapFocusNodeId = nil
+            focus(on: newValue)
+        }
+        .onChange(of: appState.mapPathToggleNodeId) { _, nodeID in
+            guard let nodeID else { return }
+            togglePath(nodeID)
+            appState.mapPathToggleNodeId = nil
+        }
+        .onChange(of: tracerouteSelection.results) { _, results in
+            if !results.isEmpty { showTraceroutes = true }
+        }
+        .alert("Map Error", isPresented: errorAlertBinding) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    // MARK: - Actions
+
+    private func openDirectMessage(_ nodeId: UInt32) {
+        appState.ensureDMConversation(for: nodeId)
+        appState.dmTargetNodeId = nodeId
+        openWindow(id: "dm")
+    }
+
+    private func showNode(_ nodeId: UInt32) {
+        showNodeInfo = appState.node(forId: nodeId)
+    }
+
+    private func toggleFavorite(_ nodeId: UInt32) {
+        guard let node = appState.node(forId: nodeId) else { return }
+        Task { _ = await coordinator.protocol_.setFavorite(!node.isFavorite, nodeId: nodeId) }
+    }
+
+    private func togglePin(_ nodeId: UInt32) {
+        guard let node = appState.node(forId: nodeId) else { return }
+        node.isPinned.toggle()
+        coordinator.coreDataStore.updateNodePinState(nodeId: nodeId, isPinned: node.isPinned)
+    }
+
+    private func showTraceroute(_ nodeId: UInt32) {
+        tracerouteTarget = appState.node(forId: nodeId)
+    }
+
+    private func showTelemetry(_ nodeId: UInt32) {
+        telemetryTarget = appState.node(forId: nodeId)
+    }
+
+    private func showRemoteAdmin(_ nodeId: UInt32) {
+        remoteAdminTarget = appState.node(forId: nodeId)
+    }
+
+    private func requestInfo(_ request: NodeInfoRequestType, from nodeId: UInt32) {
+        Task { _ = await coordinator.protocol_.requestNodeInfo(request, from: nodeId) }
+    }
+
+    private func setOwnPosition(_ coordinate: CLLocationCoordinate2D) {
+        settings.myLatitude = coordinate.latitude
+        settings.myLongitude = coordinate.longitude
+        appState.recalculateAllDistances()
+    }
+
+    private func togglePath(_ nodeId: UInt32) {
+        if pathNodeIds.contains(nodeId) {
+            pathNodeIds.remove(nodeId)
+        } else {
+            pathNodeIds.insert(nodeId)
+        }
+    }
+
+    private func showWaypoint(_ id: UInt32) {
+        showWaypointInfo = waypoints.first { $0.id == id }
+    }
+
+    private func saveWaypoint(_ waypoint: MeshWaypoint, sendToMesh: Bool) {
+        storedWaypoints[waypoint.id] = waypoint
+        hiddenWaypointIDs.remove(waypoint.id)
+        Task {
+            do {
+                try await WaypointPersistenceService.shared.upsert(waypoint)
+                if sendToMesh {
+                    let sent = await coordinator.protocol_.sendWaypoint(
+                        waypoint,
+                        channelIndex: Int(waypoint.channelIndex)
+                    )
+                    if !sent {
+                        errorMessage = String(localized: "The waypoint was saved locally but could not be sent to the mesh.")
+                    }
                 }
+            } catch {
+                errorMessage = error.localizedDescription
             }
         }
     }
+
+    private func deleteWaypoint(_ id: UInt32, fromMesh: Bool) {
+        guard let waypoint = waypoints.first(where: { $0.id == id }) else { return }
+        hiddenWaypointIDs.insert(id)
+        storedWaypoints.removeValue(forKey: id)
+        Task {
+            do {
+                try await WaypointPersistenceService.shared.delete(id: id)
+                if fromMesh {
+                    let sent = await coordinator.protocol_.deleteWaypoint(
+                        id: id,
+                        lockedTo: waypoint.lockedTo,
+                        channelIndex: Int(waypoint.channelIndex)
+                    )
+                    if !sent {
+                        errorMessage = String(localized: "The waypoint was removed locally but could not be deleted from the mesh.")
+                    }
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func updateVisibleRegion(_ bounds: MapBounds, _ zoom: Int) {
+        emergencyStore.refresh(
+            bounds: bounds,
+            zoom: zoom,
+            enabled: settings.mapOverlays.contains(.emergency)
+        )
+    }
+
+    private func focus(on nodeId: UInt32?) {
+        if let nodeId,
+           let node = appState.nodes[nodeId],
+           let latitude = node.latitude,
+           let longitude = node.longitude {
+            region = MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+                span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+            )
+        }
+        guard nodeId != nil else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            appState.mapFocusNodeId = nil
+        }
+    }
+
+    private func loadStoredWaypoints() async {
+        do {
+            storedWaypoints = try await WaypointPersistenceService.shared.loadAll()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func persistProtocolWaypoints(_ received: [UInt32: MeshWaypoint]) {
+        guard !received.isEmpty else { return }
+        for (id, waypoint) in received {
+            storedWaypoints[id] = waypoint
+            hiddenWaypointIDs.remove(id)
+        }
+        let snapshot = storedWaypoints
+        Task {
+            do {
+                try await WaypointPersistenceService.shared.replace(with: snapshot)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private var errorAlertBinding: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )
+    }
 }
 
-/// NSViewRepresentable wrapping MKMapView with native Apple Maps + node annotations.
-struct MeshMapViewRepresentable: NSViewRepresentable {
+// MARK: - Runtime configuration
+
+struct MapRuntimeConfiguration: Equatable {
+    let mode: MapMode
+    let requestedRenderMode: MapRenderMode
+    let source: MapTileSource
+    let descriptor: MapTileSourceDescriptor
+    let vectorStyleURL: String
+
+    init(settings: SettingsService) {
+        mode = settings.mapMode
+        requestedRenderMode = settings.mapRenderMode
+        source = MapTileSource(style: settings.meshMapStyle)
+
+        let customRasterTemplate: String
+        switch source {
+        case .osm: customRasterTemplate = settings.osmTileURL
+        case .topographic: customRasterTemplate = settings.topographicTileURL
+        case .dark: customRasterTemplate = settings.darkTileURL
+        }
+        switch mode {
+        case .meshHessen:
+            descriptor = .init(source: source, urlTemplate: source.meshHessenRasterURLTemplate)
+        case .publicOpenStreetMap:
+            descriptor = .init(source: .osm, urlTemplate: settings.publicOSMTileURL)
+        case .custom, .offline:
+            descriptor = .init(source: source, urlTemplate: customRasterTemplate)
+        }
+
+        if mode == .meshHessen {
+            vectorStyleURL = source.meshHessenVectorStyleURL
+        } else {
+            switch source {
+            case .osm: vectorStyleURL = settings.vectorStyleOSMURL
+            case .topographic: vectorStyleURL = settings.vectorStyleTopographicURL
+            case .dark: vectorStyleURL = settings.vectorStyleDarkURL
+            }
+        }
+    }
+
+    var effectiveRenderMode: MapRenderMode {
+        if mode == .publicOpenStreetMap { return .raster }
+        return requestedRenderMode
+    }
+
+    var usesRasterOverlay: Bool { effectiveRenderMode == .raster }
+    var offlineOnly: Bool { mode == .offline }
+
+    var attribution: String {
+        if effectiveRenderMode == .vector {
+            return "© OpenMapTiles © OpenStreetMap contributors"
+        }
+        return descriptor.attribution
+    }
+
+    var preferredConfiguration: MKMapConfiguration {
+        let elevation: MKMapConfiguration.ElevationStyle = source == .topographic ? .realistic : .flat
+        let configuration = MKStandardMapConfiguration(elevationStyle: elevation)
+        configuration.emphasisStyle = source == .dark ? .muted : .default
+        return configuration
+    }
+}
+
+struct MapPointCoordinate: Equatable {
+    let latitude: Double
+    let longitude: Double
+
+    var coreLocationCoordinate: CLLocationCoordinate2D {
+        .init(latitude: latitude, longitude: longitude)
+    }
+}
+
+private struct WaypointCoordinateDraft: Identifiable {
+    let id = UUID()
+    let coordinate: CLLocationCoordinate2D
+}
+
+// MARK: - Map controls
+
+private struct MapControlBar: View {
+    @Bindable var settings: SettingsService
+    let currentZoom: Int
+    let effectiveRenderMode: MapRenderMode
+    let onShowLayers: () -> Void
+    let onShowOfflineMaps: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("Z\(currentZoom)")
+                .font(.caption.monospacedDigit())
+
+            Menu {
+                Picker("Renderer", selection: $settings.mapRenderMode) {
+                    ForEach(MapRenderMode.allCases) { mode in
+                        Text(mode.localizedName).tag(mode)
+                    }
+                }
+                Picker("Mode", selection: $settings.mapMode) {
+                    ForEach(MapMode.allCases) { mode in
+                        Text(mode.localizedName).tag(mode)
+                    }
+                }
+                Picker("Style", selection: $settings.meshMapStyle) {
+                    ForEach(MeshMapStyle.allCases) { style in
+                        Text(style.localizedName).tag(style)
+                    }
+                }
+            } label: {
+                Label(
+                    "\(settings.meshMapStyle.localizedName) · \(effectiveRenderMode.localizedName)",
+                    systemImage: "map"
+                )
+            }
+            .menuStyle(.borderlessButton)
+
+            Button("Layers", systemImage: "square.3.layers.3d", action: onShowLayers)
+                .labelStyle(.iconOnly)
+                .help("Map Layers")
+            Button("Offline Maps", systemImage: "arrow.down.circle", action: onShowOfflineMaps)
+                .labelStyle(.iconOnly)
+                .help("Offline Maps")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.ultraThinMaterial, in: .rect(cornerRadius: 8))
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct MapLayerControls: View {
+    @Bindable var settings: SettingsService
+    @Binding var showWaypoints: Bool
+    @Binding var showNeighbors: Bool
+    @Binding var showNeighborsPermanently: Bool
+    @Binding var neighborColorMode: NeighborLineColorMode
+    @Binding var showTraceroutes: Bool
+    let selectedTraceroutes: [TracerouteResult]
+    let pathCount: Int
+    let emergencyFeatureCount: Int
+    let emergencyIsLoading: Bool
+    let onRemoveTraceroute: (UUID) -> Void
+    let onClearTraceroutes: () -> Void
+    let onChooseTracks: () -> Void
+    let onClearTracks: () -> Void
+
+    var body: some View {
+        Form {
+            Section("Mesh Layers") {
+                Toggle("Waypoints", isOn: $showWaypoints)
+                Toggle("Direct Neighbors", isOn: $showNeighbors)
+                if showNeighbors {
+                    Toggle("Keep older contacts", isOn: $showNeighborsPermanently)
+                    Picker("Neighbor colors", selection: $neighborColorMode) {
+                        ForEach(NeighborLineColorMode.allCases) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                }
+                Toggle("Traceroutes", isOn: $showTraceroutes)
+                if !selectedTraceroutes.isEmpty {
+                    ForEach(selectedTraceroutes) { traceroute in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(traceroute.targetName)
+                                    .lineLimit(1)
+                                Text(traceroute.receivedAt, style: .relative)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button {
+                                onRemoveTraceroute(traceroute.id)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Remove traceroute")
+                        }
+                    }
+                    Button("Remove All Selected Traceroutes", role: .destructive, action: onClearTraceroutes)
+                }
+            }
+
+            Section("Tracks") {
+                Button("Choose Node Tracks…", systemImage: "point.topleft.down.to.point.bottomright.curvepath", action: onChooseTracks)
+                if pathCount > 0 {
+                    Button("Hide All \(pathCount) Tracks", role: .destructive, action: onClearTracks)
+                }
+            }
+
+            Section("Public Safety") {
+                Toggle("Fire and Rescue", isOn: emergencyBinding)
+                if emergencyIsLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                } else if settings.mapOverlays.contains(.emergency) {
+                    Text("\(emergencyFeatureCount) features in the visible area")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .frame(width: 340)
+    }
+
+    private var emergencyBinding: Binding<Bool> {
+        Binding(
+            get: { settings.mapOverlays.contains(.emergency) },
+            set: { enabled in
+                var overlays = settings.mapOverlays
+                if enabled { overlays.insert(.emergency) } else { overlays.remove(.emergency) }
+                settings.mapOverlays = overlays
+            }
+        )
+    }
+}
+
+private struct NodeTrackPickerView: View {
+    @Environment(\.dismiss) private var dismiss
+    let nodes: [NodeInfo]
+    @Binding var selectedNodeIDs: Set<UInt32>
+
+    private var loggedNodes: [NodeInfo] {
+        let ids = Set(LocationLogger.shared.allLoggedNodeIds())
+        return nodes
+            .filter { ids.contains($0.id) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if loggedNodes.isEmpty {
+                    ContentUnavailableView(
+                        "No Node Tracks",
+                        systemImage: "point.topleft.down.to.point.bottomright.curvepath",
+                        description: Text("Enable position logging to record node movement.")
+                    )
+                } else {
+                    List(loggedNodes) { node in
+                        Toggle(isOn: selectionBinding(for: node.id)) {
+                            VStack(alignment: .leading) {
+                                Text(node.name)
+                                Text(node.nodeId)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Node Tracks")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: dismiss.callAsFunction)
+                }
+            }
+        }
+        .frame(minWidth: 420, minHeight: 420)
+    }
+
+    private func selectionBinding(for nodeId: UInt32) -> Binding<Bool> {
+        Binding(
+            get: { selectedNodeIDs.contains(nodeId) },
+            set: { selected in
+                if selected { selectedNodeIDs.insert(nodeId) } else { selectedNodeIDs.remove(nodeId) }
+            }
+        )
+    }
+}
+
+private struct MapAttributionView: View {
+    let text: String
+    let includesEmergencyLayer: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Link(destination: URL(string: "https://www.openstreetmap.org/copyright") ?? URL(fileURLWithPath: "/")) {
+                Text(text)
+            }
+            if includesEmergencyLayer {
+                Text("Fire & Rescue data © OpenStreetMap contributors")
+            }
+        }
+        .font(.caption2)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(.ultraThinMaterial, in: .rect(cornerRadius: 5))
+    }
+}
+
+private struct NeighborLegend: View {
+    let mode: NeighborLineColorMode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(mode.displayName)
+                .font(.caption.bold())
+            switch mode {
+            case .signalQuality:
+                LinearGradient(colors: [.red, .yellow, .green], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 120, height: 6)
+                Text("−20 dB         +10 dB")
+                    .font(.caption2.monospacedDigit())
+            case .age:
+                LinearGradient(colors: [.cyan, .purple], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 120, height: 6)
+                Text("now             24 h")
+                    .font(.caption2.monospacedDigit())
+            case .nodeColor:
+                Text("Uses each node’s assigned color")
+                    .font(.caption2)
+            }
+        }
+        .padding(7)
+        .background(.ultraThinMaterial, in: .rect(cornerRadius: 6))
+    }
+}
+
+// MARK: - MapKit bridge
+
+private struct MeshMapViewRepresentable: NSViewRepresentable {
     @Binding var region: MKCoordinateRegion
     @Binding var currentZoom: Int
-    let mapStyle: MapView.MapStyle
+    let configuration: MapRuntimeConfiguration
+    let packageDirectories: [URL]
+    let liveCacheDirectory: URL?
     let nodes: [NodeInfo]
+    let waypoints: [MeshWaypoint]
+    let emergencyFeatures: [EmergencyMapFeature]
+    let directContacts: [DirectNeighborContact]
+    let traceroutes: [TracerouteResult]
+    let ownCoordinate: MapPointCoordinate?
     var focusNodeId: UInt32?
     let appState: AppState
-    var pathNodeIds: Set<UInt32> = []
-    var onSendDM: ((UInt32) -> Void)?
-    var onShowNodeInfo: ((UInt32) -> Void)?
-    var onTogglePath: ((UInt32) -> Void)?
+    let pathNodeIds: Set<UInt32>
+    let positionHistoryHours: Int
+    let showNeighbors: Bool
+    let showNeighborsPermanently: Bool
+    let neighborColorMode: NeighborLineColorMode
+    let showTraceroutes: Bool
+    let onSendDM: (UInt32) -> Void
+    let onShowNodeInfo: (UInt32) -> Void
+    let onToggleFavorite: (UInt32) -> Void
+    let onTogglePin: (UInt32) -> Void
+    let onTraceroute: (UInt32) -> Void
+    let onTelemetry: (UInt32) -> Void
+    let onRemoteAdmin: (UInt32) -> Void
+    let onRequestInfo: (NodeInfoRequestType, UInt32) -> Void
+    let onTogglePath: (UInt32) -> Void
+    let onSetOwnPosition: (CLLocationCoordinate2D) -> Void
+    let onCreateWaypoint: (CLLocationCoordinate2D) -> Void
+    let onShowWaypoint: (UInt32) -> Void
+    let onDeleteWaypoint: (UInt32, Bool) -> Void
+    let onVisibleRegionChanged: (MapBounds, Int) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -155,402 +773,674 @@ struct MeshMapViewRepresentable: NSViewRepresentable {
         let map = MKMapView()
         map.delegate = context.coordinator
         map.setRegion(region, animated: false)
-        map.preferredConfiguration = mapStyle.preferredConfiguration
         map.isPitchEnabled = true
         map.showsCompass = true
         map.showsScale = true
+        context.coordinator.applyBaseMap(to: map)
 
-        // Apply topographic tile overlay if needed
-        if mapStyle.usesCustomTileOverlay {
-            context.coordinator.applyTopoOverlay(to: map)
-        }
-
-        // Add right-click gesture recognizer for context menu
         let rightClick = NSClickGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleRightClick(_:))
         )
-        rightClick.buttonMask = 0x2 // right mouse button
+        rightClick.buttonMask = 0x2
         map.addGestureRecognizer(rightClick)
-
         return map
     }
 
     func updateNSView(_ map: MKMapView, context: Context) {
         context.coordinator.parent = self
-        context.coordinator.updateNodes(map, nodes: nodes)
-        context.coordinator.updatePaths(map, nodes: nodes, pathNodeIds: pathNodeIds)
-        // Switch map type if style changed
-        if context.coordinator.currentStyle != mapStyle {
-            context.coordinator.currentStyle = mapStyle
-            // Defer configuration change to avoid layout recursion
-            DispatchQueue.main.async {
-                map.preferredConfiguration = self.mapStyle.preferredConfiguration
-                context.coordinator.updateTopoOverlay(on: map, style: self.mapStyle)
-            }
-        }
-        // Center on focus node if requested
-        if let focusId = focusNodeId,
-           let node = nodes.first(where: { $0.id == focusId }),
-           let lat = node.latitude, let lon = node.longitude {
-            let center = CLLocationCoordinate2D(latitude: lat, longitude: lon)
-            let span = MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-            // Defer setRegion to avoid layout recursion and animation timing conflicts
-            DispatchQueue.main.async {
-                map.setRegion(MKCoordinateRegion(center: center, span: span), animated: true)
+        context.coordinator.updateBaseMapIfNeeded(map)
+        context.coordinator.updateAnnotations(map)
+        context.coordinator.updateDynamicOverlays(map)
+
+        if let focusNodeId,
+           let node = nodes.first(where: { $0.id == focusNodeId }),
+           let latitude = node.latitude,
+           let longitude = node.longitude {
+            let focusRegion = MKCoordinateRegion(
+                center: .init(latitude: latitude, longitude: longitude),
+                span: .init(latitudeDelta: 0.05, longitudeDelta: 0.05)
+            )
+            Task { @MainActor in
+                map.setRegion(focusRegion, animated: true)
             }
         }
     }
 
     @MainActor
-    class Coordinator: NSObject, MKMapViewDelegate {
+    final class Coordinator: NSObject, MKMapViewDelegate {
         var parent: MeshMapViewRepresentable
-        var currentStyle: MapView.MapStyle = .standard
-
-        private var topoOverlay: CachingTileOverlay?
+        private var currentConfiguration: MapRuntimeConfiguration?
+        private var currentPackages: [URL] = []
+        private var currentCacheDirectory: URL?
+        private var baseTileOverlay: CachingTileOverlay?
 
         init(_ parent: MeshMapViewRepresentable) {
             self.parent = parent
-            self.currentStyle = parent.mapStyle
         }
 
-        // MARK: - Topographic tile overlay
+        // MARK: Base map
 
-        func applyTopoOverlay(to map: MKMapView) {
-            let server = MapTileServer.openTopoMap
-            let overlay = CachingTileOverlay(urlTemplate: server.tileUrl)
+        func updateBaseMapIfNeeded(_ map: MKMapView) {
+            guard currentConfiguration != parent.configuration
+                    || currentPackages != parent.packageDirectories
+                    || currentCacheDirectory != parent.liveCacheDirectory else { return }
+            applyBaseMap(to: map)
+        }
+
+        func applyBaseMap(to map: MKMapView) {
+            if let baseTileOverlay {
+                map.removeOverlay(baseTileOverlay)
+                self.baseTileOverlay = nil
+            }
+            map.preferredConfiguration = parent.configuration.preferredConfiguration
+            currentConfiguration = parent.configuration
+            currentPackages = parent.packageDirectories
+            currentCacheDirectory = parent.liveCacheDirectory
+
+            guard parent.configuration.usesRasterOverlay else { return }
+            let cache = parent.liveCacheDirectory ?? FileManager.default.temporaryDirectory
+                .appendingPathComponent("MeshHessen-TileCache", isDirectory: true)
+            let overlay = CachingTileOverlay(
+                configuration: .init(
+                    descriptor: parent.configuration.descriptor,
+                    liveCacheDirectory: cache,
+                    offlinePackageDirectories: parent.packageDirectories,
+                    offlineOnly: parent.configuration.offlineOnly
+                )
+            )
             overlay.canReplaceMapContent = true
-            overlay.maximumZ = server.maxZoom
-            topoOverlay = overlay
+            baseTileOverlay = overlay
             map.addOverlay(overlay, level: .aboveLabels)
         }
 
-        func updateTopoOverlay(on map: MKMapView, style: MapView.MapStyle) {
-            // Remove existing topo overlay
-            if let existing = topoOverlay {
-                map.removeOverlay(existing)
-                topoOverlay = nil
-            }
-            // Add new one if topography is selected
-            if style.usesCustomTileOverlay {
-                applyTopoOverlay(to: map)
-            }
+        // MARK: Annotations
+
+        func updateAnnotations(_ map: MKMapView) {
+            updateNodeAnnotations(map)
+            updateWaypointAnnotations(map)
+            updateEmergencyAnnotations(map)
         }
 
-        func updateNodes(_ map: MKMapView, nodes: [NodeInfo]) {
-            // Build lookup of existing annotations for O(1) access
-            var existingAnnotations: [UInt32: NodeAnnotation] = [:]
-            for ann in map.annotations.compactMap({ $0 as? NodeAnnotation }) {
-                existingAnnotations[ann.nodeId] = ann
-            }
+        private func updateNodeAnnotations(_ map: MKMapView) {
+            let existing = Dictionary(
+                uniqueKeysWithValues: map.annotations.compactMap { annotation -> (UInt32, NodeAnnotation)? in
+                    guard let annotation = annotation as? NodeAnnotation else { return nil }
+                    return (annotation.nodeId, annotation)
+                }
+            )
+            let visibleNodes = parent.nodes.filter { $0.latitude != nil && $0.longitude != nil }
+            let newIDs = Set(visibleNodes.map(\.id))
+            map.removeAnnotations(existing.compactMap { newIDs.contains($0.key) ? nil : $0.value })
 
-            let newIds = Set(nodes.compactMap { $0.latitude != nil ? $0.id : nil })
-
-            // Remove stale
-            for (nodeId, ann) in existingAnnotations {
-                if !newIds.contains(nodeId) { map.removeAnnotation(ann) }
-            }
-            // Add/update
-            for node in nodes {
-                guard let lat = node.latitude, let lon = node.longitude else { continue }
-                if let existing = existingAnnotations[node.id] {
-                    existing.coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
-                    existing.title = node.name
-                    existing.colorHex = node.colorHex
+            for node in visibleNodes {
+                guard let latitude = node.latitude, let longitude = node.longitude else { continue }
+                let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+                if let annotation = existing[node.id] {
+                    annotation.coordinate = coordinate
+                    annotation.title = node.name
+                    annotation.colorHex = node.colorHex
                 } else {
-                    let ann = NodeAnnotation(nodeId: node.id, coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon))
-                    ann.title = node.name
-                    ann.subtitle = node.nodeId
-                    ann.colorHex = node.colorHex
-                    map.addAnnotation(ann)
+                    let annotation = NodeAnnotation(nodeId: node.id, coordinate: coordinate)
+                    annotation.title = node.name
+                    annotation.subtitle = node.nodeId
+                    annotation.colorHex = node.colorHex
+                    map.addAnnotation(annotation)
                 }
             }
         }
 
-        // MARK: - Right-click context menu
-
-        @objc func handleRightClick(_ recognizer: NSClickGestureRecognizer) {
-            guard let mapView = recognizer.view as? MKMapView else { return }
-            let point = recognizer.location(in: mapView)
-
-            guard let annotationView = findAnnotationView(at: point, in: mapView),
-                  let nodeAnn = annotationView.annotation as? NodeAnnotation else { return }
-
-            let nodeId = nodeAnn.nodeId
-            let nodeName = nodeAnn.title ?? String(localized: "Node")
-
-            let menu = NSMenu(title: nodeName)
-
-            let dmItem = NSMenuItem(title: String(localized: "Send Direct Message"), action: #selector(contextMenuAction(_:)), keyEquivalent: "")
-            dmItem.target = self
-            dmItem.representedObject = ContextMenuAction.sendDM(nodeId: nodeId)
-            menu.addItem(dmItem)
-
-            let infoItem = NSMenuItem(title: String(localized: "Show Node Info"), action: #selector(contextMenuAction(_:)), keyEquivalent: "")
-            infoItem.target = self
-            infoItem.representedObject = ContextMenuAction.showNodeInfo(nodeId: nodeId)
-            menu.addItem(infoItem)
-
-            menu.addItem(.separator())
-
-            let colorMenu = NSMenu(title: String(localized: "Set Color"))
-            for preset in nodeColorPresets {
-                let colorItem = NSMenuItem(title: preset.name, action: #selector(contextMenuAction(_:)), keyEquivalent: "")
-                colorItem.target = self
-                colorItem.representedObject = ContextMenuAction.setColor(nodeId: nodeId, hex: preset.hex)
-                colorItem.image = createColorSwatch(hex: preset.hex)
-                colorMenu.addItem(colorItem)
-            }
-            colorMenu.addItem(.separator())
-            let clearColorItem = NSMenuItem(title: String(localized: "Clear Color"), action: #selector(contextMenuAction(_:)), keyEquivalent: "")
-            clearColorItem.target = self
-            clearColorItem.representedObject = ContextMenuAction.setColor(nodeId: nodeId, hex: "")
-            colorMenu.addItem(clearColorItem)
-
-            let colorMenuItem = NSMenuItem(title: String(localized: "Set Color"), action: nil, keyEquivalent: "")
-            colorMenuItem.submenu = colorMenu
-            menu.addItem(colorMenuItem)
-
-            let noteItem = NSMenuItem(title: String(localized: "Set Note"), action: #selector(contextMenuAction(_:)), keyEquivalent: "")
-            noteItem.target = self
-            noteItem.representedObject = ContextMenuAction.setNote(nodeId: nodeId)
-            menu.addItem(noteItem)
-
-            menu.addItem(.separator())
-
-            let posItem = NSMenuItem(title: String(localized: "Set as My Position"), action: #selector(contextMenuAction(_:)), keyEquivalent: "")
-            posItem.target = self
-            posItem.representedObject = ContextMenuAction.setAsMyPosition(nodeId: nodeId)
-            menu.addItem(posItem)
-
-            if LocationLogger.shared.hasPositionLog(for: nodeId) {
-                let isShowing = parent.pathNodeIds.contains(nodeId)
-                let pathTitle = isShowing ? String(localized: "Hide Path") : String(localized: "Show Path")
-                let pathItem = NSMenuItem(title: pathTitle, action: #selector(contextMenuAction(_:)), keyEquivalent: "")
-                pathItem.target = self
-                pathItem.representedObject = ContextMenuAction.togglePath(nodeId: nodeId)
-                menu.addItem(pathItem)
-            }
-
-            menu.popUp(positioning: nil, at: point, in: mapView)
-        }
-
-        private func findAnnotationView(at point: CGPoint, in mapView: MKMapView) -> MKAnnotationView? {
-            guard let hitView = mapView.hitTest(point) else { return nil }
-            var current: NSView? = hitView
-            while let view = current {
-                if let annotationView = view as? MKAnnotationView {
-                    return annotationView
+        private func updateWaypointAnnotations(_ map: MKMapView) {
+            let existing = Dictionary(
+                uniqueKeysWithValues: map.annotations.compactMap { annotation -> (UInt32, WaypointAnnotation)? in
+                    guard let annotation = annotation as? WaypointAnnotation else { return nil }
+                    return (annotation.waypoint.id, annotation)
                 }
-                current = view.superview
-            }
-            return nil
-        }
-
-        private func createColorSwatch(hex: String) -> NSImage {
-            let size = NSSize(width: 12, height: 12)
-            let image = NSImage(size: size)
-            image.lockFocus()
-            if let color = Color(hex: hex) {
-                NSColor(color).setFill()
-            } else {
-                NSColor.gray.setFill()
-            }
-            let rect = NSRect(origin: .zero, size: size)
-            NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2).fill()
-            image.unlockFocus()
-            return image
-        }
-
-        @objc func contextMenuAction(_ sender: NSMenuItem) {
-            guard let action = sender.representedObject as? ContextMenuAction else { return }
-
-            switch action.kind {
-            case .sendDM(let nodeId):
-                parent.onSendDM?(nodeId)
-
-            case .showNodeInfo(let nodeId):
-                parent.onShowNodeInfo?(nodeId)
-
-            case .setColor(let nodeId, let hex):
-                applyColor(hex, to: nodeId)
-
-            case .setNote(let nodeId):
-                promptForNote(nodeId: nodeId)
-
-            case .setAsMyPosition(let nodeId):
-                setAsMyPosition(nodeId: nodeId)
-
-            case .togglePath(let nodeId):
-                parent.onTogglePath?(nodeId)
-            }
-        }
-
-        private func applyColor(_ hex: String, to nodeId: UInt32) {
-            SettingsService.shared.setColorHex(hex, for: nodeId)
-            if let node = parent.appState.node(forId: nodeId) {
-                node.colorHex = hex
-            }
-        }
-
-        private func promptForNote(nodeId: UInt32) {
-            let currentNote = SettingsService.shared.note(for: nodeId)
-            let nodeName = parent.appState.node(forId: nodeId)?.name ?? String(localized: "Node")
-
-            let alert = NSAlert()
-            alert.messageText = String(localized: "Set Note for \(nodeName)")
-            alert.informativeText = String(localized: "Enter a note for this node:")
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: String(localized: "Save"))
-            alert.addButton(withTitle: String(localized: "Cancel"))
-
-            let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-            textField.stringValue = currentNote
-            textField.placeholderString = String(localized: "Optional note…")
-            alert.accessoryView = textField
-            alert.window.initialFirstResponder = textField
-
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                let note = textField.stringValue
-                SettingsService.shared.setNote(note, for: nodeId)
-                if let node = parent.appState.node(forId: nodeId) {
-                    node.note = note
+            )
+            let newIDs = Set(parent.waypoints.map(\.id))
+            map.removeAnnotations(existing.compactMap { newIDs.contains($0.key) ? nil : $0.value })
+            for waypoint in parent.waypoints {
+                if let annotation = existing[waypoint.id] {
+                    annotation.waypoint = waypoint
+                    annotation.coordinate = .init(latitude: waypoint.latitude, longitude: waypoint.longitude)
+                    annotation.title = waypoint.displayName
+                    annotation.subtitle = waypoint.detail
+                } else {
+                    map.addAnnotation(WaypointAnnotation(waypoint: waypoint))
                 }
             }
         }
 
-        private func setAsMyPosition(nodeId: UInt32) {
-            guard let node = parent.appState.node(forId: nodeId),
-                  let lat = node.latitude,
-                  let lon = node.longitude else { return }
-
-            SettingsService.shared.myLatitude = lat
-            SettingsService.shared.myLongitude = lon
-
-            parent.appState.recalculateAllDistances()
+        private func updateEmergencyAnnotations(_ map: MKMapView) {
+            let existing = Dictionary(
+                uniqueKeysWithValues: map.annotations.compactMap { annotation -> (String, EmergencyAnnotation)? in
+                    guard let annotation = annotation as? EmergencyAnnotation else { return nil }
+                    return (annotation.feature.id, annotation)
+                }
+            )
+            let visibleFeatures = parent.emergencyFeatures.filter { $0.kind.minimumZoom <= parent.currentZoom }
+            let newIDs = Set(visibleFeatures.map(\.id))
+            map.removeAnnotations(existing.compactMap { newIDs.contains($0.key) ? nil : $0.value })
+            for feature in visibleFeatures where existing[feature.id] == nil {
+                map.addAnnotation(EmergencyAnnotation(feature: feature))
+            }
         }
 
-        // MARK: - Path overlays
+        // MARK: Dynamic overlays
 
-        func updatePaths(_ map: MKMapView, nodes: [NodeInfo], pathNodeIds: Set<UInt32>) {
-            // Remove existing path overlays
-            let existingPaths = map.overlays.compactMap { $0 as? NodePathPolyline }
-            map.removeOverlays(existingPaths)
+        func updateDynamicOverlays(_ map: MKMapView) {
+            map.removeOverlays(map.overlays.filter {
+                $0 is NodePathPolyline || $0 is NeighborPolyline || $0 is TraceroutePolyline
+            })
+            map.removeAnnotations(map.annotations.filter { $0 is TracerouteSegmentAnnotation })
+            addNodePaths(to: map)
+            addNeighborLines(to: map)
+            addTraceroutes(to: map)
+        }
 
-            // Add paths for requested nodes
-            for nodeId in pathNodeIds {
+        private func addNodePaths(to map: MKMapView) {
+            let cutoff = parent.positionHistoryHours > 0
+                ? Date().addingTimeInterval(TimeInterval(-parent.positionHistoryHours * 3600))
+                : .distantPast
+            for nodeId in parent.pathNodeIds {
                 let positions = LocationLogger.shared.readPositions(for: nodeId)
+                    .filter { $0.timestamp >= cutoff }
                 guard positions.count >= 2 else { continue }
-
-                let coords = positions.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
-                let polyline = NodePathPolyline(coordinates: coords, count: coords.count)
+                let coordinates = positions.map {
+                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                }
+                let polyline = NodePathPolyline(coordinates: coordinates, count: coordinates.count)
                 polyline.nodeId = nodeId
-                polyline.colorHex = nodes.first(where: { $0.id == nodeId })?.colorHex ?? ""
+                polyline.colorHex = parent.nodes.first(where: { $0.id == nodeId })?.colorHex ?? ""
                 map.addOverlay(polyline)
             }
         }
 
-        // MARK: - MKMapViewDelegate
+        private func addNeighborLines(to map: MKMapView) {
+            guard parent.showNeighbors, let ownCoordinate = parent.ownCoordinate else { return }
+            let cutoff = parent.showNeighborsPermanently ? Date.distantPast : Date().addingTimeInterval(-24 * 3600)
+            var latest: [UInt32: DirectNeighborContact] = [:]
+            for contact in parent.directContacts where contact.timestamp >= cutoff {
+                if latest[contact.nodeId]?.timestamp ?? .distantPast < contact.timestamp {
+                    latest[contact.nodeId] = contact
+                }
+            }
+
+            for contact in latest.values {
+                let node = parent.nodes.first { $0.id == contact.nodeId }
+                guard let latitude = contact.latitude ?? node?.latitude,
+                      let longitude = contact.longitude ?? node?.longitude else { continue }
+                let coordinates = [
+                    ownCoordinate.coreLocationCoordinate,
+                    CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+                ]
+                let polyline = NeighborPolyline(coordinates: coordinates, count: 2)
+                polyline.nodeId = contact.nodeId
+                polyline.snr = contact.snr
+                polyline.timestamp = contact.timestamp
+                polyline.colorHex = node?.colorHex ?? ""
+                polyline.colorMode = parent.neighborColorMode
+                let outline = NeighborPolyline(coordinates: coordinates, count: 2)
+                outline.isOutline = true
+                map.addOverlay(polyline)
+                map.insertOverlay(outline, below: polyline)
+            }
+        }
+
+        private func addTraceroutes(to map: MKMapView) {
+            guard parent.showTraceroutes else { return }
+            for (index, traceroute) in parent.traceroutes.enumerated() {
+                var points: [(coordinate: CLLocationCoordinate2D?, viaMqtt: Bool, snr: Float?)] = []
+                points.append((parent.ownCoordinate?.coreLocationCoordinate, false, nil))
+                points.append(contentsOf: traceroute.hops.map { hop in
+                    let coordinate = hop.latitude.flatMap { latitude in
+                        hop.longitude.map { longitude in
+                            CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+                        }
+                    }
+                    return (coordinate, hop.viaMqtt, hop.snr)
+                })
+
+                let color = Self.tracerouteColors[index % Self.tracerouteColors.count]
+                var lastKnownIndex: Int?
+                for pointIndex in points.indices where points[pointIndex].coordinate != nil {
+                    guard let previousIndex = lastKnownIndex,
+                          let start = points[previousIndex].coordinate,
+                          let end = points[pointIndex].coordinate else {
+                        lastKnownIndex = pointIndex
+                        continue
+                    }
+                    let unknownSegment = pointIndex - previousIndex > 1
+                    let viaMqtt = points[(previousIndex + 1)...pointIndex].contains { $0.viaMqtt }
+                    let coordinates = viaMqtt
+                        ? Self.mqttZigzag(from: start, to: end)
+                        : [start, end]
+                    let polyline = TraceroutePolyline(coordinates: coordinates, count: coordinates.count)
+                    polyline.color = color
+                    polyline.viaMqtt = viaMqtt
+                    polyline.unknownSegment = unknownSegment
+                    map.addOverlay(polyline)
+
+                    let startPoint = MKMapPoint(start)
+                    let endPoint = MKMapPoint(end)
+                    let midpoint = MKMapPoint(
+                        x: (startPoint.x + endPoint.x) / 2,
+                        y: (startPoint.y + endPoint.y) / 2
+                    ).coordinate
+                    map.addAnnotation(
+                        TracerouteSegmentAnnotation(
+                            coordinate: midpoint,
+                            title: unknownSegment
+                                ? String(localized: "Unknown intermediate hop")
+                                : String(localized: "Traceroute direction"),
+                            subtitle: points[pointIndex].snr.map {
+                                String(format: String(localized: "Hop SNR %.1f dB"), $0)
+                            },
+                            glyph: unknownSegment ? "?" : "➜",
+                            color: color
+                        )
+                    )
+                    lastKnownIndex = pointIndex
+                }
+            }
+        }
+
+        // MARK: Context menus
+
+        @objc func handleRightClick(_ recognizer: NSClickGestureRecognizer) {
+            guard let map = recognizer.view as? MKMapView else { return }
+            let point = recognizer.location(in: map)
+            if let annotationView = findAnnotationView(at: point, in: map) {
+                if let node = annotationView.annotation as? NodeAnnotation {
+                    showNodeMenu(node, at: point, in: map)
+                    return
+                }
+                if let waypoint = annotationView.annotation as? WaypointAnnotation {
+                    showWaypointMenu(waypoint.waypoint, at: point, in: map)
+                    return
+                }
+            }
+            showMapMenu(at: point, in: map)
+        }
+
+        private func showNodeMenu(_ annotation: NodeAnnotation, at point: CGPoint, in map: MKMapView) {
+            let menu = NSMenu(title: annotation.title ?? String(localized: "Node"))
+            let node = parent.appState.node(forId: annotation.nodeId)
+            addMenuItem(String(localized: "Send Direct Message"), .sendDM(annotation.nodeId), to: menu)
+            addMenuItem(String(localized: "Show Node Info"), .showNodeInfo(annotation.nodeId), to: menu)
+            addMenuItem(String(localized: "Show Telemetry"), .telemetry(annotation.nodeId), to: menu)
+            if annotation.nodeId != parent.appState.myNodeInfo?.nodeId {
+                addMenuItem(String(localized: "Traceroute"), .traceroute(annotation.nodeId), to: menu)
+            }
+            if node?.isFavorite == true {
+                addMenuItem(String(localized: "Remote Administration"), .remoteAdmin(annotation.nodeId), to: menu)
+            }
+
+            let requestMenu = NSMenu(title: String(localized: "Request Information"))
+            for requestType in NodeInfoRequestType.allCases {
+                addMenuItem(
+                    requestType.displayName,
+                    .requestInfo(annotation.nodeId, requestType),
+                    to: requestMenu
+                )
+            }
+            let requests = NSMenuItem(
+                title: String(localized: "Request Information"),
+                action: nil,
+                keyEquivalent: ""
+            )
+            requests.submenu = requestMenu
+            menu.addItem(requests)
+            menu.addItem(.separator())
+
+            addMenuItem(
+                node?.isFavorite == true
+                    ? String(localized: "Remove Favorite")
+                    : String(localized: "Add Favorite"),
+                .toggleFavorite(annotation.nodeId),
+                to: menu
+            )
+            addMenuItem(
+                node?.isPinned == true ? String(localized: "Unpin") : String(localized: "Pin"),
+                .togglePin(annotation.nodeId),
+                to: menu
+            )
+
+            let colorMenu = NSMenu(title: String(localized: "Set Color"))
+            for preset in nodeColorPresets {
+                let item = addMenuItem(preset.name, .setColor(annotation.nodeId, preset.hex), to: colorMenu)
+                item.image = createColorSwatch(hex: preset.hex)
+            }
+            colorMenu.addItem(.separator())
+            addMenuItem(String(localized: "Clear Color"), .setColor(annotation.nodeId, ""), to: colorMenu)
+            let colors = NSMenuItem(title: String(localized: "Set Color"), action: nil, keyEquivalent: "")
+            colors.submenu = colorMenu
+            menu.addItem(colors)
+
+            addMenuItem(String(localized: "Set Note"), .setNote(annotation.nodeId), to: menu)
+            menu.addItem(.separator())
+            addMenuItem(String(localized: "Set as My Position"), .setAsMyPosition(annotation.nodeId), to: menu)
+            if LocationLogger.shared.hasPositionLog(for: annotation.nodeId) {
+                let title = parent.pathNodeIds.contains(annotation.nodeId)
+                    ? String(localized: "Hide Path")
+                    : String(localized: "Show Path")
+                addMenuItem(title, .togglePath(annotation.nodeId), to: menu)
+            }
+            menu.popUp(positioning: nil, at: point, in: map)
+        }
+
+        private func showWaypointMenu(_ waypoint: MeshWaypoint, at point: CGPoint, in map: MKMapView) {
+            let menu = NSMenu(title: waypoint.displayName)
+            addMenuItem(String(localized: "Show Waypoint Info"), .showWaypoint(waypoint.id), to: menu)
+            menu.addItem(.separator())
+            addMenuItem(String(localized: "Remove from Map"), .deleteWaypoint(waypoint.id, false), to: menu)
+            addMenuItem(String(localized: "Delete from Mesh"), .deleteWaypoint(waypoint.id, true), to: menu)
+            menu.popUp(positioning: nil, at: point, in: map)
+        }
+
+        private func showMapMenu(at point: CGPoint, in map: MKMapView) {
+            let coordinate = map.convert(point, toCoordinateFrom: map)
+            let menu = NSMenu(title: String(localized: "Map"))
+            addMenuItem(String(localized: "Set as My Position"), .setOwnPosition(coordinate), to: menu)
+            addMenuItem(String(localized: "Create Waypoint Here"), .createWaypoint(coordinate), to: menu)
+            menu.popUp(positioning: nil, at: point, in: map)
+        }
+
+        @discardableResult
+        private func addMenuItem(_ title: String, _ action: MapContextAction.Kind, to menu: NSMenu) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: #selector(contextMenuAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = MapContextAction(action)
+            menu.addItem(item)
+            return item
+        }
+
+        @objc private func contextMenuAction(_ sender: NSMenuItem) {
+            guard let action = sender.representedObject as? MapContextAction else { return }
+            switch action.kind {
+            case .sendDM(let nodeId): parent.onSendDM(nodeId)
+            case .showNodeInfo(let nodeId): parent.onShowNodeInfo(nodeId)
+            case .toggleFavorite(let nodeId): parent.onToggleFavorite(nodeId)
+            case .togglePin(let nodeId): parent.onTogglePin(nodeId)
+            case .traceroute(let nodeId): parent.onTraceroute(nodeId)
+            case .telemetry(let nodeId): parent.onTelemetry(nodeId)
+            case .remoteAdmin(let nodeId): parent.onRemoteAdmin(nodeId)
+            case .requestInfo(let nodeId, let request): parent.onRequestInfo(request, nodeId)
+            case .setColor(let nodeId, let hex): applyColor(hex, to: nodeId)
+            case .setNote(let nodeId): promptForNote(nodeId: nodeId)
+            case .setAsMyPosition(let nodeId): setAsMyPosition(nodeId: nodeId)
+            case .togglePath(let nodeId): parent.onTogglePath(nodeId)
+            case .setOwnPosition(let coordinate): parent.onSetOwnPosition(coordinate)
+            case .createWaypoint(let coordinate): parent.onCreateWaypoint(coordinate)
+            case .showWaypoint(let id): parent.onShowWaypoint(id)
+            case .deleteWaypoint(let id, let fromMesh): parent.onDeleteWaypoint(id, fromMesh)
+            }
+        }
+
+        private func findAnnotationView(at point: CGPoint, in map: MKMapView) -> MKAnnotationView? {
+            var view: NSView? = map.hitTest(point)
+            while let current = view {
+                if let annotation = current as? MKAnnotationView { return annotation }
+                view = current.superview
+            }
+            return nil
+        }
+
+        private func applyColor(_ hex: String, to nodeId: UInt32) {
+            SettingsService.shared.setColorHex(hex, for: nodeId)
+            parent.appState.node(forId: nodeId)?.colorHex = hex
+        }
+
+        private func promptForNote(nodeId: UInt32) {
+            let current = SettingsService.shared.note(for: nodeId)
+            let name = parent.appState.node(forId: nodeId)?.name ?? String(localized: "Node")
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Set Note for \(name)")
+            alert.informativeText = String(localized: "Enter a note for this node:")
+            alert.addButton(withTitle: String(localized: "Save"))
+            alert.addButton(withTitle: String(localized: "Cancel"))
+            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+            field.stringValue = current
+            alert.accessoryView = field
+            alert.window.initialFirstResponder = field
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            SettingsService.shared.setNote(field.stringValue, for: nodeId)
+            parent.appState.node(forId: nodeId)?.note = field.stringValue
+        }
+
+        private func setAsMyPosition(nodeId: UInt32) {
+            guard let node = parent.appState.node(forId: nodeId),
+                  let latitude = node.latitude,
+                  let longitude = node.longitude else { return }
+            SettingsService.shared.myLatitude = latitude
+            SettingsService.shared.myLongitude = longitude
+            parent.appState.recalculateAllDistances()
+        }
+
+        private func createColorSwatch(hex: String) -> NSImage {
+            let image = NSImage(size: .init(width: 12, height: 12))
+            image.lockFocus()
+            (Color(hex: hex).map(NSColor.init) ?? .gray).setFill()
+            NSBezierPath(
+                roundedRect: .init(origin: .zero, size: image.size),
+                xRadius: 2,
+                yRadius: 2
+            ).fill()
+            image.unlockFocus()
+            return image
+        }
+
+        // MARK: MKMapViewDelegate
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            if let tileOverlay = overlay as? MKTileOverlay {
-                return MKTileOverlayRenderer(overlay: tileOverlay)
+            if let tile = overlay as? MKTileOverlay {
+                return MKTileOverlayRenderer(tileOverlay: tile)
             }
-            if let polyline = overlay as? NodePathPolyline {
-                let renderer = MKPolylineRenderer(polyline: polyline)
-                if !polyline.colorHex.isEmpty, let color = Color(hex: polyline.colorHex) {
-                    renderer.strokeColor = NSColor(color)
-                } else {
-                    renderer.strokeColor = .systemBlue
-                }
+            if let path = overlay as? NodePathPolyline {
+                let renderer = MKPolylineRenderer(polyline: path)
+                renderer.strokeColor = path.colorHex.isEmpty
+                    ? .systemBlue
+                    : Color(hex: path.colorHex).map(NSColor.init) ?? .systemBlue
                 renderer.lineWidth = 2.5
-                renderer.alpha = 0.8
+                renderer.alpha = 0.85
+                return renderer
+            }
+            if let neighbor = overlay as? NeighborPolyline {
+                let renderer = MKPolylineRenderer(polyline: neighbor)
+                renderer.strokeColor = neighbor.isOutline ? .black : Self.neighborColor(for: neighbor)
+                renderer.lineWidth = neighbor.isOutline ? 6 : 3
+                renderer.alpha = neighbor.isOutline ? 0.55 : 0.95
+                renderer.lineCap = .round
+                return renderer
+            }
+            if let traceroute = overlay as? TraceroutePolyline {
+                let renderer = MKPolylineRenderer(polyline: traceroute)
+                renderer.strokeColor = traceroute.viaMqtt ? .systemYellow : traceroute.color
+                renderer.lineWidth = traceroute.viaMqtt ? 3.5 : 2.5
+                if traceroute.viaMqtt {
+                    renderer.lineDashPattern = [4, 2]
+                } else if traceroute.unknownSegment {
+                    renderer.lineDashPattern = [7, 5]
+                }
                 return renderer
             }
             return MKOverlayRenderer(overlay: overlay)
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-            guard let nodeAnn = annotation as? NodeAnnotation else { return nil }
-            let id = "NodePin"
-            let view = mapView.dequeueReusableAnnotationView(withIdentifier: id) as? MKMarkerAnnotationView
-                ?? MKMarkerAnnotationView(annotation: nodeAnn, reuseIdentifier: id)
-            view.annotation = nodeAnn
-            view.canShowCallout = true
-            view.glyphText = nil
-            if let hex = nodeAnn.colorHex, !hex.isEmpty, let color = Color(hex: hex) {
-                view.markerTintColor = NSColor(color)
-            } else {
-                view.markerTintColor = NSColor.systemBlue
+            if let node = annotation as? NodeAnnotation {
+                let identifier = "NodePin"
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
+                    ?? MKMarkerAnnotationView(annotation: node, reuseIdentifier: identifier)
+                view.annotation = node
+                view.canShowCallout = true
+                view.markerTintColor = node.colorHex.flatMap(Color.init(hex:)).map(NSColor.init) ?? .systemBlue
+                return view
             }
-            return view
+            if let waypoint = annotation as? WaypointAnnotation {
+                let identifier = "WaypointPin"
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
+                    ?? MKMarkerAnnotationView(annotation: waypoint, reuseIdentifier: identifier)
+                view.annotation = waypoint
+                view.canShowCallout = true
+                view.markerTintColor = .systemOrange
+                view.glyphText = UnicodeScalar(waypoint.waypoint.icon).map(String.init) ?? "📍"
+                return view
+            }
+            if let emergency = annotation as? EmergencyAnnotation {
+                let identifier = "EmergencyPin"
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
+                    ?? MKMarkerAnnotationView(annotation: emergency, reuseIdentifier: identifier)
+                view.annotation = emergency
+                view.canShowCallout = true
+                view.markerTintColor = Color(hex: emergency.feature.kind.markerColorHex).map(NSColor.init) ?? .systemRed
+                view.glyphImage = NSImage(systemSymbolName: emergency.feature.kind.symbolName, accessibilityDescription: emergency.title)
+                if emergency.feature.localizedDetailText.isEmpty {
+                    view.detailCalloutAccessoryView = nil
+                } else {
+                    let label = NSTextField(wrappingLabelWithString: emergency.feature.localizedDetailText)
+                    label.maximumNumberOfLines = 12
+                    label.preferredMaxLayoutWidth = 300
+                    view.detailCalloutAccessoryView = label
+                }
+                return view
+            }
+            if let segment = annotation as? TracerouteSegmentAnnotation {
+                let identifier = "TracerouteSegment"
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
+                    ?? MKMarkerAnnotationView(annotation: segment, reuseIdentifier: identifier)
+                view.annotation = segment
+                view.canShowCallout = true
+                view.markerTintColor = segment.color.withAlphaComponent(0.88)
+                view.glyphText = segment.glyph
+                view.displayPriority = .required
+                return view
+            }
+            return nil
         }
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
-            guard let nodeAnn = view.annotation as? NodeAnnotation else { return }
-
-            guard let ownCoordinate = parent.appState.effectiveOwnCoordinate() else {
-                let nodeIdStr = parent.appState.node(forId: nodeAnn.nodeId)?.nodeId ?? ""
-                nodeAnn.subtitle = nodeIdStr
+            guard let node = view.annotation as? NodeAnnotation else { return }
+            guard let ownCoordinate = parent.ownCoordinate else {
+                node.subtitle = parent.appState.node(forId: node.nodeId)?.nodeId ?? ""
                 return
             }
-
-            let myLoc = CLLocation(latitude: ownCoordinate.latitude, longitude: ownCoordinate.longitude)
-            let nodeLoc = CLLocation(latitude: nodeAnn.coordinate.latitude,
-                                     longitude: nodeAnn.coordinate.longitude)
-            let distanceMeters = myLoc.distance(from: nodeLoc)
-
-            let distanceStr: String
-            if distanceMeters < 1000 {
-                distanceStr = String(format: "%.0f m", distanceMeters)
-            } else {
-                distanceStr = String(format: "%.1f km", distanceMeters / 1000)
-            }
-
-            let nodeIdStr = parent.appState.node(forId: nodeAnn.nodeId)?.nodeId ?? ""
-            nodeAnn.subtitle = "\(nodeIdStr)  ·  \(distanceStr) \(String(localized: "away"))"
+            let origin = CLLocation(latitude: ownCoordinate.latitude, longitude: ownCoordinate.longitude)
+            let destination = CLLocation(latitude: node.coordinate.latitude, longitude: node.coordinate.longitude)
+            let distance = origin.distance(from: destination)
+            let formatted = distance < 1_000
+                ? String(format: "%.0f m", distance)
+                : String(format: "%.1f km", distance / 1_000)
+            let nodeID = parent.appState.node(forId: node.nodeId)?.nodeId ?? ""
+            node.subtitle = "\(nodeID) · \(formatted) \(String(localized: "away"))"
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-            let span = mapView.region.span.longitudeDelta
+            let span = max(mapView.region.span.longitudeDelta, 0.000_001)
             let zoom = max(1, min(20, Int(round(log2(360 / span)))))
-            if parent.currentZoom != zoom {
-                DispatchQueue.main.async {
-                    self.parent.currentZoom = zoom
-                }
+            if parent.currentZoom != zoom { parent.currentZoom = zoom }
+            let region = mapView.region
+            let bounds = MapBounds(
+                north: min(85, region.center.latitude + region.span.latitudeDelta / 2),
+                south: max(-85, region.center.latitude - region.span.latitudeDelta / 2),
+                east: min(180, region.center.longitude + region.span.longitudeDelta / 2),
+                west: max(-180, region.center.longitude - region.span.longitudeDelta / 2)
+            )
+            if bounds.isValid { parent.onVisibleRegionChanged(bounds, zoom) }
+        }
+
+        // MARK: Colors and geometry
+
+        private static let tracerouteColors: [NSColor] = [
+            .systemPink, .systemGreen, .systemBlue, .systemOrange,
+            .systemPurple, .systemTeal, .systemRed,
+        ]
+
+        private static func neighborColor(for line: NeighborPolyline) -> NSColor {
+            switch line.colorMode {
+            case .nodeColor:
+                return Color(hex: line.colorHex).map(NSColor.init) ?? .systemBlue
+            case .signalQuality:
+                let value = max(-20, min(10, line.snr ?? -20))
+                let t = CGFloat((value + 20) / 30)
+                return t < 0.5
+                    ? interpolate(.systemRed, .systemYellow, t * 2)
+                    : interpolate(.systemYellow, .systemGreen, (t - 0.5) * 2)
+            case .age:
+                let fraction = CGFloat(max(0, min(1, Date().timeIntervalSince(line.timestamp) / (24 * 3600))))
+                return interpolate(.systemCyan, .systemPurple, fraction)
             }
+        }
+
+        private static func interpolate(_ start: NSColor, _ end: NSColor, _ fraction: CGFloat) -> NSColor {
+            let start = start.usingColorSpace(.deviceRGB) ?? start
+            let end = end.usingColorSpace(.deviceRGB) ?? end
+            return NSColor(
+                red: start.redComponent + (end.redComponent - start.redComponent) * fraction,
+                green: start.greenComponent + (end.greenComponent - start.greenComponent) * fraction,
+                blue: start.blueComponent + (end.blueComponent - start.blueComponent) * fraction,
+                alpha: 1
+            )
+        }
+
+        private static func mqttZigzag(
+            from start: CLLocationCoordinate2D,
+            to end: CLLocationCoordinate2D,
+            peaks: Int = 5
+        ) -> [CLLocationCoordinate2D] {
+            let startPoint = MKMapPoint(start)
+            let endPoint = MKMapPoint(end)
+            let dx = endPoint.x - startPoint.x
+            let dy = endPoint.y - startPoint.y
+            let length = hypot(dx, dy)
+            guard length > 1 else { return [start, end] }
+            let normalX = -dy / length
+            let normalY = dx / length
+            let amplitude = length * 0.03
+            var result = [start]
+            for index in 0..<(peaks * 2) {
+                let fraction = Double(index + 1) / Double(peaks * 2 + 1)
+                let side = index.isMultiple(of: 2) ? amplitude : -amplitude
+                result.append(
+                    MKMapPoint(
+                        x: startPoint.x + dx * fraction + normalX * side,
+                        y: startPoint.y + dy * fraction + normalY * side
+                    ).coordinate
+                )
+            }
+            result.append(end)
+            return result
         }
     }
 }
 
-// MARK: - Context Menu Action
+// MARK: - MapKit model objects
 
-private final class ContextMenuAction: NSObject {
-    let kind: Kind
-
+private final class MapContextAction: NSObject {
     enum Kind {
-        case sendDM(nodeId: UInt32)
-        case showNodeInfo(nodeId: UInt32)
-        case setColor(nodeId: UInt32, hex: String)
-        case setNote(nodeId: UInt32)
-        case setAsMyPosition(nodeId: UInt32)
-        case togglePath(nodeId: UInt32)
+        case sendDM(UInt32)
+        case showNodeInfo(UInt32)
+        case toggleFavorite(UInt32)
+        case togglePin(UInt32)
+        case traceroute(UInt32)
+        case telemetry(UInt32)
+        case remoteAdmin(UInt32)
+        case requestInfo(UInt32, NodeInfoRequestType)
+        case setColor(UInt32, String)
+        case setNote(UInt32)
+        case setAsMyPosition(UInt32)
+        case togglePath(UInt32)
+        case setOwnPosition(CLLocationCoordinate2D)
+        case createWaypoint(CLLocationCoordinate2D)
+        case showWaypoint(UInt32)
+        case deleteWaypoint(UInt32, Bool)
     }
 
-    private init(_ kind: Kind) { self.kind = kind }
-
-    static func sendDM(nodeId: UInt32) -> ContextMenuAction { .init(.sendDM(nodeId: nodeId)) }
-    static func showNodeInfo(nodeId: UInt32) -> ContextMenuAction { .init(.showNodeInfo(nodeId: nodeId)) }
-    static func setColor(nodeId: UInt32, hex: String) -> ContextMenuAction { .init(.setColor(nodeId: nodeId, hex: hex)) }
-    static func setNote(nodeId: UInt32) -> ContextMenuAction { .init(.setNote(nodeId: nodeId)) }
-    static func setAsMyPosition(nodeId: UInt32) -> ContextMenuAction { .init(.setAsMyPosition(nodeId: nodeId)) }
-    static func togglePath(nodeId: UInt32) -> ContextMenuAction { .init(.togglePath(nodeId: nodeId)) }
+    let kind: Kind
+    init(_ kind: Kind) { self.kind = kind }
 }
 
-// MARK: - NodeAnnotation
-
-final class NodeAnnotation: NSObject, MKAnnotation {
+private final class NodeAnnotation: NSObject, MKAnnotation {
     let nodeId: UInt32
     @objc dynamic var coordinate: CLLocationCoordinate2D
     @objc dynamic var title: String?
@@ -563,9 +1453,72 @@ final class NodeAnnotation: NSObject, MKAnnotation {
     }
 }
 
-// MARK: - NodePathPolyline
+private final class WaypointAnnotation: NSObject, MKAnnotation {
+    var waypoint: MeshWaypoint
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+    @objc dynamic var title: String?
+    @objc dynamic var subtitle: String?
 
-final class NodePathPolyline: MKPolyline {
+    init(waypoint: MeshWaypoint) {
+        self.waypoint = waypoint
+        coordinate = .init(latitude: waypoint.latitude, longitude: waypoint.longitude)
+        title = waypoint.displayName
+        subtitle = waypoint.detail
+    }
+}
+
+private final class EmergencyAnnotation: NSObject, MKAnnotation {
+    let feature: EmergencyMapFeature
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+    @objc dynamic var title: String?
+    @objc dynamic var subtitle: String?
+
+    init(feature: EmergencyMapFeature) {
+        self.feature = feature
+        coordinate = .init(latitude: feature.latitude, longitude: feature.longitude)
+        title = feature.name
+        subtitle = feature.kind.localizedName
+    }
+}
+
+private final class TracerouteSegmentAnnotation: NSObject, MKAnnotation {
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+    @objc dynamic var title: String?
+    @objc dynamic var subtitle: String?
+    let glyph: String
+    let color: NSColor
+
+    init(
+        coordinate: CLLocationCoordinate2D,
+        title: String,
+        subtitle: String?,
+        glyph: String,
+        color: NSColor
+    ) {
+        self.coordinate = coordinate
+        self.title = title
+        self.subtitle = subtitle
+        self.glyph = glyph
+        self.color = color
+    }
+}
+
+private final class NodePathPolyline: MKPolyline {
     var nodeId: UInt32 = 0
-    var colorHex: String = ""
+    var colorHex = ""
+}
+
+private final class NeighborPolyline: MKPolyline {
+    var nodeId: UInt32 = 0
+    var snr: Float?
+    var timestamp = Date()
+    var colorHex = ""
+    var colorMode = NeighborLineColorMode.signalQuality
+    var isOutline = false
+}
+
+private final class TraceroutePolyline: MKPolyline {
+    var color = NSColor.systemPink
+    var viaMqtt = false
+    var unknownSegment = false
 }

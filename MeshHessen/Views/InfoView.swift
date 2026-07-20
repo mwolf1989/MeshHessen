@@ -26,6 +26,10 @@ struct InfoView: View {
                                    url: "https://github.com/apple/swift-protobuf")
                         LicenseRow(name: "ORSSerialPort", author: "Andrew Madsen", license: "MIT",
                                    url: "https://github.com/armadsen/ORSSerialPort")
+                        LicenseRow(name: "MapLibre GL JS 4.7.1", author: "MapLibre contributors", license: "BSD 3-Clause",
+                                   url: "https://github.com/maplibre/maplibre-gl-js")
+                        LicenseRow(name: "OpenMapTiles", author: "OpenMapTiles contributors", license: "BSD 3-Clause / CC-BY data schema",
+                                   url: "https://openmaptiles.org")
                         LicenseRow(name: "Meshtastic Protocol", author: "Meshtastic LLC", license: "GPL 3.0",
                                    url: "https://github.com/meshtastic/protobufs")
                     }
@@ -39,6 +43,8 @@ struct InfoView: View {
                     Text("Tile server provided by schwarzes-seelenreich.de. OpenStreetMap data © OpenStreetMap contributors.")
                         .foregroundStyle(.secondary)
                     Text("OpenTopoMap © opentopomap.org")
+                        .foregroundStyle(.secondary)
+                    Text("Vector maps © OpenMapTiles © OpenStreetMap contributors")
                         .foregroundStyle(.secondary)
                 }
 

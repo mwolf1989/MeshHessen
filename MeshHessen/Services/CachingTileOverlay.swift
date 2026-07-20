@@ -1,119 +1,233 @@
+import Foundation
 import MapKit
 import os
 
-/// A tile overlay that caches downloaded tiles to disk for offline use.
-///
-/// On first request the tile is fetched from the network and stored locally.
-/// Subsequent requests for the same tile are served from the file cache.
-final class CachingTileOverlay: MKTileOverlay {
+struct MapTileOverlayConfiguration: Sendable {
+    var descriptor: MapTileSourceDescriptor
+    var liveCacheDirectory: URL
+    var offlinePackageDirectories: [URL]
+    var offlineOnly: Bool
 
+    init(
+        descriptor: MapTileSourceDescriptor,
+        liveCacheDirectory: URL,
+        offlinePackageDirectories: [URL] = [],
+        offlineOnly: Bool = false
+    ) {
+        self.descriptor = descriptor
+        self.liveCacheDirectory = liveCacheDirectory
+        self.offlinePackageDirectories = offlinePackageDirectories
+        self.offlineOnly = offlineOnly
+    }
+}
+
+/// XYZ raster tile overlay with a persistent cache and an explicit offline mode.
+/// Public OSM tiles use conditional requests and a minimum seven-day lifetime;
+/// Mesh Hessen/custom-server tiles remain cached until the user clears them.
+final class CachingTileOverlay: MKTileOverlay {
     private static let logger = Logger(subsystem: "de.meshhessen.app", category: "TileCache")
 
-    /// Root directory for all cached tiles.
-    private let cacheDirectory: URL
-
-    /// Shared URLSession with a generous disk-cache as fallback.
-    private let session: URLSession
-
-    override init(urlTemplate URLTemplate: String?) {
-        // ~/Library/Caches/<bundle>/TileCache
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        self.cacheDirectory = caches.appendingPathComponent("TileCache", isDirectory: true)
-
-        let config = URLSessionConfiguration.default
-        config.requestCachePolicy = .returnCacheDataElseLoad
-        config.urlCache = URLCache(
-            memoryCapacity: 32 * 1024 * 1024,  // 32 MB RAM
-            diskCapacity: 512 * 1024 * 1024     // 512 MB disk
-        )
-        self.session = URLSession(configuration: config)
-
-        super.init(urlTemplate: URLTemplate)
+    private struct TileMetadata: Codable {
+        var eTag: String?
+        var lastModified: String?
+        var expiresAt: Date
     }
 
-    // MARK: - MKTileOverlay
+    private let configuration: MapTileOverlayConfiguration
+    private let session: URLSession
+    private let decoder = JSONDecoder()
+    private let encoder = JSONEncoder()
 
-    override func loadTile(at path: MKTileOverlayPath,
-                           result: @escaping (Data?, Error?) -> Void) {
-        let fileURL = localURL(for: path)
+    convenience override init(urlTemplate URLTemplate: String?) {
+        let fileManager = FileManager.default
+        let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? fileManager.temporaryDirectory
+        let descriptor = MapTileSourceDescriptor(
+            source: .osm,
+            urlTemplate: URLTemplate ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        )
+        self.init(
+            configuration: .init(
+                descriptor: descriptor,
+                liveCacheDirectory: caches.appendingPathComponent("MeshHessen/TileCache", isDirectory: true)
+            )
+        )
+    }
 
-        // 1. Check local file cache
-        if let data = try? Data(contentsOf: fileURL) {
+    init(configuration: MapTileOverlayConfiguration) {
+        self.configuration = configuration
+        let sessionConfiguration = URLSessionConfiguration.default
+        sessionConfiguration.timeoutIntervalForRequest = configuration.descriptor.followsPublicOSMPolicy ? 20 : 30
+        sessionConfiguration.timeoutIntervalForResource = 60
+        sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        session = URLSession(configuration: sessionConfiguration)
+        super.init(urlTemplate: configuration.descriptor.urlTemplate)
+        minimumZ = configuration.descriptor.minimumZoom
+        maximumZ = configuration.descriptor.maximumZoom
+    }
+
+    override func loadTile(
+        at path: MKTileOverlayPath,
+        result: @escaping (Data?, (any Error)?) -> Void
+    ) {
+        let coordinate = MapTileCoordinate(x: path.x, y: path.y, zoom: path.z)
+        let cacheURL = liveCacheURL(for: coordinate)
+
+        if let offlineData = firstOfflineTile(for: coordinate) {
+            result(offlineData, nil)
+            return
+        }
+
+        if configuration.offlineOnly {
+            result(nil, nil)
+            return
+        }
+
+        if !configuration.descriptor.followsPublicOSMPolicy,
+           let data = try? Data(contentsOf: cacheURL) {
             result(data, nil)
             return
         }
 
-        // 2. Fetch from network
-        let url = self.url(forTilePath: path)
-        let task = session.dataTask(with: url) { [weak self] data, response, error in
-            guard let data, error == nil else {
+        let metadataURL = cacheURL.appendingPathExtension("meta")
+        let metadata = loadMetadata(at: metadataURL)
+        if configuration.descriptor.followsPublicOSMPolicy,
+           let metadata,
+           metadata.expiresAt > Date(),
+           let data = try? Data(contentsOf: cacheURL) {
+            result(data, nil)
+            return
+        }
+
+        let url: URL
+        do {
+            url = try MapTilePolicy.resolvedURL(
+                template: configuration.descriptor.urlTemplate,
+                coordinate: coordinate
+            )
+        } catch {
+            result(nil, error)
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue(MapTilePolicy.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("image/avif,image/webp,image/png,image/*;q=0.8", forHTTPHeaderField: "Accept")
+        if configuration.descriptor.followsPublicOSMPolicy,
+           FileManager.default.fileExists(atPath: cacheURL.path) {
+            if let eTag = metadata?.eTag {
+                request.setValue(eTag, forHTTPHeaderField: "If-None-Match")
+            } else if let lastModified = metadata?.lastModified {
+                request.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since")
+            }
+        }
+
+        session.dataTask(with: request) { [weak self] data, response, error in
+            guard let self else {
                 result(nil, error)
                 return
             }
-
-            // Verify we got a valid image response
-            if let httpResponse = response as? HTTPURLResponse,
-               !(200...299).contains(httpResponse.statusCode) {
-                result(nil, URLError(.badServerResponse))
+            if let response = response as? HTTPURLResponse,
+               response.statusCode == 304,
+               let cached = try? Data(contentsOf: cacheURL) {
+                self.saveMetadata(self.metadata(from: response), to: metadataURL)
+                result(cached, nil)
                 return
             }
 
-            // 3. Write to disk cache (fire-and-forget)
-            self?.saveTile(data, to: fileURL)
+            if let response = response as? HTTPURLResponse,
+               (200...299).contains(response.statusCode),
+               let data,
+               !data.isEmpty {
+                self.saveTile(data, to: cacheURL)
+                if self.configuration.descriptor.followsPublicOSMPolicy {
+                    self.saveMetadata(self.metadata(from: response), to: metadataURL)
+                }
+                result(data, nil)
+                return
+            }
 
-            result(data, nil)
+            // Stale-on-error avoids a blank map while disconnected.
+            if let stale = try? Data(contentsOf: cacheURL) {
+                result(stale, nil)
+            } else {
+                result(nil, error ?? URLError(.badServerResponse))
+            }
+        }.resume()
+    }
+
+    // MARK: - Paths
+
+    private func firstOfflineTile(for coordinate: MapTileCoordinate) -> Data? {
+        for packageDirectory in configuration.offlinePackageDirectories {
+            let file = packageDirectory
+                .appendingPathComponent("tiles", isDirectory: true)
+                .appendingPathComponent(configuration.descriptor.source.rawValue, isDirectory: true)
+                .appendingPathComponent(String(coordinate.zoom), isDirectory: true)
+                .appendingPathComponent(String(coordinate.x), isDirectory: true)
+                .appendingPathComponent("\(coordinate.y).\(configuration.descriptor.source.fileExtension)")
+            if let data = try? Data(contentsOf: file) { return data }
         }
-        task.resume()
+        return nil
     }
 
-    // MARK: - File cache helpers
-
-    /// Build a file path like `TileCache/{z}/{x}/{y}.png`.
-    private func localURL(for path: MKTileOverlayPath) -> URL {
-        cacheDirectory
-            .appendingPathComponent("\(path.z)", isDirectory: true)
-            .appendingPathComponent("\(path.x)", isDirectory: true)
-            .appendingPathComponent("\(path.y).png")
+    private func liveCacheURL(for coordinate: MapTileCoordinate) -> URL {
+        configuration.liveCacheDirectory
+            .appendingPathComponent(configuration.descriptor.source.rawValue, isDirectory: true)
+            .appendingPathComponent(String(coordinate.zoom), isDirectory: true)
+            .appendingPathComponent(String(coordinate.x), isDirectory: true)
+            .appendingPathComponent("\(coordinate.y).\(configuration.descriptor.source.fileExtension)")
     }
+
+    // MARK: - Persistence
 
     private func saveTile(_ data: Data, to fileURL: URL) {
         do {
-            let dir = fileURL.deletingLastPathComponent()
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
             try data.write(to: fileURL, options: .atomic)
         } catch {
-            Self.logger.warning("Failed to cache tile: \(error.localizedDescription)")
+            Self.logger.warning("Failed to cache tile: \(error.localizedDescription, privacy: .public)")
         }
     }
 
-    // MARK: - Cache management
+    private func loadMetadata(at url: URL) -> TileMetadata? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? decoder.decode(TileMetadata.self, from: data)
+    }
 
-    /// Total size of the tile cache in bytes.
-    var cacheSizeBytes: Int64 {
-        let fm = FileManager.default
-        guard let enumerator = fm.enumerator(at: cacheDirectory,
-                                             includingPropertiesForKeys: [.fileSizeKey],
-                                             options: [.skipsHiddenFiles]) else { return 0 }
-        var total: Int64 = 0
-        for case let fileURL as URL in enumerator {
-            if let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                total += Int64(size)
-            }
+    private func saveMetadata(_ metadata: TileMetadata, to url: URL) {
+        do {
+            let data = try encoder.encode(metadata)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: url, options: .atomic)
+        } catch {
+            Self.logger.warning("Failed to cache tile metadata: \(error.localizedDescription, privacy: .public)")
         }
-        return total
     }
 
-    /// Human-readable cache size string.
-    var cacheSizeFormatted: String {
-        let bytes = cacheSizeBytes
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: bytes)
+    private func metadata(from response: HTTPURLResponse) -> TileMetadata {
+        TileMetadata(
+            eTag: response.value(forHTTPHeaderField: "ETag"),
+            lastModified: response.value(forHTTPHeaderField: "Last-Modified"),
+            expiresAt: MapTilePolicy.cacheExpiry(
+                cacheControl: response.value(forHTTPHeaderField: "Cache-Control"),
+                expires: Self.httpDate(response.value(forHTTPHeaderField: "Expires"))
+            )
+        )
     }
 
-    /// Remove all cached tiles.
-    func clearCache() {
-        try? FileManager.default.removeItem(at: cacheDirectory)
-        Self.logger.info("Tile cache cleared")
+    private static func httpDate(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss z"
+        return formatter.date(from: value)
     }
 }

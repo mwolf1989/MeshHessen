@@ -26,11 +26,15 @@ let package = Package(
             path: "MeshHessen",
             exclude: [
                 "Assets.xcassets",
+                "Info.plist",
+                "Localizable.xcstrings",
                 "MeshHessen.entitlements",
                 "MeshHessen.xcdatamodeld",   // CoreData model: compiled by Xcode, not SPM
                 "Proto",
-                "Resources",
                 "MeshHessenApp.swift",       // @main — excluded so test binary can link
+            ],
+            resources: [
+                .copy("Resources"),
             ]
         ),
         .testTarget(
