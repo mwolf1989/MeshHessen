@@ -34,10 +34,12 @@ struct TracerouteSheet: View {
                 Button {
                     runTraceroute()
                 } label: {
-                    if isRequesting {
-                        ProgressView().controlSize(.small)
-                    } else {
+                    ZStack {
                         Label("Run Traceroute", systemImage: "arrow.triangle.swap")
+                            .opacity(isRequesting ? 0 : 1)
+                        ProgressView()
+                            .controlSize(.small)
+                            .opacity(isRequesting ? 1 : 0)
                     }
                 }
                 .buttonStyle(.borderedProminent)
