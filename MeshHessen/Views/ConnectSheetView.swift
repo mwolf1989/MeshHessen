@@ -207,6 +207,7 @@ struct ConnectSheetView: View {
 
     private func loadDefaults() {
         let settings = SettingsService.shared
+        selectedType = settings.lastConnectionType
         tcpHost = settings.lastTcpHost
         tcpPort = String(settings.lastTcpPort)
         availablePorts = SerialConnectionService.availablePorts
@@ -219,6 +220,7 @@ struct ConnectSheetView: View {
 
         // Save last used
         let settings = SettingsService.shared
+        settings.lastConnectionType = selectedType
 
         let params: ConnectionParameters
         switch selectedType {
@@ -232,6 +234,8 @@ struct ConnectSheetView: View {
                 isConnecting = false
                 return
             }
+            settings.lastBluetoothDeviceIdentifier = device.id.uuidString
+            settings.lastBluetoothDeviceName = device.name
             // Stop scanning before connecting
             if isBleScanActive {
                 coordinator.stopBLEScanning()

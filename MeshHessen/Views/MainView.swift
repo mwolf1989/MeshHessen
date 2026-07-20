@@ -9,9 +9,21 @@ struct MainView: View {
 
     @State private var showConnectSheet = false
     @State private var showDeviceConfig = false
+    @State private var showTools = false
+    @State private var showTDeckWizard = false
+    @State private var showTileExport = false
+    @State private var showStationNameEditor = false
+    @State private var showKioskUnlock = false
     @State private var showDisconnectConfirmation = false
     @State private var selectedNodeId: UInt32?
+    @State private var routedNodeInfo: NodeInfo?
+    @State private var kioskState = KioskState.shared
+    @State private var settings = SettingsService.shared
+    @State private var stationNameRevision = 0
+    @State private var updateAvailability: UpdateAvailability?
+    @State private var pendingNodeKeyMismatches: [NodeKeyMismatch] = []
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     // Export state
     @State private var exportDocument: CsvDocument?
@@ -33,7 +45,15 @@ struct MainView: View {
                             .padding(.horizontal, 8)
                             .padding(.top, 4)
                     }
-                    NodeListView(selectedNodeId: $selectedNodeId)
+                    if kioskState.isFeatureLocked(.nodes) {
+                        ContentUnavailableView(
+                            "Nodes Locked",
+                            systemImage: "lock.fill",
+                            description: Text("Unlock kiosk mode to view the node list.")
+                        )
+                    } else {
+                        NodeListView(selectedNodeId: $selectedNodeId)
+                    }
                 }
                 .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 300)
             } detail: {
@@ -63,11 +83,72 @@ struct MainView: View {
                 .padding(.top, 10)
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if settings.kioskModeEnabled, kioskState.hasPassword {
+                HStack(spacing: 8) {
+                    Label(
+                        kioskState.isLocked
+                            ? String(localized: "Kiosk mode locked")
+                            : String(localized: "Kiosk mode unlocked"),
+                        systemImage: kioskState.isLocked ? "lock.fill" : "lock.open"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        if kioskState.isLocked {
+                            showKioskUnlock = true
+                        } else {
+                            kioskState.lock()
+                        }
+                    } label: {
+                        Label(
+                            kioskState.isLocked
+                                ? String(localized: "Unlock")
+                                : String(localized: "Lock"),
+                            systemImage: kioskState.isLocked ? "lock.open" : "lock.fill"
+                        )
+                    }
+                    .buttonStyle(.borderless)
+                    .help(
+                        kioskState.isLocked
+                            ? String(localized: "Unlock protected kiosk features")
+                            : String(localized: "Lock protected kiosk features")
+                    )
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(.bar)
+                .overlay(alignment: .top) { Divider() }
+            }
+        }
         .sheet(isPresented: $showConnectSheet) {
             ConnectSheetView()
         }
         .sheet(isPresented: $showDeviceConfig) {
             DeviceConfigView()
+        }
+        .sheet(isPresented: $showTools) {
+            ToolsView()
+        }
+        .sheet(isPresented: $showTDeckWizard) {
+            TDeckWizardView()
+        }
+        .sheet(isPresented: $showTileExport) {
+            TDeckWizardView(startAtExport: true)
+        }
+        .sheet(isPresented: $showStationNameEditor) {
+            if let node = appState.myNodeInfo {
+                StationNameEditorView(node: node) {
+                    stationNameRevision &+= 1
+                }
+            }
+        }
+        .sheet(isPresented: $showKioskUnlock) {
+            KioskUnlockSheet()
+        }
+        .sheet(item: $routedNodeInfo) { node in
+            NodeInfoSheet(node: node)
         }
         .fileExporter(
             isPresented: $showExporter,
@@ -87,6 +168,40 @@ struct MainView: View {
         } message: {
             Text("Do you really want to disconnect from the connected device?")
         }
+        .alert(
+            "Node Public Key Changed",
+            isPresented: Binding(
+                get: { !pendingNodeKeyMismatches.isEmpty },
+                set: { _ in }
+            ),
+            presenting: pendingNodeKeyMismatches.first
+        ) { mismatch in
+            Button("Accept New Key", role: .destructive) {
+                resolveNodeKeyMismatch(mismatch, accept: true)
+            }
+            Button("Keep Existing Key", role: .cancel) {
+                resolveNodeKeyMismatch(mismatch, accept: false)
+            }
+        } message: { mismatch in
+            Text(
+                "The public key for \(mismatch.shortName.isEmpty ? String(format: "!%08x", mismatch.nodeId) : mismatch.shortName) changed. Verify this with the node owner before accepting.\n\nOld: \(mismatch.oldKey.base64EncodedString())\nNew: \(mismatch.newKey.base64EncodedString())"
+            )
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .nodeKeyMismatchDetected)) { notification in
+            guard let mismatch = notification.object as? NodeKeyMismatch,
+                  !pendingNodeKeyMismatches.contains(where: { $0.id == mismatch.id })
+            else { return }
+            pendingNodeKeyMismatches.append(mismatch)
+        }
+        .onChange(of: coordinator.router.navigationState) { _, navigationState in
+            consume(navigationState)
+        }
+        .onChange(of: kioskState.isLocked) { _, _ in
+            if isSelectedTabLocked { appState.selectedTab = .messages }
+        }
+        .task {
+            updateAvailability = await UpdateChecker.shared.checkForUpdate()
+        }
     }
 
     // MARK: - Tab Content
@@ -101,25 +216,33 @@ struct MainView: View {
                 .tabItem { Label("Messages", systemImage: "envelope") }
                 .tag(MainTab.messages)
 
-            NodesTabView()
-                .tabItem { Label("Nodes", systemImage: "wifi") }
-                .tag(MainTab.nodes)
+            if !kioskState.isFeatureLocked(.nodes) {
+                NodesTabView()
+                    .tabItem { Label("Nodes", systemImage: "wifi") }
+                    .tag(MainTab.nodes)
+            }
 
-            ChannelsTabView()
-                .tabItem { Label("Channels", systemImage: "antenna.radiowaves.left.and.right") }
-                .tag(MainTab.channels)
+            if !kioskState.isFeatureLocked(.channels) {
+                ChannelsTabView()
+                    .tabItem { Label("Channels", systemImage: "antenna.radiowaves.left.and.right") }
+                    .tag(MainTab.channels)
+            }
 
             MapView()
                 .tabItem { Label("Map", systemImage: "map") }
                 .tag(MainTab.map)
 
-            DebugView()
-                .tabItem { Label("Debug", systemImage: "ladybug") }
-                .tag(MainTab.debug)
+            if !kioskState.isFeatureLocked(.debug) {
+                DebugView()
+                    .tabItem { Label("Debug", systemImage: "ladybug") }
+                    .tag(MainTab.debug)
+            }
 
-            InfoView()
-                .tabItem { Label("Info", systemImage: "info.circle") }
-                .tag(MainTab.info)
+            if !kioskState.isFeatureLocked(.info) {
+                InfoView()
+                    .tabItem { Label("Info", systemImage: "info.circle") }
+                    .tag(MainTab.info)
+            }
         }
     }
 
@@ -145,6 +268,23 @@ struct MainView: View {
             .help(appState.connectionState.isConnected ? "Disconnect from device" : "Connect to device")
         }
 
+        if appState.myNodeInfo != nil {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    showStationNameEditor = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(activeStationName)
+                            .lineLimit(1)
+                            .foregroundStyle(activeStationNameColor)
+                        Image(systemName: "pencil")
+                            .font(.caption2)
+                    }
+                }
+                .help("Edit the global or per-node station name")
+            }
+        }
+
         // Center: Status
         ToolbarItem(placement: .principal) {
             HStack(spacing: 6) {
@@ -161,6 +301,23 @@ struct MainView: View {
                         .font(.callout.monospaced())
                         .foregroundStyle(.secondary)
                 }
+            }
+        }
+
+        ToolbarItem(placement: .automatic) {
+            MeshStatusIndicatorsView()
+        }
+
+        if let updateAvailability {
+            ToolbarItem(placement: .automatic) {
+                Link(destination: updateAvailability.releaseURL) {
+                    Label(
+                        "Update \(updateAvailability.version.description)",
+                        systemImage: "arrow.down.circle.fill"
+                    )
+                    .foregroundStyle(.blue)
+                }
+                .help("Open the available MeshHessen release on GitHub")
             }
         }
 
@@ -189,19 +346,50 @@ struct MainView: View {
         }
 
         // Device Config
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                showDeviceConfig = true
-            } label: {
-                Label("Device Config", systemImage: "gearshape.2")
+        if !kioskState.isFeatureLocked(.nodeConfiguration) {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showDeviceConfig = true
+                } label: {
+                    Label("Device Config", systemImage: "gearshape.2")
+                }
+                .help("Device Configuration")
+                .disabled(!appState.protocolReady)
             }
-            .help("Device Configuration")
-            .disabled(!appState.protocolReady)
+        }
+
+        if !kioskState.isFeatureLocked(.dashboard) {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    openWindow(id: "dashboard")
+                } label: {
+                    Label("Telemetry Dashboard", systemImage: "rectangle.3.group.bubble.left.fill")
+                }
+                .help("Open the customizable telemetry dashboard")
+            }
         }
 
         // Export menu
-        ToolbarItem(placement: .primaryAction) {
-            Menu {
+        if !kioskState.isFeatureLocked(.tools) {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button("Virtual Node / MQTT Status…") {
+                        showTools = true
+                    }
+                    Button("T-Deck Map Assistant…") {
+                        showTDeckWizard = true
+                    }
+                    Button("Export Local Tile Cache as ZIP…") {
+                        showTileExport = true
+                    }
+                } label: {
+                    Label("Tools", systemImage: "wrench.and.screwdriver")
+                }
+                .help("Open map and device tools")
+            }
+
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
                 Button("Export Nodes (CSV)") {
                     let csv = MeshExport.nodesToCsv(Array(appState.nodes.values))
                     exportDocument = CsvDocument(csvData: csv)
@@ -226,10 +414,11 @@ struct MainView: View {
                     exportFileName = "meshhessen_positions.csv"
                     showExporter = true
                 }
-            } label: {
-                Label("Export", systemImage: "square.and.arrow.up")
+                } label: {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                }
+                .help("Export mesh data as CSV")
             }
-            .help("Export mesh data as CSV")
         }
     }
 
@@ -249,11 +438,93 @@ struct MainView: View {
         }
     }
 
+    private var activeStationName: String {
+        _ = stationNameRevision
+        guard let node = appState.myNodeInfo else { return "" }
+        let global = settings.stationName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !global.isEmpty { return global }
+        let perNode = settings.stationName(for: node.nodeId)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !perNode.isEmpty { return perNode }
+        let shortName = node.shortName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return shortName.isEmpty ? node.nodeIdHex : shortName
+    }
+
+    private var activeStationNameColor: Color {
+        guard let node = appState.myNodeInfo else { return .secondary }
+        if !settings.stationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .red
+        }
+        if !settings.stationName(for: node.nodeId).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .orange
+        }
+        return .secondary
+    }
+
+    private func resolveNodeKeyMismatch(_ mismatch: NodeKeyMismatch, accept: Bool) {
+        _ = NodeKeyService.shared.resolve(mismatch, acceptNewKey: accept)
+        pendingNodeKeyMismatches.removeAll { $0.id == mismatch.id }
+    }
+
     private var statusText: String {
         if appState.connectionState.isConnected && !appState.protocolReady {
             return appState.protocolStatusMessage ?? String(localized: "Connected (initializing…)")
         }
         return appState.connectionState.displayText
+    }
+
+    private func consume(_ navigationState: NavigationState) {
+        if navigationState.selectedTab == .nodes, kioskState.isFeatureLocked(.nodes) {
+            appState.selectedTab = .messages
+            return
+        }
+        if navigationState.selectedTab == .channels, kioskState.isFeatureLocked(.channels) {
+            appState.selectedTab = .messages
+            return
+        }
+        if navigationState.selectedTab == .debug, kioskState.isFeatureLocked(.debug) {
+            appState.selectedTab = .messages
+            return
+        }
+        if navigationState.selectedTab == .info, kioskState.isFeatureLocked(.info) {
+            appState.selectedTab = .messages
+            return
+        }
+        switch navigationState.messages {
+        case .channels(let channelId, _):
+            if let channelId { appState.selectedChannelIndex = channelId }
+        case .directMessages(let userNum, _):
+            if let userNum {
+                appState.ensureDMConversation(for: userNum)
+                appState.dmTargetNodeId = userNum
+                openWindow(id: "dm")
+            }
+        case nil:
+            break
+        }
+
+        if let nodeId = navigationState.nodeListSelectedNodeNum {
+            selectedNodeId = nodeId
+            routedNodeInfo = appState.node(forId: nodeId)
+        }
+
+        if case .selectedNode(let nodeId) = navigationState.map {
+            appState.mapFocusNodeId = nodeId
+        }
+
+        if navigationState.selectedTab == .settings, !kioskState.isFeatureLocked(.settings) {
+            openSettings()
+        }
+    }
+
+    private var isSelectedTabLocked: Bool {
+        switch appState.selectedTab {
+        case .nodes: return kioskState.isFeatureLocked(.nodes)
+        case .channels: return kioskState.isFeatureLocked(.channels)
+        case .debug: return kioskState.isFeatureLocked(.debug)
+        case .info: return kioskState.isFeatureLocked(.info)
+        case .messages, .map: return false
+        }
     }
 }
 

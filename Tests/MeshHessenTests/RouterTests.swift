@@ -28,6 +28,16 @@ struct RouterTests {
         #expect(router.navigationState.selectedTab == .messages)
     }
 
+    @Test("Standard host-style deep links are accepted")
+    func routeHostStyleURL() {
+        let router = makeRouter()
+        let handled = router.route(url: url("meshhessen://settings/lora"))
+
+        #expect(handled)
+        #expect(router.navigationState.selectedTab == .settings)
+        #expect(router.navigationState.settings == .lora)
+    }
+
     @Test("Route to nodes tab")
     func routeNodes() {
         let router = makeRouter()
@@ -113,6 +123,19 @@ struct RouterTests {
         #expect(router.navigationState.selectedTab == .map)
         if case .selectedNode(let num) = router.navigationState.map {
             #expect(num == 55443322)
+        } else {
+            Issue.record("Expected .selectedNode map state")
+        }
+    }
+
+    @Test("Hexadecimal Meshtastic node IDs are accepted")
+    func routeHexNodeNumber() {
+        let router = makeRouter()
+        let handled = router.route(url: url("meshhessen://map?nodenum=!aabbccdd"))
+
+        #expect(handled)
+        if case .selectedNode(let num) = router.navigationState.map {
+            #expect(num == 0xAABBCCDD)
         } else {
             Issue.record("Expected .selectedNode map state")
         }

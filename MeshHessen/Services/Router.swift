@@ -49,7 +49,15 @@ final class Router {
             return false
         }
 
-        let path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let pathComponent = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        // Accept both meshhessen:///messages and the more common
+        // meshhessen://messages spelling, where URLComponents exposes the route as host.
+        let path = [components.host, pathComponent]
+            .compactMap { value -> String? in
+                guard let value, !value.isEmpty else { return nil }
+                return value
+            }
+            .joined(separator: "/")
         let params = Dictionary(
             uniqueKeysWithValues: (components.queryItems ?? []).compactMap { item in
                 item.value.map { (item.name, $0) }
@@ -61,7 +69,7 @@ final class Router {
             navigationState.selectedTab = .messages
             if let channelIdStr = params["channelId"], let channelId = Int(channelIdStr) {
                 navigationState.messages = .channels(channelId: channelId)
-            } else if let userNumStr = params["userNum"], let userNum = UInt32(userNumStr) {
+            } else if let userNumStr = params["userNum"], let userNum = Self.parseNodeNumber(userNumStr) {
                 navigationState.messages = .directMessages(userNum: userNum)
             }
             syncTabToAppState()
@@ -69,7 +77,7 @@ final class Router {
 
         case "nodes":
             navigationState.selectedTab = .nodes
-            if let nodenumStr = params["nodenum"], let nodenum = UInt32(nodenumStr) {
+            if let nodenumStr = params["nodenum"], let nodenum = Self.parseNodeNumber(nodenumStr) {
                 navigationState.nodeListSelectedNodeNum = nodenum
             }
             syncTabToAppState()
@@ -77,7 +85,7 @@ final class Router {
 
         case "map":
             navigationState.selectedTab = .map
-            if let nodenumStr = params["nodenum"], let nodenum = UInt32(nodenumStr) {
+            if let nodenumStr = params["nodenum"], let nodenum = Self.parseNodeNumber(nodenumStr) {
                 navigationState.map = .selectedNode(nodenum)
             }
             syncTabToAppState()
@@ -111,6 +119,17 @@ final class Router {
             }
             return false
         }
+    }
+
+    nonisolated static func parseNodeNumber(_ value: String) -> UInt32? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("!") {
+            return UInt32(trimmed.dropFirst(), radix: 16)
+        }
+        if trimmed.lowercased().hasPrefix("0x") {
+            return UInt32(trimmed.dropFirst(2), radix: 16)
+        }
+        return UInt32(trimmed) ?? UInt32(trimmed, radix: 16)
     }
 
     // MARK: - Programmatic Navigation

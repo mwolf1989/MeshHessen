@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct DebugView: View {
@@ -18,6 +19,10 @@ struct DebugView: View {
                     let text = appState.debugLines.map(\.text).joined(separator: "\n")
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
+                }
+                .buttonStyle(.bordered)
+                Button("Show Log File") {
+                    NSWorkspace.shared.activateFileViewerSelecting([AppLogger.shared.logFileURL])
                 }
                 .buttonStyle(.bordered)
                 Button("Clear") {

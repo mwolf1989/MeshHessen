@@ -10,6 +10,7 @@ struct MeshHessenApp: App {
     private let notificationDelegate: NotificationPresentationDelegate
     @State private var coordinator: AppCoordinator
     @State private var settings = SettingsService.shared
+    @State private var kioskState = KioskState.shared
     @Environment(\.openWindow) private var openWindow
 
     init() {
@@ -45,6 +46,8 @@ struct MeshHessenApp: App {
             MainView()
                 .frame(minWidth: 800, minHeight: 500)
                 .font(settings.scaledBodyFont)
+                .environment(\.locale, settings.appLocale)
+                .preferredColorScheme(settings.preferredColorScheme)
                 .environment(\.appState, coordinator.appState)
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environment(\.persistenceController, persistenceController)
@@ -55,6 +58,18 @@ struct MeshHessenApp: App {
                 }
                 .onOpenURL { url in
                     coordinator.router.route(url: url)
+                }
+                .onChange(of: settings.virtualNodeEnabled) { _, _ in
+                    Task { await coordinator.applyAuxiliaryServiceSettings() }
+                }
+                .onChange(of: settings.virtualNodePort) { _, _ in
+                    Task { await coordinator.applyAuxiliaryServiceSettings() }
+                }
+                .onChange(of: settings.virtualNodeBlockAdmin) { _, _ in
+                    Task { await coordinator.applyAuxiliaryServiceSettings() }
+                }
+                .onChange(of: kioskState.isLocked) { _, _ in
+                    Task { await coordinator.applyAuxiliaryServiceSettings() }
                 }
                 .background(WindowConstrainer())
         }
@@ -85,6 +100,8 @@ struct MeshHessenApp: App {
         Window("Direct Messages", id: "dm") {
             DMWindowView()
                 .font(settings.scaledBodyFont)
+                .environment(\.locale, settings.appLocale)
+                .preferredColorScheme(settings.preferredColorScheme)
                 .environment(\.appState, coordinator.appState)
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environment(\.persistenceController, persistenceController)
@@ -92,6 +109,24 @@ struct MeshHessenApp: App {
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 750, height: 520)
+
+        // MARK: - Telemetry Dashboard
+        Window("Telemetry Dashboard", id: "dashboard") {
+            TelemetryDashboardView(
+                nodeNames: Dictionary(
+                    uniqueKeysWithValues: coordinator.appState.nodes.values.map { ($0.id, $0.name) }
+                )
+            )
+            .font(settings.scaledBodyFont)
+            .environment(\.locale, settings.appLocale)
+            .preferredColorScheme(settings.preferredColorScheme)
+            .environment(\.appState, coordinator.appState)
+            .environment(coordinator)
+            .environment(\.dynamicTypeSize, settings.dynamicTypeSize)
+        }
+        .windowStyle(.titleBar)
+        .defaultSize(width: 1180, height: 760)
+        .windowResizability(.contentMinSize)
 
         // MARK: - Telemetry Chart Windows
         WindowGroup("Telemetry Charts", for: TelemetryChartWindowRequest.self) { request in
@@ -102,6 +137,8 @@ struct MeshHessenApp: App {
                     days: request.days
                 )
                 .font(settings.scaledBodyFont)
+                .environment(\.locale, settings.appLocale)
+                .preferredColorScheme(settings.preferredColorScheme)
                 .environment(\.dynamicTypeSize, settings.dynamicTypeSize)
             }
         }
@@ -112,9 +149,12 @@ struct MeshHessenApp: App {
         // MARK: - Settings (⌘,)
         Settings {
             SettingsView()
+                .environment(\.locale, settings.appLocale)
+                .preferredColorScheme(settings.preferredColorScheme)
                 .environment(\.appState, coordinator.appState)
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environment(\.persistenceController, persistenceController)
+                .environment(coordinator)
         }
     }
 

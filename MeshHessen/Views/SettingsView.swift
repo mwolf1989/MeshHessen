@@ -1,62 +1,130 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
-/// macOS Settings window (⌘,) — five tabs
+/// macOS Settings window (⌘,) with the system-wide feature-parity settings.
 struct SettingsView: View {
     @State private var selectedTab = SettingsTab.general
     @State private var settings = SettingsService.shared
+    @State private var kioskState = KioskState.shared
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            GeneralSettingsPane()
+        if kioskState.isFeatureLocked(.settings) {
+            KioskUnlockSettingsPane(kioskState: kioskState)
+                .frame(width: 720, height: 640)
+        } else {
+            TabView(selection: $selectedTab) {
+            GeneralSettingsPane(settings: settings)
                 .tabItem { Label("General", systemImage: "gearshape") }
                 .tag(SettingsTab.general)
 
-            ConnectionSettingsPane()
+            ConnectionSettingsPane(settings: settings)
                 .tabItem { Label("Connection", systemImage: "network") }
                 .tag(SettingsTab.connection)
 
-            MapSettingsPane()
+            MapSettingsPane(settings: settings)
                 .tabItem { Label("Map", systemImage: "map") }
                 .tag(SettingsTab.map)
 
-            NotificationSettingsPane()
+            DataSettingsPane(settings: settings)
+                .tabItem { Label("Data", systemImage: "externaldrive") }
+                .tag(SettingsTab.data)
+
+            KioskSettingsPane(settings: settings, kioskState: kioskState)
+                .tabItem { Label("Kiosk", systemImage: "lock.shield") }
+                .tag(SettingsTab.kiosk)
+
+            NotificationSettingsPane(settings: settings)
                 .tabItem { Label("Notifications", systemImage: "bell") }
                 .tag(SettingsTab.notifications)
 
-            DebugSettingsPane()
+            DebugSettingsPane(settings: settings)
                 .tabItem { Label("Debug", systemImage: "ladybug") }
                 .tag(SettingsTab.debug)
+            }
+            .frame(width: 720, height: 640)
         }
-        .frame(width: 500, height: 360)
+    }
+}
+
+private struct KioskUnlockSettingsPane: View {
+    @Bindable var kioskState: KioskState
+    @State private var password = ""
+    @State private var isUnlocking = false
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Settings Locked", systemImage: "lock.shield.fill")
+        } description: {
+            Text("Enter the kiosk password to unlock protected settings.")
+        } actions: {
+            VStack(spacing: 10) {
+                SecureField("Kiosk password", text: $password)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 260)
+                    .onSubmit(unlock)
+                Button("Unlock", action: unlock)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(password.isEmpty || isUnlocking)
+                if let errorMessage = kioskState.errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+    }
+
+    private func unlock() {
+        guard !password.isEmpty else { return }
+        isUnlocking = true
+        Task {
+            _ = await kioskState.unlock(with: password)
+            password = ""
+            isUnlocking = false
+        }
     }
 }
 
 private enum SettingsTab {
-    case general, connection, map, notifications, debug
+    case general
+    case connection
+    case map
+    case data
+    case kiosk
+    case notifications
+    case debug
 }
 
 // MARK: - General
 
 private struct GeneralSettingsPane: View {
-    @State private var settings = SettingsService.shared
+    @Bindable var settings: SettingsService
+    @State private var updateStatus = UpdateStatus.idle
 
     var body: some View {
         Form {
+            Section("Application") {
+                Picker("Language", selection: $settings.appLanguage) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.localizedName).tag(language)
+                    }
+                }
+                Picker("Appearance", selection: $settings.appearance) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.localizedName).tag(appearance)
+                    }
+                }
+            }
+
             Section("Identity") {
-                TextField("Station Name", text: Binding(
-                    get: { settings.stationName },
-                    set: { settings.stationName = $0 }
-                ))
-                .textFieldStyle(.roundedBorder)
-                .help("Your station name shown to other nodes")
+                TextField("Station Name", text: $settings.stationName)
+                    .textFieldStyle(.roundedBorder)
+                    .help("Your station name shown to other nodes")
             }
 
             Section("Text Size") {
                 HStack {
-                    Button {
-                        settings.fontSizeStep -= 1
-                    } label: {
+                    Button(action: decreaseTextSize) {
                         Image(systemName: "textformat.size.smaller")
                     }
                     .buttonStyle(.bordered)
@@ -64,82 +132,110 @@ private struct GeneralSettingsPane: View {
                     .help("Smaller text (⌘-)")
 
                     Spacer()
-                    Text(fontSizeLabel(settings.fontSizeStep))
+                    Text(fontSizeLabel)
                         .monospacedDigit()
                     Spacer()
 
-                    Button {
-                        settings.fontSizeStep += 1
-                    } label: {
+                    Button(action: increaseTextSize) {
                         Image(systemName: "textformat.size.larger")
                     }
                     .buttonStyle(.bordered)
                     .disabled(settings.fontSizeStep >= 3)
                     .help("Larger text (⌘+)")
                 }
-                Button("Reset to default") { settings.fontSizeStep = 0 }
+                Button("Reset to default", action: resetTextSize)
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.accentColor)
                     .font(.caption)
                     .disabled(settings.fontSizeStep == 0)
-                Text("Shortcut: ⌘+ / ⌘- / ⌘ 0")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
-            Section("Messages") {
-                Toggle("Show encrypted messages", isOn: Binding(
-                    get: { settings.showEncryptedMessages },
-                    set: { settings.showEncryptedMessages = $0 }
-                ))
+            Section("Nodes") {
+                Toggle("Use tile view", isOn: $settings.fancyNodeListEnabled)
+                Toggle("Color tiles by signal quality", isOn: $settings.colorfulNodeListEnabled)
+                    .disabled(!settings.fancyNodeListEnabled)
             }
 
-            Section("Own Position") {
+            Section("Updates") {
                 HStack {
-                    Text("Latitude:")
-                    TextField("50.9", value: Binding(
-                        get: { settings.myLatitude },
-                        set: { settings.myLatitude = $0 }
-                    ), format: .number)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 100)
-
-                    Text("Longitude:")
-                    TextField("9.5", value: Binding(
-                        get: { settings.myLongitude },
-                        set: { settings.myLongitude = $0 }
-                    ), format: .number)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 100)
+                    Button("Check for updates", action: checkForUpdates)
+                        .disabled(updateStatus.isChecking)
+                    if updateStatus.isChecking {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Spacer()
+                    updateStatusView
                 }
-                Text("Used to calculate distance to other nodes and show your position on the map.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Location Logging") {
-                Toggle("Enable Location Logging", isOn: Binding(
-                    get: { settings.locationLoggingEnabled },
-                    set: { settings.locationLoggingEnabled = $0 }
-                ))
-                Text("Log node positions to CSV files for path tracking on the map.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .padding()
     }
 
-    private func fontSizeLabel(_ step: Int) -> String {
-        switch step {
+    @ViewBuilder
+    private var updateStatusView: some View {
+        switch updateStatus {
+        case .idle:
+            EmptyView()
+        case .checking:
+            Text("Checking…")
+                .foregroundStyle(.secondary)
+        case .current:
+            Text("No newer stable release found")
+                .foregroundStyle(.secondary)
+        case .available(let update):
+            Button("Version \(update.version.description) available") {
+                NSWorkspace.shared.open(update.releaseURL)
+            }
+            .buttonStyle(.link)
+        }
+    }
+
+    private var fontSizeLabel: String {
+        switch settings.fontSizeStep {
         case -3: return "XS"
         case -2: return "S"
         case -1: return "M"
-        case  0: return "Standard"
-        case  1: return "L"
-        case  2: return "XL"
+        case 0: return String(localized: "Default")
+        case 1: return "L"
+        case 2: return "XL"
         default: return "XXL"
+        }
+    }
+
+    private func decreaseTextSize() {
+        settings.fontSizeStep -= 1
+    }
+
+    private func increaseTextSize() {
+        settings.fontSizeStep += 1
+    }
+
+    private func resetTextSize() {
+        settings.fontSizeStep = 0
+    }
+
+    private func checkForUpdates() {
+        updateStatus = .checking
+        Task {
+            if let update = await UpdateChecker.shared.checkForUpdate() {
+                updateStatus = .available(update)
+            } else {
+                updateStatus = .current
+            }
+        }
+    }
+
+    private enum UpdateStatus {
+        case idle
+        case checking
+        case current
+        case available(UpdateAvailability)
+
+        var isChecking: Bool {
+            if case .checking = self { return true }
+            return false
         }
     }
 }
@@ -147,33 +243,75 @@ private struct GeneralSettingsPane: View {
 // MARK: - Connection
 
 private struct ConnectionSettingsPane: View {
-    @State private var settings = SettingsService.shared
+    @Bindable var settings: SettingsService
 
     var body: some View {
         Form {
             Section("Last Used Connection") {
-                HStack {
-                    Text("Serial Port:")
-                    TextField("/dev/ttyUSB0", text: Binding(
-                        get: { settings.lastComPort },
-                        set: { settings.lastComPort = $0 }
-                    ))
-                    .textFieldStyle(.roundedBorder)
+                Picker("Transport", selection: $settings.lastConnectionType) {
+                    ForEach(ConnectionType.allCases) { type in
+                        Text(type.localizedName).tag(type)
+                    }
                 }
-                HStack {
-                    Text("TCP Host:")
-                    TextField("192.168.1.1", text: Binding(
-                        get: { settings.lastTcpHost },
-                        set: { settings.lastTcpHost = $0 }
-                    ))
+
+                LabeledContent("Serial port") {
+                    TextField("/dev/cu.usbserial", text: $settings.lastComPort)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                LabeledContent("TCP host") {
+                    HStack {
+                        TextField("192.168.1.1", text: $settings.lastTcpHost)
+                            .textFieldStyle(.roundedBorder)
+                        TextField("Port", value: $settings.lastTcpPort, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 80)
+                    }
+                }
+
+                LabeledContent("Bluetooth device") {
+                    TextField("Device name", text: $settings.lastBluetoothDeviceName)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+
+            Section("Time Synchronization") {
+                Toggle("Synchronize time after connecting", isOn: $settings.autoTimeSyncOnConnect)
+                LabeledContent("Drift threshold in seconds") {
+                    TextField(
+                        "300",
+                        value: $settings.timeSyncDriftThresholdSeconds,
+                        format: .number
+                    )
                     .textFieldStyle(.roundedBorder)
-                    Text("Port:")
-                    TextField("4403", value: Binding(
-                        get: { settings.lastTcpPort },
-                        set: { settings.lastTcpPort = $0 }
-                    ), format: .number)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 60)
+                    .frame(width: 90)
+                }
+                Text("Use 0 to disable drift correction; other values are limited to at least 60 seconds.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Remote Administration") {
+                Stepper(
+                    "Request timeout: \(settings.remoteAdminTimeoutSeconds) seconds",
+                    value: $settings.remoteAdminTimeoutSeconds,
+                    in: 5...120,
+                    step: 5
+                )
+            }
+
+            Section("Virtual Node") {
+                Toggle("Enable Virtual Node server", isOn: $settings.virtualNodeEnabled)
+                LabeledContent("TCP port") {
+                    TextField("4404", value: $settings.virtualNodePort, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 90)
+                }
+                Toggle("Block admin commands from clients", isOn: $settings.virtualNodeBlockAdmin)
+                if settings.kioskModeEnabled {
+                    Text("Admin commands are always blocked while kiosk mode is enabled.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -185,22 +323,167 @@ private struct ConnectionSettingsPane: View {
 // MARK: - Map
 
 private struct MapSettingsPane: View {
-    @State private var settings = SettingsService.shared
+    @Bindable var settings: SettingsService
 
     var body: some View {
         Form {
-            Section("Map Style") {
-                Picker("Map Style", selection: Binding(
-                    get: { settings.mapSource },
-                    set: { settings.mapSource = $0 }
-                )) {
+            Section("Map Rendering") {
+                Picker("Renderer", selection: $settings.mapRenderMode) {
+                    ForEach(MapRenderMode.allCases) { mode in
+                        Text(mode.localizedName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(settings.mapMode == .publicOpenStreetMap)
+
+                Picker("Mode", selection: $settings.mapMode) {
+                    ForEach(MapMode.allCases) { mode in
+                        Text(mode.localizedName).tag(mode)
+                    }
+                }
+
+                Picker("Style", selection: $settings.meshMapStyle) {
+                    ForEach(MeshMapStyle.allCases) { style in
+                        Text(style.localizedName).tag(style)
+                    }
+                }
+                .disabled(settings.mapMode == .publicOpenStreetMap)
+
+                if settings.mapMode == .publicOpenStreetMap {
+                    Label(
+                        "Public OSM permits interactive raster use only; bulk downloads are disabled.",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                }
+            }
+
+            Section("Raster Tile URLs") {
+                URLSettingField(title: "OSM", text: $settings.osmTileURL)
+                URLSettingField(title: "Topographic", text: $settings.topographicTileURL)
+                URLSettingField(title: "Dark", text: $settings.darkTileURL)
+                URLSettingField(title: "Public OSM", text: $settings.publicOSMTileURL)
+            }
+
+            Section("Vector Style URLs") {
+                URLSettingField(title: "OSM", text: $settings.vectorStyleOSMURL)
+                URLSettingField(title: "Topographic", text: $settings.vectorStyleTopographicURL)
+                URLSettingField(title: "Dark", text: $settings.vectorStyleDarkURL)
+            }
+
+            Section("Layers") {
+                ForEach(MapOverlay.allCases) { overlay in
+                    Toggle(overlay.localizedName, isOn: overlayBinding(overlay))
+                }
+                Text("Disabled layers do not issue network requests.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Native Apple Map Fallback") {
+                Picker("Fallback style", selection: $settings.mapSource) {
                     Text("Standard").tag("standard")
                     Text("Satellite").tag("satellite")
                     Text("Hybrid").tag("hybrid")
-                    Text("Topografie").tag("topography")
+                    Text("Topographic").tag("topography")
                 }
-                .pickerStyle(.radioGroup)
-                Text("Uses Apple Maps with node annotations.")
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+
+    private func overlayBinding(_ overlay: MapOverlay) -> Binding<Bool> {
+        Binding(
+            get: { settings.mapOverlays.contains(overlay) },
+            set: { enabled in
+                var overlays = settings.mapOverlays
+                if enabled {
+                    overlays.insert(overlay)
+                } else {
+                    overlays.remove(overlay)
+                }
+                settings.mapOverlays = overlays
+            }
+        )
+    }
+}
+
+private struct URLSettingField: View {
+    let title: LocalizedStringKey
+    @Binding var text: String
+
+    var body: some View {
+        LabeledContent(title) {
+            TextField("https://…/{z}/{x}/{y}", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .textContentType(.URL)
+        }
+    }
+}
+
+// MARK: - Data
+
+private struct DataSettingsPane: View {
+    @Bindable var settings: SettingsService
+
+    var body: some View {
+        Form {
+            Section("Messages") {
+                Toggle("Store message history", isOn: $settings.messageHistoryEnabled)
+                Picker("Retention", selection: $settings.messageRetention) {
+                    ForEach(RetentionPeriod.allCases) { period in
+                        Text(period.localizedName).tag(period)
+                    }
+                }
+                .disabled(!settings.messageHistoryEnabled)
+                Toggle("Show encrypted messages", isOn: $settings.showEncryptedMessages)
+            }
+
+            Section("Telemetry") {
+                Picker("Retention", selection: $settings.telemetryRetention) {
+                    ForEach(RetentionPeriod.allCases) { period in
+                        Text(period.localizedName).tag(period)
+                    }
+                }
+                Stepper(
+                    "Signal analysis: \(settings.signalAnalysisWindowHours) hours",
+                    value: $settings.signalAnalysisWindowHours,
+                    in: 1...168
+                )
+                Stepper(
+                    "Antenna analysis: \(settings.antennaAnalysisWindowDays) days",
+                    value: $settings.antennaAnalysisWindowDays,
+                    in: 1...365
+                )
+            }
+
+            Section("Position History") {
+                Stepper(
+                    "History window: \(settings.positionHistoryHours) hours",
+                    value: $settings.positionHistoryHours,
+                    in: 0...8_760
+                )
+                Toggle("Enable location logging", isOn: $settings.locationLoggingEnabled)
+            }
+
+            Section("Node Keys") {
+                Picker("When a public key changes", selection: $settings.nodeKeyMismatchPolicy) {
+                    ForEach(NodeKeyMismatchPolicy.allCases) { action in
+                        Text(action.localizedName).tag(action)
+                    }
+                }
+            }
+
+            Section("Own Position") {
+                HStack {
+                    TextField("Latitude", value: $settings.myLatitude, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Longitude", value: $settings.myLongitude, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                }
+                Text("Used for distance calculations when the connected node has no position.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -210,19 +493,189 @@ private struct MapSettingsPane: View {
     }
 }
 
+// MARK: - Kiosk
+
+private struct KioskSettingsPane: View {
+    @Bindable var settings: SettingsService
+    @Bindable var kioskState: KioskState
+    @State private var password = ""
+    @State private var confirmation = ""
+    @State private var statusMessage: String?
+    @State private var isSavingPassword = false
+    @State private var confirmPasswordRemoval = false
+
+    var body: some View {
+        Form {
+            Section("Kiosk / Training Mode") {
+                Toggle("Enable kiosk mode", isOn: kioskEnabledBinding)
+                Text("Selected functions are hidden while locked. This prevents mistakes but is not an attack boundary.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Label(
+                        kioskState.isLocked ? "Locked" : "Unlocked",
+                        systemImage: kioskState.isLocked ? "lock.fill" : "lock.open.fill"
+                    )
+                    Spacer()
+                    if settings.kioskModeEnabled, kioskState.hasPassword {
+                        Button(kioskState.isLocked ? "Unlock" : "Lock", action: toggleLock)
+                    }
+                }
+
+                if kioskState.recoveryRequired {
+                    Label(
+                        "The Keychain credential is missing. Set a new password to recover kiosk mode.",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .foregroundStyle(.orange)
+                }
+            }
+
+            Section("Password") {
+                SecureField("New password", text: $password)
+                    .textFieldStyle(.roundedBorder)
+                SecureField("Repeat password", text: $confirmation)
+                    .textFieldStyle(.roundedBorder)
+
+                HStack {
+                    Button(kioskState.hasPassword ? "Change password" : "Set password", action: savePassword)
+                        .disabled(password.isEmpty || confirmation.isEmpty || isSavingPassword)
+                    if isSavingPassword {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Spacer()
+                    if kioskState.hasPassword {
+                        Button("Remove password", role: .destructive) {
+                            confirmPasswordRemoval = true
+                        }
+                    }
+                }
+
+                if let statusMessage {
+                    Text(statusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Hide While Locked") {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading) {
+                    ForEach(KioskFeatureMask.allCases) { feature in
+                        Toggle(feature.localizedName, isOn: featureBinding(feature))
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .confirmationDialog(
+            "Remove kiosk password?",
+            isPresented: $confirmPasswordRemoval,
+            titleVisibility: .visible
+        ) {
+            Button("Remove Password", role: .destructive, action: removePassword)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Kiosk mode will be left unlocked until a new password is set.")
+        }
+    }
+
+    private var kioskEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { settings.kioskModeEnabled },
+            set: { enabled in
+                if enabled {
+                    guard kioskState.hasPassword else {
+                        statusMessage = String(localized: "Set a password before enabling kiosk mode.")
+                        return
+                    }
+                    settings.kioskModeEnabled = true
+                    kioskState.lock()
+                } else {
+                    kioskState.disable()
+                }
+            }
+        )
+    }
+
+    private func featureBinding(_ feature: KioskFeatureMask) -> Binding<Bool> {
+        Binding(
+            get: { settings.kioskLockedFeatures.contains(feature) },
+            set: { enabled in
+                var mask = settings.kioskLockedFeatures
+                if enabled {
+                    mask.insert(feature)
+                } else {
+                    mask.remove(feature)
+                }
+                settings.kioskLockedFeatures = mask
+            }
+        )
+    }
+
+    private func savePassword() {
+        guard password == confirmation else {
+            statusMessage = String(localized: "The passwords do not match.")
+            return
+        }
+
+        isSavingPassword = true
+        Task {
+            defer { isSavingPassword = false }
+            do {
+                try await kioskState.setPassword(password)
+                password = ""
+                confirmation = ""
+                statusMessage = String(localized: "Kiosk password saved securely in Keychain.")
+            } catch {
+                statusMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func toggleLock() {
+        if kioskState.isLocked {
+            guard !password.isEmpty else {
+                statusMessage = String(localized: "Enter the password in the password field to unlock.")
+                return
+            }
+            Task {
+                if await kioskState.unlock(with: password) {
+                    password = ""
+                    confirmation = ""
+                    statusMessage = String(localized: "Kiosk mode unlocked.")
+                } else {
+                    statusMessage = kioskState.errorMessage
+                }
+            }
+        } else {
+            kioskState.lock()
+            statusMessage = String(localized: "Kiosk mode locked.")
+        }
+    }
+
+    private func removePassword() {
+        do {
+            try kioskState.removePassword()
+            statusMessage = String(localized: "Kiosk password removed.")
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+}
+
 // MARK: - Notifications
 
 private struct NotificationSettingsPane: View {
-    @State private var settings = SettingsService.shared
+    @Bindable var settings: SettingsService
 
     var body: some View {
         Form {
             Section("Alert Bell") {
-                Toggle("Play sound on alert bell (🔔)", isOn: Binding(
-                    get: { settings.alertBellSound },
-                    set: { settings.alertBellSound = $0 }
-                ))
-                Text("When a message containing 🔔 or the BEL character is received, the app flashes red and plays a sound.")
+                Toggle("Play sound on alert bell (🔔)", isOn: $settings.alertBellSound)
+                Text("Messages containing 🔔 or the BEL character trigger the visual alert and optional sound.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -235,27 +688,15 @@ private struct NotificationSettingsPane: View {
 // MARK: - Debug
 
 private struct DebugSettingsPane: View {
-    @State private var settings = SettingsService.shared
+    @Bindable var settings: SettingsService
 
     var body: some View {
         Form {
             Section("Debug Logging") {
-                Toggle("Debug Messages", isOn: Binding(
-                    get: { settings.debugMessages },
-                    set: { settings.debugMessages = $0 }
-                ))
-                Toggle("Debug Serial", isOn: Binding(
-                    get: { settings.debugSerial },
-                    set: { settings.debugSerial = $0 }
-                ))
-                Toggle("Debug Device", isOn: Binding(
-                    get: { settings.debugDevice },
-                    set: { settings.debugDevice = $0 }
-                ))
-                Toggle("Debug Bluetooth", isOn: Binding(
-                    get: { settings.debugBluetooth },
-                    set: { settings.debugBluetooth = $0 }
-                ))
+                Toggle("Debug Messages", isOn: $settings.debugMessages)
+                Toggle("Debug Serial", isOn: $settings.debugSerial)
+                Toggle("Debug Device", isOn: $settings.debugDevice)
+                Toggle("Debug Bluetooth", isOn: $settings.debugBluetooth)
             }
             .help("Enables verbose logging in the Debug tab")
         }
