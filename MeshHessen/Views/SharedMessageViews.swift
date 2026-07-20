@@ -76,6 +76,70 @@ struct ReactionPillsView: View {
     }
 }
 
+/// Compact context shown while composing a reply.
+struct ReplyComposerBanner: View {
+    let message: MessageItem
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrowshape.turn.up.left.fill")
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Antwort an \(message.from)")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                Text(message.message)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(action: onCancel) {
+                Image(systemName: "xmark.circle.fill")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Antwort abbrechen")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// A quoted message preview displayed inside a reply bubble.
+private struct ReplyContextView: View {
+    let target: MessageItem?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Rectangle()
+                .fill(Color.accentColor.opacity(0.7))
+                .frame(width: 3)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(target?.from ?? String(localized: "Ursprüngliche Nachricht"))
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                Text(target?.message ?? String(localized: "Nicht mehr verfügbar"))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// Unified message bubble used in both channel chat and DM conversations.
 struct MessageBubbleView: View {
     let message: MessageItem
@@ -83,6 +147,8 @@ struct MessageBubbleView: View {
     var protocolReady: Bool = true
     var showColorDot: Bool = false
     var showMqttIndicator: Bool = false
+    var replyTarget: MessageItem?
+    var onReply: (() -> Void)?
     var onReaction: ((String) -> Void)?
 
     @State private var pendingURL: URL?
@@ -116,30 +182,36 @@ struct MessageBubbleView: View {
                     .foregroundStyle(.tertiary)
             }
 
-            // Message body
-            HStack(spacing: 4) {
-                if message.hasAlertBell {
-                    Image(systemName: "bell.fill")
-                        .foregroundStyle(.red)
-                        .font(.caption)
+            // Reply context and message body share one bubble.
+            VStack(alignment: .leading, spacing: 5) {
+                if message.replyToPacketId != nil {
+                    ReplyContextView(target: replyTarget)
                 }
-                if message.isEncrypted {
-                    Image(systemName: "lock.fill")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                        .help("Verschlüsselt — Kanalschlüssel (PSK) nicht konfiguriert")
-                    Text(message.isEncrypted && !protocolReady
-                         ? "Kanal wird noch geladen…"
-                         : message.message)
-                        .italic()
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                } else if let attributed = Self.detectLinks(in: message.message) {
-                    Text(attributed)
-                        .textSelection(.enabled)
-                } else {
-                    Text(message.message)
-                        .textSelection(.enabled)
+
+                HStack(spacing: 4) {
+                    if message.hasAlertBell {
+                        Image(systemName: "bell.fill")
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                    if message.isEncrypted {
+                        Image(systemName: "lock.fill")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                            .help("Verschlüsselt — Kanalschlüssel (PSK) nicht konfiguriert")
+                        Text(message.isEncrypted && !protocolReady
+                             ? "Kanal wird noch geladen…"
+                             : message.message)
+                            .italic()
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    } else if let attributed = Self.detectLinks(in: message.message) {
+                        Text(attributed)
+                            .textSelection(.enabled)
+                    } else {
+                        Text(message.message)
+                            .textSelection(.enabled)
+                    }
                 }
             }
             .padding(.horizontal, 10)
@@ -151,13 +223,26 @@ struct MessageBubbleView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .contextMenu {
-                if let onReaction, message.packetId != nil {
-                    // Quick reactions
-                    ForEach(["👍", "❤️", "😂", "👎"], id: \.self) { emoji in
-                        Button(emoji) { onReaction(emoji) }
+                if message.routablePacketId != nil {
+                    if let onReply {
+                        Button {
+                            onReply()
+                        } label: {
+                            Label("Antworten", systemImage: "arrowshape.turn.up.left")
+                        }
                     }
-                    Divider()
-                    Button("More Reactions…") { showEmojiPicker = true }
+
+                    if let onReaction {
+                        if onReply != nil {
+                            Divider()
+                        }
+                        // Quick reactions
+                        ForEach(["👍", "❤️", "😂", "👎"], id: \.self) { emoji in
+                            Button(emoji) { onReaction(emoji) }
+                        }
+                        Divider()
+                        Button("More Reactions…") { showEmojiPicker = true }
+                    }
                 }
             }
             .popover(isPresented: $showEmojiPicker) {

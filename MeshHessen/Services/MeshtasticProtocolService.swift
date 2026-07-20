@@ -596,7 +596,8 @@ final class MeshtasticProtocolService {
         let node = appState?.node(forId: packet.from)
 
         let msg = MessageItem(
-            packetId: packet.id,
+            packetId: packet.id == 0 ? nil : packet.id,
+            replyToPacketId: data.replyID == 0 ? nil : data.replyID,
             time: ts,
             from: from,
             fromId: packet.from,
@@ -700,6 +701,18 @@ final class MeshtasticProtocolService {
         data.payload = Data(emoji.utf8)
         data.replyID = replyID
         data.emoji = 1
+        return data
+    }
+
+    /// Builds a regular text payload, optionally referencing another packet.
+    /// An emoji marker is deliberately not set so replies remain distinct from reactions.
+    nonisolated static func makeTextMessageData(text: String, replyToPacketId: UInt32? = nil) -> Meshtastic_Data {
+        var data = Meshtastic_Data()
+        data.portnum = .textMessageApp
+        data.payload = Data(text.utf8)
+        if let replyToPacketId, replyToPacketId != 0 {
+            data.replyID = replyToPacketId
+        }
         return data
     }
 
@@ -1668,12 +1681,18 @@ final class MeshtasticProtocolService {
 
     // MARK: - Send Methods
 
-    func sendTextMessage(_ text: String, toNodeId: UInt32 = 0xFFFFFFFF, channelIndex: Int = 0) async {
+    func sendTextMessage(
+        _ text: String,
+        toNodeId: UInt32 = 0xFFFFFFFF,
+        channelIndex: Int = 0,
+        replyToPacketId: UInt32? = nil
+    ) async {
         guard myNodeId != 0 else {
             AppLogger.shared.log("[Protocol] sendTextMessage skipped: protocol not ready (myNodeId=0)", debug: true)
             return
         }
         let packetId = UInt32.random(in: UInt32(UInt8.max)..<UInt32.max)
+        let replyTargetId = replyToPacketId.flatMap { $0 == 0 ? nil : $0 }
 
         var packet = Meshtastic_MeshPacket()
         packet.from = myNodeId
@@ -1682,10 +1701,7 @@ final class MeshtasticProtocolService {
         packet.channel = UInt32(channelIndex)
         packet.hopLimit = 7
         packet.wantAck = true
-        var data = Meshtastic_Data()
-        data.portnum = .textMessageApp
-        data.payload = text.data(using: .utf8) ?? Data()
-        packet.decoded = data
+        packet.decoded = Self.makeTextMessageData(text: text, replyToPacketId: replyTargetId)
 
         // Optimistic local message so the sender sees it immediately.
         let ts = formatTime()
@@ -1698,6 +1714,7 @@ final class MeshtasticProtocolService {
 
         let outgoing = MessageItem(
             packetId: packetId,
+            replyToPacketId: replyTargetId,
             time: ts,
             from: myName,
             fromId: myId,

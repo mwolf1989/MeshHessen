@@ -46,6 +46,7 @@ struct DMWindowView: View {
             if let nodeId = selectedNodeId,
                let conv = appState.dmConversations[nodeId] {
                 DMConversationView(conversation: conv, coordinator: coordinator)
+                    .id(conv.id)
             } else {                ContentUnavailableView(
                     "No Conversation Selected",
                     systemImage: "message",
@@ -84,6 +85,7 @@ private struct DMConversationView: View {
     @State private var messageText = ""
     @State private var isSending = false
     @State private var showDeleteConfirmation = false
+    @State private var replyingTo: MessageItem?
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -111,16 +113,11 @@ private struct DMConversationView: View {
                             MessageBubbleView(
                                 message: msg,
                                 isMine: msg.fromId == appState.myNodeInfo?.nodeId,
-                                onReaction: msg.packetId != nil ? { emoji in
-                                    Task {
-                                        await coordinator.sendEmojiReaction(
-                                            emoji,
-                                            toPacketId: msg.packetId!,
-                                            toNodeId: conversation.id,
-                                            channelIndex: 0
-                                        )
-                                    }
-                                } : nil
+                                replyTarget: replyTarget(for: msg),
+                                onReply: msg.routablePacketId == nil ? nil : {
+                                    beginReply(to: msg)
+                                },
+                                onReaction: reactionHandler(for: msg)
                             )
                             .id(msg.id)
                         }
@@ -136,19 +133,28 @@ private struct DMConversationView: View {
 
             Divider()
 
-            HStack(spacing: 8) {
-                TextField("Message to \(conversation.nodeName)…", text: $messageText, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...4)
-                    .frame(maxWidth: .infinity)
-                    .focused($inputFocused)
-
-                Button(action: sendMessage) {
-                    Image(systemName: "paperplane.fill")
+            VStack(spacing: 6) {
+                if let replyingTo {
+                    ReplyComposerBanner(message: replyingTo) {
+                        self.replyingTo = nil
+                        inputFocused = true
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending)
-                .keyboardShortcut(.return, modifiers: .command)
+
+                HStack(spacing: 8) {
+                    TextField("Message to \(conversation.nodeName)…", text: $messageText, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1...4)
+                        .frame(maxWidth: .infinity)
+                        .focused($inputFocused)
+
+                    Button(action: sendMessage) {
+                        Image(systemName: "paperplane.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending)
+                    .keyboardShortcut(.return, modifiers: .command)
+                }
             }
             .padding(10)
         }
@@ -159,6 +165,7 @@ private struct DMConversationView: View {
         }
         .alert("Nachrichten löschen?", isPresented: $showDeleteConfirmation) {
             Button("Löschen", role: .destructive) {
+                replyingTo = nil
                 coordinator.clearDirectMessages(for: conversation.id)
             }
             Button("Abbrechen", role: .cancel) {}
@@ -170,11 +177,42 @@ private struct DMConversationView: View {
     private func sendMessage() {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        let replyToPacketId = replyingTo?.packetId
         messageText = ""
+        replyingTo = nil
         isSending = true
         Task {
-            await coordinator.sendDirectMessage(text, toNodeId: conversation.id)
+            await coordinator.sendDirectMessage(
+                text,
+                toNodeId: conversation.id,
+                replyToPacketId: replyToPacketId
+            )
             isSending = false
+        }
+    }
+
+    private func beginReply(to message: MessageItem) {
+        guard message.routablePacketId != nil else { return }
+        replyingTo = message
+        inputFocused = true
+    }
+
+    private func replyTarget(for message: MessageItem) -> MessageItem? {
+        guard let targetPacketId = message.replyToPacketId else { return nil }
+        return conversation.messages.first { $0.packetId == targetPacketId }
+    }
+
+    private func reactionHandler(for message: MessageItem) -> ((String) -> Void)? {
+        guard let packetId = message.routablePacketId else { return nil }
+        return { emoji in
+            Task {
+                await coordinator.sendEmojiReaction(
+                    emoji,
+                    toPacketId: packetId,
+                    toNodeId: conversation.id,
+                    channelIndex: 0
+                )
+            }
         }
     }
 }

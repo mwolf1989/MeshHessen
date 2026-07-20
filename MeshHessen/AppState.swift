@@ -219,6 +219,9 @@ final class AppState {
         if !incoming.senderShortName.isEmpty { merged.senderShortName = incoming.senderShortName }
         if !incoming.senderColorHex.isEmpty { merged.senderColorHex = incoming.senderColorHex }
         if !incoming.senderNote.isEmpty { merged.senderNote = incoming.senderNote }
+        if let replyToPacketId = incoming.replyToPacketId {
+            merged.replyToPacketId = replyToPacketId
+        }
 
         merged.time = incoming.time
         merged.fromId = incoming.fromId

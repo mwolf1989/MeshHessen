@@ -81,6 +81,40 @@ struct EmojiReactionProtocolTests {
     }
 }
 
+@Suite("Text Reply Protocol")
+struct TextReplyProtocolTests {
+    @Test("Ordinary replies preserve their target without becoming reactions")
+    func outgoingReplyPayload() {
+        let data = MeshtasticProtocolService.makeTextMessageData(
+            text: "Das ist die Antwort",
+            replyToPacketId: 0x12345678
+        )
+
+        #expect(data.portnum == .textMessageApp)
+        #expect(String(data: data.payload, encoding: .utf8) == "Das ist die Antwort")
+        #expect(data.replyID == 0x12345678)
+        #expect(data.emoji == 0)
+    }
+
+    @Test("Plain text messages do not contain reply metadata")
+    func ordinaryTextPayload() {
+        let data = MeshtasticProtocolService.makeTextMessageData(text: "Ohne Antwortbezug")
+
+        #expect(data.replyID == 0)
+        #expect(data.emoji == 0)
+    }
+
+    @Test("Zero is not emitted as a reply target")
+    func zeroReplyTarget() {
+        let data = MeshtasticProtocolService.makeTextMessageData(
+            text: "Ohne Antwortbezug",
+            replyToPacketId: 0
+        )
+
+        #expect(data.replyID == 0)
+    }
+}
+
 @Suite("Device Configuration Safety")
 struct DeviceConfigurationSafetyTests {
     private func emptySnapshot() -> MeshtasticProtocolService.DeviceConfigSnapshot {

@@ -136,12 +136,21 @@ final class AppCoordinator {
 
     // MARK: - Send messages
 
-    func sendMessage(_ text: String, toChannelIndex: Int = 0) async {
-        await protocol_.sendTextMessage(text, channelIndex: toChannelIndex)
+    func sendMessage(_ text: String, toChannelIndex: Int = 0, replyToPacketId: UInt32? = nil) async {
+        await protocol_.sendTextMessage(
+            text,
+            channelIndex: toChannelIndex,
+            replyToPacketId: replyToPacketId
+        )
     }
 
-    func sendDirectMessage(_ text: String, toNodeId: UInt32) async {
-        await protocol_.sendTextMessage(text, toNodeId: toNodeId, channelIndex: 0)
+    func sendDirectMessage(_ text: String, toNodeId: UInt32, replyToPacketId: UInt32? = nil) async {
+        await protocol_.sendTextMessage(
+            text,
+            toNodeId: toNodeId,
+            channelIndex: 0,
+            replyToPacketId: replyToPacketId
+        )
     }
 
     func sendSOSAlert(customText: String? = nil) async {
