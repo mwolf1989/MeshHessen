@@ -302,6 +302,22 @@
         }
       }
     },
+    "%lld of %lld nodes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld von %2$lld Nodes"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$lld nodes"
+          }
+        }
+      }
+    },
     "%lld nodes" : {
 
     },
@@ -337,6 +353,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld selected"
+          }
+        }
+      }
+    },
+    "%lld telemetry records deleted." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Telemetriedatensätze gelöscht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld telemetry records deleted."
           }
         }
       }
@@ -1095,6 +1127,22 @@
         }
       }
     },
+    "All known nodes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle bekannten Nodes"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All known nodes"
+          }
+        }
+      }
+    },
     "All map styles" : {
       "localizations" : {
         "de" : {
@@ -1123,6 +1171,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "All of Germany"
+          }
+        }
+      }
+    },
+    "All seven secondary channel slots are already in use." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle sieben Secondary-Kanalslots sind bereits belegt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All seven secondary channel slots are already in use."
           }
         }
       }
@@ -2521,6 +2585,22 @@
         }
       }
     },
+    "Channel could not be added" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kanal konnte nicht hinzugefügt werden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Channel could not be added"
+          }
+        }
+      }
+    },
     "Channel Index" : {
 
     },
@@ -2589,6 +2669,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kanäle"
+          }
+        }
+      }
+    },
+    "Channels not loaded" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kanäle nicht geladen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Channels not loaded"
           }
         }
       }
@@ -3274,6 +3370,38 @@
     "Copy Public Key" : {
 
     },
+    "Correct the invalid channel PSK before reviewing changes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Korrigiere den ungültigen Kanal-PSK, bevor du die Änderungen prüfst."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Correct the invalid channel PSK before reviewing changes."
+          }
+        }
+      }
+    },
+    "Correct the invalid channel PSK before saving." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Korrigiere den ungültigen Kanal-PSK, bevor du speicherst."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Correct the invalid channel PSK before saving."
+          }
+        }
+      }
+    },
     "Core configuration" : {
 
     },
@@ -3780,6 +3908,38 @@
         }
       }
     },
+    "Delete all telemetry data" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Telemetriedaten löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete all telemetry data"
+          }
+        }
+      }
+    },
+    "Delete all telemetry data?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Telemetriedaten löschen?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete all telemetry data?"
+          }
+        }
+      }
+    },
     "Delete from Mesh" : {
       "localizations" : {
         "de" : {
@@ -3840,6 +4000,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deleted %lld traceroute(s)."
+          }
+        }
+      }
+    },
+    "Deleting telemetry data…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telemetriedaten werden gelöscht …"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleting telemetry data…"
           }
         }
       }
@@ -4649,6 +4825,22 @@
     "Duty cycle limit" : {
       "comment" : "Description of a routing error when the device is being rate-limited.",
       "isCommentAutoGenerated" : true
+    },
+    "Dynamic selection includes nodes discovered later." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die dynamische Auswahl schließt später entdeckte Nodes ein."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dynamic selection includes nodes discovered later."
+          }
+        }
+      }
     },
     "e.g. Meshtastic_1234 or T-Deck" : {
       "extractionState" : "stale",
@@ -11896,6 +12088,22 @@
     "Reload Tab" : {
 
     },
+    "Reload this section before editing or writing channel settings." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lade diesen Bereich neu, bevor du Kanaleinstellungen bearbeitest oder schreibst."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reload this section before editing or writing channel settings."
+          }
+        }
+      }
+    },
     "Remote administration" : {
 
     },
@@ -14605,6 +14813,22 @@
         }
       }
     },
+    "Telemetry data could not be deleted: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telemetriedaten konnten nicht gelöscht werden: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telemetry data could not be deleted: %@"
+          }
+        }
+      }
+    },
     "Telemetry…" : {
       "localizations" : {
         "de" : {
@@ -14968,6 +15192,38 @@
         }
       }
     },
+    "The PSK must be valid Base64." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der PSK muss gültiges Base64 sein."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The PSK must be valid Base64."
+          }
+        }
+      }
+    },
+    "The PSK must decode to 0, 1, 16, or 32 bytes (currently %lld)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der PSK muss dekodiert 0, 1, 16 oder 32 Byte lang sein (derzeit %lld)."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The PSK must decode to 0, 1, 16, or 32 bytes (currently %lld)."
+          }
+        }
+      }
+    },
     "The proxy follows the MQTT module configuration of the connected radio and is active only when proxy-to-client mode is enabled on that radio." : {
 
     },
@@ -15081,6 +15337,22 @@
     },
     "The stored kiosk credential is invalid." : {
 
+    },
+    "The telemetry database is unavailable." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Telemetriedatenbank ist nicht verfügbar."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The telemetry database is unavailable."
+          }
+        }
+      }
     },
     "The tile server returned HTTP status %lld." : {
 
@@ -15218,6 +15490,22 @@
         }
       }
     },
+    "This deletes telemetry, packet history, and internal traceroute-hop data. Nodes, messages, settings, dashboards, and saved traceroute history remain." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dadurch werden Telemetrie-, Paketverlaufs- und interne Traceroute-Hop-Daten gelöscht. Nodes, Nachrichten, Einstellungen, Dashboards und der gespeicherte Traceroute-Verlauf bleiben erhalten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This deletes telemetry, packet history, and internal traceroute-hop data. Nodes, messages, settings, dashboards, and saved traceroute history remain."
+          }
+        }
+      }
+    },
     "This firmware-specific block is available in the advanced protobuf JSON editor below." : {
       "localizations" : {
         "de" : {
@@ -15268,6 +15556,22 @@
     },
     "This selection contains %lld tiles. Choose a smaller area or zoom range." : {
 
+    },
+    "This section is not fully loaded. Reload it before editing or writing settings." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Bereich ist nicht vollständig geladen. Lade ihn neu, bevor du Einstellungen bearbeitest oder schreibst."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This section is not fully loaded. Reload it before editing or writing settings."
+          }
+        }
+      }
     },
     "Threshold" : {
       "localizations" : {
