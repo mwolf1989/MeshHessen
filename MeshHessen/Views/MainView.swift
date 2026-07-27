@@ -65,6 +65,14 @@ struct MainView: View {
                     mainToolbar
                 }
             }
+            .searchable(
+                text: Binding(
+                    get: { appState.nodeFilter },
+                    set: { appState.nodeFilter = $0 }
+                ),
+                placement: .sidebar,
+                prompt: "Filter nodes"
+            )
 
             // Alert Bell Overlay (ZStack over entire window)
             AlertBellOverlay()

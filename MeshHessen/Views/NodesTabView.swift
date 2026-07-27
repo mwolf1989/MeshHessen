@@ -39,10 +39,6 @@ struct NodesTabView: View {
                 tableView
             }
         }
-        .searchable(text: Binding(
-            get: { appState.nodeFilter },
-            set: { appState.nodeFilter = $0 }
-        ), prompt: "Filter nodes")
         .safeAreaInset(edge: .top, spacing: 0) {
             nodeFilterBar
         }
