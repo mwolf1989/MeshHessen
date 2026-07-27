@@ -4,6 +4,39 @@ import Testing
 
 @testable import MeshHessen
 
+@Suite("Message Channel Resolution")
+struct MessageChannelResolutionTests {
+    @Test(
+        "Decoded channel slots retain their configured index",
+        arguments: [UInt32(0), UInt32(5)]
+    )
+    func decodedSlots(channel: UInt32) {
+        #expect(
+            MeshtasticProtocolService.resolvedChannelIndex(
+                for: channel,
+                isEncrypted: false
+            ) == Int(channel)
+        )
+    }
+
+    @Test(
+        "Every undecryptable channel hash uses the unknown context",
+        arguments: [UInt32(0), UInt32(5), UInt32(67), UInt32(255)]
+    )
+    func encryptedHashes(channelHash: UInt32) {
+        #expect(
+            MeshtasticProtocolService.resolvedChannelIndex(
+                for: channelHash,
+                isEncrypted: true
+            ) == MessageItem.unknownChannelIndex
+        )
+        #expect(
+            MessageItem.unknownChannelName(hash: Int(channelHash))
+                .contains("(\(channelHash & 0xFF))")
+        )
+    }
+}
+
 @Suite("Direct RF Classification")
 struct DirectRFClassificationTests {
     @Test("Hop count is derived from hop start and remaining limit")
@@ -158,5 +191,55 @@ struct NodeListParityTests {
 
         #expect(state.channelMessages[0]?.first?.deliveryState == .pending)
         #expect(state.channelMessages[1]?.first?.deliveryState == .acknowledged)
+    }
+
+    @Test("Unknown encrypted broadcasts are stored only in the combined feed")
+    func unknownChannelUsesCombinedFeedOnly() {
+        let state = AppState()
+        let message = MessageItem(
+            packetId: 43,
+            time: "12:00",
+            from: "Peer",
+            fromId: 2,
+            toId: 0xFFFFFFFF,
+            message: "",
+            channelIndex: 5,
+            channelName: "Secondary",
+            isEncrypted: true
+        )
+
+        state.appendMessage(message, markUnread: false)
+
+        #expect(state.allMessages.count == 1)
+        #expect(state.allMessages.first?.channelIndex == MessageItem.unknownChannelIndex)
+        #expect(state.channelMessages[5] == nil)
+        #expect(state.channelMessages[MessageItem.unknownChannelIndex] == nil)
+    }
+
+    @Test("Unknown channel hashes remain distinct in the combined feed")
+    func unknownChannelHashesRemainDistinct() {
+        let state = AppState()
+        for hash in [5, 67] {
+            state.appendMessage(
+                MessageItem(
+                    packetId: 44,
+                    time: "12:00",
+                    from: "Peer",
+                    fromId: 2,
+                    toId: 0xFFFFFFFF,
+                    message: "",
+                    channelIndex: MessageItem.unknownChannelIndex,
+                    channelName: MessageItem.unknownChannelName(hash: hash),
+                    isEncrypted: true
+                ),
+                markUnread: false
+            )
+        }
+
+        #expect(state.allMessages.count == 2)
+        #expect(Set(state.allMessages.map(\.channelName)) == Set([
+            MessageItem.unknownChannelName(hash: 5),
+            MessageItem.unknownChannelName(hash: 67),
+        ]))
     }
 }

@@ -97,6 +97,7 @@ enum MessageDeliveryState: Equatable, Sendable {
 /// A single message in a channel or DM conversation
 struct MessageItem: Identifiable, Sendable {
     static let maximumPayloadBytes = 200
+    static let unknownChannelIndex = -1
 
     /// Stable local identity. Messages without a usable mesh packet ID use
     /// this UUID as their durable storage identity.
@@ -133,6 +134,13 @@ struct MessageItem: Identifiable, Sendable {
     /// true if this is a direct message (not broadcast)
     var isDirect: Bool { toId != 0xFFFFFFFF && toId != 0 }
 
+    /// Whether this message belongs to a locally configured channel slot.
+    /// Unknown encrypted broadcasts remain visible in the combined feed, but
+    /// cannot be used as a destination for replies, reactions or retries.
+    var hasKnownChannel: Bool { channelIndex >= 0 }
+
+    var isUnknownChannel: Bool { channelIndex == Self.unknownChannelIndex }
+
     /// Packet ID that can be referenced by another mesh packet.
     /// Legacy log imports use synthetic IDs for local persistence and have no
     /// recoverable sender node ID, so they must not be used for replies/reactions.
@@ -166,9 +174,37 @@ struct MessageItem: Identifiable, Sendable {
     /// messages without a valid packet ID fall back to their persisted UUID.
     func persistenceKey(in context: MessageStorageContext) -> String {
         if fromId != 0, let packetId, packetId != 0 {
-            return "packet:\(fromId):\(packetId):\(context.persistenceComponent)"
+            var contextComponent = context.persistenceComponent
+            if case .channel(Self.unknownChannelIndex) = context,
+               let hash = Self.persistedUnknownChannelHash(in: channelName) {
+                contextComponent += ":hash:\(hash & 0xFF)"
+            }
+            return "packet:\(fromId):\(packetId):\(contextComponent)"
         }
         return "local:\(id.uuidString.lowercased())"
+    }
+
+    /// Localized display name for a channel hash that cannot be mapped to one
+    /// of the configured channel slots.
+    static func unknownChannelName(hash: Int) -> String {
+        String(localized: "Other Channel (\(hash & 0xFF))")
+    }
+
+    /// Moves an encrypted channel-feed message into the explicit unknown
+    /// bucket. Callers decide whether the message is a broadcast before using
+    /// this helper so encrypted direct messages keep their DM context.
+    func normalizingUnknownChannel() -> MessageItem {
+        guard isEncrypted else { return self }
+
+        var normalized = self
+        let previousIndex = channelIndex
+        normalized.channelIndex = Self.unknownChannelIndex
+
+        if previousIndex >= 0 {
+            let hash = Self.persistedUnknownChannelHash(in: channelName) ?? previousIndex
+            normalized.channelName = Self.unknownChannelName(hash: hash)
+        }
+        return normalized
     }
 
     /// UTF-8 byte count used by Meshtastic's text-payload limit.
@@ -191,5 +227,18 @@ struct MessageItem: Identifiable, Sendable {
             byteCount += characterBytes
         }
         return result
+    }
+
+    private static func persistedUnknownChannelHash(in name: String) -> Int? {
+        let prefixes = ["Other Channel (", "Anderer Kanal ("]
+        guard let prefix = prefixes.first(where: { name.hasPrefix($0) }),
+              name.hasSuffix(")")
+        else {
+            return nil
+        }
+
+        let start = name.index(name.startIndex, offsetBy: prefix.count)
+        let end = name.index(before: name.endIndex)
+        return Int(name[start..<end])
     }
 }

@@ -371,7 +371,7 @@ final class MeshCoreDataStore {
 
     /// Fetches channel messages with paging support.
     func fetchChannelMessages(channelIndex: Int, limit: Int = 200, offset: Int = 0) -> [MessageItem] {
-        backfillMessageMetadataIfNeeded()
+        preparePersistedMessagesForRead()
         let context = persistenceController.container.viewContext
         let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
@@ -391,7 +391,7 @@ final class MeshCoreDataStore {
 
     /// Fetches DM messages for a conversation with paging support.
     func fetchDirectMessages(partnerNodeId: UInt32, limit: Int = 200, offset: Int = 0) -> [MessageItem] {
-        backfillMessageMetadataIfNeeded()
+        preparePersistedMessagesForRead()
         let context = persistenceController.container.viewContext
         let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
@@ -490,8 +490,16 @@ final class MeshCoreDataStore {
         }
     }
 
-    func upsertMessage(_ message: MessageItem, isDirect: Bool, partnerNodeId: UInt32?, partnerName: String? = nil) {
+    func upsertMessage(
+        _ incomingMessage: MessageItem,
+        isDirect: Bool,
+        partnerNodeId: UInt32?,
+        partnerName: String? = nil
+    ) {
         guard isMessageHistoryEnabled() else { return }
+        let message = isDirect
+            ? incomingMessage
+            : incomingMessage.normalizingUnknownChannel()
         let storageContext = messageStorageContext(
             isDirect: isDirect,
             partnerNodeId: partnerNodeId,
@@ -506,7 +514,10 @@ final class MeshCoreDataStore {
             request.predicate = NSPredicate(format: "persistenceKey == %@", persistenceKey)
 
             var object = try? context.fetch(request).first
-            if object == nil, let packetId = message.packetId, packetId != 0 {
+            if object == nil,
+               storageContext != .channel(MessageItem.unknownChannelIndex),
+               let packetId = message.packetId,
+               packetId != 0 {
                 object = self.findLegacyMessage(
                     in: context,
                     packetId: packetId,
@@ -686,7 +697,7 @@ final class MeshCoreDataStore {
 
     @MainActor
     func hydrate(appState: AppState) -> CoreDataHydrationStats {
-        backfillMessageMetadataIfNeeded()
+        preparePersistedMessagesForRead()
         let context = persistenceController.container.viewContext
         var stats = CoreDataHydrationStats()
 
@@ -859,7 +870,7 @@ final class MeshCoreDataStore {
         let receivedSnr = (object.value(forKey: "receivedSnr") as? NSNumber).map(\.floatValue)
         let receivedRssi = (object.value(forKey: "receivedRssi") as? NSNumber).map(\.intValue)
 
-        return MessageItem(
+        let message = MessageItem(
             id: messageId,
             createdAt: createdAt,
             packetId: packetId,
@@ -884,6 +895,8 @@ final class MeshCoreDataStore {
             receivedRssi: receivedRssi,
             reactionsByEmoji: Self.decodeReactions(object.value(forKey: "reactionsData") as? Data)
         )
+        let isDirect = object.value(forKey: "isDirect") as? Bool ?? false
+        return isDirect ? message : message.normalizingUnknownChannel()
     }
 
     private static func deliveryState(from value: String?, error: String?) -> MessageDeliveryState {
@@ -937,6 +950,11 @@ final class MeshCoreDataStore {
         return try? context.fetch(request).first
     }
 
+    private func preparePersistedMessagesForRead() {
+        backfillMessageMetadataIfNeeded()
+        normalizeEncryptedBroadcastChannelsIfNeeded()
+    }
+
     /// Backfills optional v3 attributes after an inferred lightweight
     /// migration. This is idempotent and intentionally does not rewrite
     /// message content or timestamps that already exist.
@@ -988,13 +1006,49 @@ final class MeshCoreDataStore {
         }
     }
 
+    /// Versions before 1.1.1 could interpret a small channel hash as a local
+    /// channel slot, while larger hashes fell back to Primary. Move every
+    /// encrypted broadcast into the explicit unknown bucket without requiring
+    /// a Core Data schema migration.
+    private func normalizeEncryptedBroadcastChannelsIfNeeded() {
+        let context = persistenceController.newBackgroundContext()
+        context.performAndWait {
+            let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "isDirect == NO"),
+                NSPredicate(format: "isEncrypted == YES"),
+                NSPredicate(
+                    format: "channelIndex != %d",
+                    Int32(MessageItem.unknownChannelIndex)
+                ),
+            ])
+            guard let objects = try? context.fetch(request), !objects.isEmpty else { return }
+
+            for object in objects {
+                guard let message = self.makeMessage(from: object) else { continue }
+                let normalized = message.normalizingUnknownChannel()
+                object.setValue(Int32(normalized.channelIndex), forKey: "channelIndex")
+                object.setValue(normalized.channelName, forKey: "channelName")
+                object.setValue(
+                    normalized.persistenceKey(in: .channel(MessageItem.unknownChannelIndex)),
+                    forKey: "persistenceKey"
+                )
+            }
+
+            self.save(context: context, label: "encrypted-channel-normalization")
+            AppLogger.shared.log(
+                "[Migration] Moved \(objects.count) encrypted broadcasts to the unknown channel"
+            )
+        }
+    }
+
     private func fetchMessagePage(
         predicate basePredicate: NSPredicate,
         limit: Int,
         before cursor: MessagePageCursor?
     ) -> MessagePage {
         guard limit > 0 else { return MessagePage(messages: [], nextCursor: nil) }
-        backfillMessageMetadataIfNeeded()
+        preparePersistedMessagesForRead()
 
         let context = persistenceController.newBackgroundContext()
         var page = MessagePage(messages: [], nextCursor: nil)

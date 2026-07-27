@@ -19,7 +19,9 @@ struct ChannelChatView: View {
     @FocusState private var inputFocused: Bool
 
     private var messages: [MessageItem] {
-        appState.channelMessages[channelIndex] ?? []
+        (appState.channelMessages[channelIndex] ?? []).filter {
+            $0.hasKnownChannel && $0.channelIndex == channelIndex
+        }
     }
 
     var body: some View {
@@ -253,18 +255,26 @@ struct ChannelChatView: View {
     }
 
     private func beginReply(to message: MessageItem) {
-        guard message.routablePacketId != nil else { return }
+        guard message.hasKnownChannel, message.routablePacketId != nil else { return }
         replyingTo = message
         inputFocused = true
     }
 
     private func replyTarget(for message: MessageItem) -> MessageItem? {
-        guard let targetPacketId = message.replyToPacketId else { return nil }
+        guard message.hasKnownChannel,
+              let targetPacketId = message.replyToPacketId
+        else {
+            return nil
+        }
         return messages.first { $0.packetId == targetPacketId }
     }
 
     private func reactionHandler(for message: MessageItem) -> ((String) -> Void)? {
-        guard let packetId = message.routablePacketId else { return nil }
+        guard message.hasKnownChannel,
+              let packetId = message.routablePacketId
+        else {
+            return nil
+        }
         return { emoji in
             Task {
                 await coordinator.sendEmojiReaction(
@@ -278,7 +288,8 @@ struct ChannelChatView: View {
     }
 
     private func retryHandler(for message: MessageItem) -> (() -> Void)? {
-        guard case .failed = message.deliveryState,
+        guard message.hasKnownChannel,
+              case .failed = message.deliveryState,
               message.fromId == appState.myNodeInfo?.nodeId else { return nil }
         return {
             Task {

@@ -691,7 +691,7 @@ final class MeshtasticProtocolService {
             fromId: packet.from,
             toId: packet.to,
             message: text,
-            channelIndex: max(0, resolvedChannelIndex(for: packet.channel)),
+            channelIndex: resolvedChannelIndex(for: packet.channel),
             channelName: channelName(for: Int(packet.channel)),
             isViaMqtt: packet.viaMqtt,
             senderShortName: node?.shortName ?? "",
@@ -735,7 +735,10 @@ final class MeshtasticProtocolService {
     }
 
     private func handleEncryptedPacket(_ packet: Meshtastic_MeshPacket) {
-        let channelIndex = max(0, resolvedChannelIndex(for: packet.channel))
+        let channelIndex = Self.resolvedChannelIndex(
+            for: packet.channel,
+            isEncrypted: true
+        )
         let node = appState?.node(forId: packet.from)
         let message = MessageItem(
             packetId: packet.id == 0 ? nil : packet.id,
@@ -745,7 +748,7 @@ final class MeshtasticProtocolService {
             toId: packet.to,
             message: "",
             channelIndex: channelIndex,
-            channelName: channelName(for: Int(packet.channel)),
+            channelName: MessageItem.unknownChannelName(hash: Int(packet.channel)),
             isEncrypted: true,
             isViaMqtt: packet.viaMqtt,
             senderShortName: node?.shortName ?? "",
@@ -779,7 +782,7 @@ final class MeshtasticProtocolService {
         let isBroadcast = packet.to == 0xFFFFFFFF || packet.to == 0
         let context: MessageStorageContext
         if isBroadcast {
-            context = .channel(max(0, resolvedChannelIndex(for: packet.channel)))
+            context = .channel(resolvedChannelIndex(for: packet.channel))
         } else {
             let partnerId = packet.from == myNodeId ? packet.to : packet.from
             context = .directMessage(partnerNodeId: partnerId)
@@ -1390,7 +1393,7 @@ final class MeshtasticProtocolService {
             packetId: packet.id,
             time: ts, from: from, fromId: packet.from, toId: packet.to,
             message: String(localized: "📍 Waypoint: \(waypoint.displayName) (\(String(format: "%.5f", waypoint.latitude)), \(String(format: "%.5f", waypoint.longitude)))"),
-            channelIndex: chIndex >= 0 ? chIndex : 0,
+            channelIndex: chIndex,
             channelName: chName,
             isViaMqtt: packet.viaMqtt,
             senderShortName: node?.shortName ?? "",
@@ -3423,11 +3426,20 @@ final class MeshtasticProtocolService {
         }
     }
 
-    /// Returns a valid channel index (0–7) or -1 for hash-based channel values.
-    /// When the channel value > 7, it's a hash and doesn't map to a local channel slot.
+    /// Returns a valid decoded channel index (0–7), or the explicit unknown
+    /// context for encrypted packets and hash-based channel values.
+    nonisolated static func resolvedChannelIndex(
+        for packetChannel: UInt32,
+        isEncrypted: Bool
+    ) -> Int {
+        guard !isEncrypted, packetChannel <= 7 else {
+            return MessageItem.unknownChannelIndex
+        }
+        return Int(packetChannel)
+    }
+
     private func resolvedChannelIndex(for packetChannel: UInt32) -> Int {
-        let idx = Int(packetChannel)
-        return idx <= 7 ? idx : -1
+        Self.resolvedChannelIndex(for: packetChannel, isEncrypted: false)
     }
 
     private func deliver(_ msg: MessageItem) {

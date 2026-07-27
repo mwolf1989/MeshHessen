@@ -107,7 +107,8 @@ final class AppState {
 
     // MARK: - Message helpers
 
-    func appendMessage(_ msg: MessageItem, markUnread: Bool = true) {
+    func appendMessage(_ incomingMessage: MessageItem, markUnread: Bool = true) {
+        let msg = incomingMessage.normalizingUnknownChannel()
         let storageContext = MessageStorageContext.channel(msg.channelIndex)
         let persistenceKey = msg.persistenceKey(in: storageContext)
         if let existingIdx = allMessages.firstIndex(where: {
@@ -126,7 +127,9 @@ final class AppState {
         }
 
         allMessages.append(msg)
-        channelMessages[msg.channelIndex, default: []].append(msg)
+        if msg.hasKnownChannel {
+            channelMessages[msg.channelIndex, default: []].append(msg)
+        }
 
         // Increment unread counter for incoming messages that arrive in an inactive channel
         let isOwn = msg.fromId != 0 && msg.fromId == myNodeInfo?.nodeId
@@ -139,11 +142,18 @@ final class AppState {
     /// Prepends an older persisted channel page without duplicating live or
     /// previously hydrated messages.
     func prependChannelMessages(_ messages: [MessageItem], channelIndex: Int) {
+        let knownMessages = messages
+            .map { $0.normalizingUnknownChannel() }
+            .filter { $0.hasKnownChannel && $0.channelIndex == channelIndex }
+        guard !knownMessages.isEmpty else { return }
+
         let context = MessageStorageContext.channel(channelIndex)
         let existingKeys = Set(
             (channelMessages[channelIndex] ?? []).map { $0.persistenceKey(in: context) }
         )
-        let uniqueOlder = messages.filter { !existingKeys.contains($0.persistenceKey(in: context)) }
+        let uniqueOlder = knownMessages.filter {
+            !existingKeys.contains($0.persistenceKey(in: context))
+        }
         guard !uniqueOlder.isEmpty else { return }
 
         channelMessages[channelIndex, default: []].insert(contentsOf: uniqueOlder, at: 0)

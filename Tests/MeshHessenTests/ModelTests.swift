@@ -211,6 +211,46 @@ struct ModelTests {
         #expect(dm.isDirect)
     }
 
+    @Test("Encrypted broadcasts use an explicit unknown channel context")
+    func encryptedBroadcastUnknownChannel() {
+        var message = MessageItem(
+            time: "12:00",
+            from: "A",
+            fromId: 1,
+            toId: 0xFFFFFFFF,
+            message: "",
+            channelIndex: 5,
+            channelName: "Secondary",
+            isEncrypted: true
+        )
+
+        message = message.normalizingUnknownChannel()
+
+        #expect(message.channelIndex == MessageItem.unknownChannelIndex)
+        #expect(message.channelName == MessageItem.unknownChannelName(hash: 5))
+        #expect(message.isUnknownChannel)
+        #expect(!message.hasKnownChannel)
+    }
+
+    @Test("Unknown channel normalization preserves a previously captured hash")
+    func encryptedBroadcastPreservesChannelHash() {
+        let message = MessageItem(
+            time: "12:00",
+            from: "A",
+            fromId: 1,
+            toId: 0xFFFFFFFF,
+            message: "",
+            channelIndex: 0,
+            channelName: MessageItem.unknownChannelName(hash: 67),
+            isEncrypted: true
+        )
+
+        let normalized = message.normalizingUnknownChannel()
+
+        #expect(normalized.channelIndex == MessageItem.unknownChannelIndex)
+        #expect(normalized.channelName == MessageItem.unknownChannelName(hash: 67))
+    }
+
     @Test("Only real mesh packet IDs can be used as reply targets")
     func messageRoutablePacketId() {
         let networkMessage = MessageItem(

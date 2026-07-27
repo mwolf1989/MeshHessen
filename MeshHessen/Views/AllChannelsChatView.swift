@@ -25,9 +25,7 @@ struct AllChannelsChatView: View {
                         ForEach(messages) { message in
                             VStack(alignment: .leading, spacing: 3) {
                                 Label(
-                                    message.channelName.isEmpty
-                                        ? String(localized: "Channel \(message.channelIndex)")
-                                        : message.channelName,
+                                    channelDisplayName(for: message),
                                     systemImage: "number"
                                 )
                                 .font(.caption2.bold())
@@ -40,7 +38,8 @@ struct AllChannelsChatView: View {
                                     showColorDot: true,
                                     showMqttIndicator: true,
                                     replyTarget: replyTarget(for: message),
-                                    onReply: message.routablePacketId == nil ? nil : {
+                                    onReply: !message.hasKnownChannel
+                                        || message.routablePacketId == nil ? nil : {
                                         sendChannelIndex = message.channelIndex
                                         replyingTo = message
                                         inputFocused = true
@@ -130,6 +129,15 @@ struct AllChannelsChatView: View {
         messageText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private func channelDisplayName(for message: MessageItem) -> String {
+        if message.isUnknownChannel {
+            return message.channelName
+        }
+        return message.channelName.isEmpty
+            ? String(localized: "Channel \(message.channelIndex)")
+            : message.channelName
+    }
+
     private func send() {
         guard !trimmedMessage.isEmpty else { return }
         let text = trimmedMessage
@@ -162,14 +170,22 @@ struct AllChannelsChatView: View {
     }
 
     private func replyTarget(for message: MessageItem) -> MessageItem? {
-        guard let packetID = message.replyToPacketId else { return nil }
+        guard message.hasKnownChannel,
+              let packetID = message.replyToPacketId
+        else {
+            return nil
+        }
         return messages.first {
             $0.channelIndex == message.channelIndex && $0.packetId == packetID
         }
     }
 
     private func reactionHandler(for message: MessageItem) -> ((String) -> Void)? {
-        guard let packetID = message.routablePacketId else { return nil }
+        guard message.hasKnownChannel,
+              let packetID = message.routablePacketId
+        else {
+            return nil
+        }
         return { emoji in
             Task {
                 await coordinator.sendEmojiReaction(
@@ -183,7 +199,8 @@ struct AllChannelsChatView: View {
     }
 
     private func retryHandler(for message: MessageItem) -> (() -> Void)? {
-        guard case .failed = message.deliveryState,
+        guard message.hasKnownChannel,
+              case .failed = message.deliveryState,
               message.fromId == appState.myNodeInfo?.nodeId
         else { return nil }
         return {

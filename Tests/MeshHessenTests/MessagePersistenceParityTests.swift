@@ -125,6 +125,39 @@ struct MessagePersistenceParityTests {
         #expect(store.fetchChannelMessages(channelIndex: 1).count == 1)
     }
 
+    @Test("Unknown channel hashes remain distinct during Core Data upsert")
+    func unknownHashCollisionDuringUpsert() {
+        let (store, _) = makeStore()
+        var hashFive = message(
+            packetId: 99,
+            senderId: 1,
+            channelIndex: MessageItem.unknownChannelIndex,
+            text: "Hash 5"
+        )
+        hashFive.channelName = MessageItem.unknownChannelName(hash: 5)
+        hashFive.isEncrypted = true
+        var hashSixtySeven = hashFive
+        hashSixtySeven.id = UUID()
+        hashSixtySeven.channelName = MessageItem.unknownChannelName(hash: 67)
+        hashSixtySeven.message = "Hash 67"
+
+        store.upsertMessage(hashFive, isDirect: false, partnerNodeId: nil)
+        store.upsertMessage(hashSixtySeven, isDirect: false, partnerNodeId: nil)
+
+        let persisted = store.fetchChannelMessages(
+            channelIndex: MessageItem.unknownChannelIndex
+        )
+        #expect(persisted.count == 2)
+        #expect(Set(persisted.map(\.message)) == Set(["Hash 5", "Hash 67"]))
+        #expect(
+            Set(persisted.map(\.channelName))
+                == Set([
+                    MessageItem.unknownChannelName(hash: 5),
+                    MessageItem.unknownChannelName(hash: 67),
+                ])
+        )
+    }
+
     @Test("Packetless message updates and hydrates with the same UUID")
     @MainActor
     func packetlessMessageRoundTrip() throws {
@@ -246,5 +279,112 @@ struct MessagePersistenceParityTests {
         #expect(deleted == 2)
         #expect(store.fetchChannelMessages(channelIndex: 0).count == 1)
         #expect(store.enforceMessageRetention(.unlimited, relativeTo: now) == 0)
+    }
+
+    @Test("Legacy encrypted broadcasts are normalized idempotently")
+    @MainActor
+    func legacyEncryptedBroadcastNormalization() throws {
+        let (store, controller) = makeStore()
+        let viewContext = controller.container.viewContext
+
+        func insertLegacy(channelIndex: Int32, channelName: String) {
+            let object = NSEntityDescription.insertNewObject(
+                forEntityName: "MHMessageEntity",
+                into: viewContext
+            )
+            object.setValue(UUID(), forKey: "messageUUID")
+            object.setValue("packet:7:81:channel:\(channelIndex)", forKey: "persistenceKey")
+            object.setValue(Int64(81), forKey: "packetId")
+            object.setValue(Date(), forKey: "createdAt")
+            object.setValue("12:00:00", forKey: "timeText")
+            object.setValue("Node 7", forKey: "fromName")
+            object.setValue(Int64(7), forKey: "fromId")
+            object.setValue(Int64(UInt32.max), forKey: "toId")
+            object.setValue("", forKey: "messageText")
+            object.setValue(channelIndex, forKey: "channelIndex")
+            object.setValue(true, forKey: "isEncrypted")
+            object.setValue(channelName, forKey: "channelName")
+            object.setValue(false, forKey: "isDirect")
+        }
+
+        insertLegacy(channelIndex: 5, channelName: "Secondary")
+        insertLegacy(
+            channelIndex: 0,
+            channelName: MessageItem.unknownChannelName(hash: 67)
+        )
+        try viewContext.save()
+
+        let firstState = AppState()
+        _ = store.hydrate(appState: firstState)
+
+        #expect(firstState.allMessages.count == 2)
+        #expect(firstState.allMessages.allSatisfy {
+            $0.channelIndex == MessageItem.unknownChannelIndex
+        })
+        #expect(Set(firstState.allMessages.map(\.channelName)) == Set([
+            MessageItem.unknownChannelName(hash: 5),
+            MessageItem.unknownChannelName(hash: 67),
+        ]))
+        #expect(firstState.channelMessages[5] == nil)
+        #expect(firstState.channelMessages[MessageItem.unknownChannelIndex] == nil)
+        #expect(store.fetchChannelMessages(channelIndex: 5).isEmpty)
+        #expect(
+            store.fetchChannelMessages(channelIndex: MessageItem.unknownChannelIndex).count == 2
+        )
+
+        let secondState = AppState()
+        _ = store.hydrate(appState: secondState)
+        #expect(secondState.allMessages.count == 2)
+        #expect(secondState.allMessages.allSatisfy {
+            $0.channelIndex == MessageItem.unknownChannelIndex
+        })
+
+        let verificationContext = controller.newBackgroundContext()
+        var storedIndices: Set<Int> = []
+        var storedNames: Set<String> = []
+        var storedKeys: Set<String> = []
+        verificationContext.performAndWait {
+            let verificationRequest = NSFetchRequest<NSManagedObject>(
+                entityName: "MHMessageEntity"
+            )
+            let storedObjects = (try? verificationContext.fetch(verificationRequest)) ?? []
+            storedIndices = Set(storedObjects.compactMap {
+                ($0.value(forKey: "channelIndex") as? NSNumber)?.intValue
+            })
+            storedNames = Set(storedObjects.compactMap {
+                $0.value(forKey: "channelName") as? String
+            })
+            storedKeys = Set(storedObjects.compactMap {
+                $0.value(forKey: "persistenceKey") as? String
+            })
+        }
+        #expect(storedIndices == [MessageItem.unknownChannelIndex])
+        #expect(storedNames == Set([
+            MessageItem.unknownChannelName(hash: 5),
+            MessageItem.unknownChannelName(hash: 67),
+        ]))
+        #expect(storedKeys == Set([
+            "packet:7:81:channel:\(MessageItem.unknownChannelIndex):hash:5",
+            "packet:7:81:channel:\(MessageItem.unknownChannelIndex):hash:67",
+        ]))
+    }
+
+    @Test("Encrypted direct messages retain their conversation channel context")
+    func encryptedDirectMessageRetainsChannel() throws {
+        let (store, _) = makeStore()
+        var directMessage = message(packetId: 82, senderId: 8, channelIndex: 5)
+        directMessage.toId = 1
+        directMessage.isEncrypted = true
+
+        store.upsertMessage(
+            directMessage,
+            isDirect: true,
+            partnerNodeId: 8,
+            partnerName: "Peer"
+        )
+
+        let persisted = try #require(store.fetchDirectMessages(partnerNodeId: 8).first)
+        #expect(persisted.channelIndex == 5)
+        #expect(persisted.channelName == "Channel 5")
     }
 }
