@@ -5,6 +5,7 @@ struct MeshStatusIndicatorsView: View {
     @Environment(\.appState) private var appState
     @Environment(AppCoordinator.self) private var coordinator
     @State private var meshHealth: TelemetryMeshHealthSummary?
+    @State private var refreshGeneration = 0
 
     var body: some View {
         HStack(spacing: 5) {
@@ -44,6 +45,15 @@ struct MeshStatusIndicatorsView: View {
                 await refreshMeshHealth()
                 try? await Task.sleep(for: .seconds(30))
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: .telemetryDatabaseDidClear,
+            object: TelemetryDatabaseService.shared
+        )) { _ in
+            refreshGeneration &+= 1
+            let generation = refreshGeneration
+            meshHealth = nil
+            Task { await refreshMeshHealth(generation: generation) }
         }
     }
 
@@ -152,11 +162,16 @@ struct MeshStatusIndicatorsView: View {
     }
 
     private func refreshMeshHealth() async {
+        refreshGeneration &+= 1
+        await refreshMeshHealth(generation: refreshGeneration)
+    }
+
+    private func refreshMeshHealth(generation: Int) async {
         let nodeIDs = Array(appState.nodes.keys)
         let summary = await Task.detached {
             TelemetryDatabaseService.shared.getMeshHealthSummary(nodeIds: nodeIDs, days: 1)
         }.value
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, refreshGeneration == generation else { return }
         meshHealth = summary
     }
 }

@@ -28,7 +28,7 @@ struct TelemetryDashboardDataLoader: Sendable {
     ) async -> TelemetryDashboardSnapshot {
         let database = database
         return await Task.detached(priority: .utility) {
-            let nodeIds = widget.nodeIds.isEmpty ? fallbackNodeIds : widget.nodeIds
+            let nodeIds = widget.resolvedNodeIDs(knownNodeIDs: fallbackNodeIds)
             var snapshot = TelemetryDashboardSnapshot()
             switch widget.type {
             case .clock:
@@ -114,7 +114,9 @@ struct TelemetryDashboardDataLoader: Sendable {
         var rows = ["node_id,node_name,timestamp,metric,value,unit"]
         let formatter = ISO8601DateFormatter()
         for point in snapshot.series.sorted(by: { $0.timestamp < $1.timestamp }) {
-            let nodeName = Self.escapeCSV(nodeNames[point.nodeId] ?? "!\(String(point.nodeId, radix: 16))")
+            let nodeName = Self.escapeCSV(
+                nodeNames[point.nodeId] ?? TelemetryDashboardNode.fallbackName(for: point.nodeId)
+            )
             rows.append([
                 String(point.nodeId),
                 nodeName,

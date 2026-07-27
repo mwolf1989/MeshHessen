@@ -17,6 +17,7 @@ struct TelemetryChartView: View {
     @State private var settings = SettingsService.shared
     @State private var dataPoints: [TelemetryMetric: [TimeSeriesPoint]] = [:]
     @State private var isLoading = false
+    @State private var loadGeneration = 0
     @Environment(\.dismissWindow) private var dismissWindow
 
     private var selectedMetrics: Set<TelemetryMetric> {
@@ -69,6 +70,12 @@ struct TelemetryChartView: View {
         .frame(minWidth: 520, minHeight: 360)
         .onAppear { loadData() }
         .onChange(of: selectedMetrics) { loadData() }
+        .onReceive(NotificationCenter.default.publisher(
+            for: .telemetryDatabaseDidClear,
+            object: TelemetryDatabaseService.shared
+        )) { _ in
+            loadData()
+        }
     }
 
     private func setMetric(_ metric: TelemetryMetric, isSelected: Bool) {
@@ -142,6 +149,8 @@ struct TelemetryChartView: View {
     }
 
     private func loadData() {
+        loadGeneration &+= 1
+        let generation = loadGeneration
         let metricsToLoad = selectedMetrics
         guard !metricsToLoad.isEmpty else {
             dataPoints = [:]
@@ -156,7 +165,9 @@ struct TelemetryChartView: View {
                 dict[metric] = db.getTimeSeries(nodeId: nodeId, metric: metric, days: days)
             }
             await MainActor.run {
-                guard selectedMetrics == metricsToLoad else { return }
+                guard loadGeneration == generation, selectedMetrics == metricsToLoad else {
+                    return
+                }
                 dataPoints = loaded
                 isLoading = false
             }

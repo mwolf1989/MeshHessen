@@ -53,7 +53,11 @@ struct TelemetryDashboardWidgetCard: View {
             Divider()
             Button("Entfernen", systemImage: "trash", role: .destructive) { onRemove(widget) }
         }
-        .task(id: LoadKey(widget: widget, refreshToken: refreshToken)) {
+        .task(id: LoadKey(
+            widget: widget,
+            refreshToken: refreshToken,
+            knownNodeIDs: nodeNames.keys.sorted()
+        )) {
             await load()
         }
         .accessibilityElement(children: .contain)
@@ -141,6 +145,7 @@ struct TelemetryDashboardWidgetCard: View {
     private struct LoadKey: Hashable {
         let widget: TelemetryDashboardWidget
         let refreshToken: Int
+        let knownNodeIDs: [UInt32]
     }
 }
 
@@ -259,7 +264,7 @@ private struct DashboardLineChart: View {
     }
 
     private func nodeLabel(_ nodeId: UInt32) -> String {
-        nodeNames[nodeId] ?? "!\(String(nodeId, radix: 16))"
+        nodeNames[nodeId] ?? TelemetryDashboardNode.fallbackName(for: nodeId)
     }
 }
 
@@ -291,7 +296,11 @@ private struct DashboardBarChart: View {
                     x: .value(String(localized: "Day"), point.date, unit: .day),
                     y: .value(widget.metric.displayName, point.value)
                 )
-                .foregroundStyle(by: .value("Node", nodeNames[point.nodeId] ?? "!\(String(point.nodeId, radix: 16))"))
+                .foregroundStyle(by: .value(
+                    "Node",
+                    nodeNames[point.nodeId]
+                        ?? TelemetryDashboardNode.fallbackName(for: point.nodeId)
+                ))
                 .position(by: .value("Node-ID", point.nodeId))
             }
             .chartXAxis {
@@ -320,7 +329,11 @@ private struct DashboardScatterChart: View {
                     x: .value(String(localized: "Time"), point.timestamp),
                     y: .value(widget.metric.displayName, point.value)
                 )
-                .foregroundStyle(by: .value("Node", nodeNames[point.nodeId] ?? "!\(String(point.nodeId, radix: 16))"))
+                .foregroundStyle(by: .value(
+                    "Node",
+                    nodeNames[point.nodeId]
+                        ?? TelemetryDashboardNode.fallbackName(for: point.nodeId)
+                ))
                 .symbolSize(28)
             }
             .chartXAxis {
@@ -373,7 +386,10 @@ private struct DashboardGauge: View {
                 Text(widget.metric.unit)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(nodeNames[latest.nodeId] ?? "!\(String(latest.nodeId, radix: 16))")
+                Text(
+                    nodeNames[latest.nodeId]
+                        ?? TelemetryDashboardNode.fallbackName(for: latest.nodeId)
+                )
                     .font(.caption)
                     .lineLimit(1)
                 Text(latest.timestamp, format: .dateTime.day().month().hour().minute())
@@ -402,7 +418,10 @@ private struct DashboardStat: View {
                 Text(widget.metric.unit)
                     .font(.headline)
                     .foregroundStyle(.secondary)
-                Text(nodeNames[latest.nodeId] ?? "!\(String(latest.nodeId, radix: 16))")
+                Text(
+                    nodeNames[latest.nodeId]
+                        ?? TelemetryDashboardNode.fallbackName(for: latest.nodeId)
+                )
                     .lineLimit(1)
                 Divider()
                 HStack(spacing: 16) {
@@ -554,7 +573,10 @@ private struct DashboardRanking: View {
                                 .font(.headline.monospacedDigit())
                                 .foregroundStyle(index < 3 ? Color.orange : Color.secondary)
                                 .frame(width: 28, alignment: .trailing)
-                            Text(nodeNames[row.nodeId] ?? "!\(String(row.nodeId, radix: 16))")
+                            Text(
+                                nodeNames[row.nodeId]
+                                    ?? TelemetryDashboardNode.fallbackName(for: row.nodeId)
+                            )
                                 .lineLimit(1)
                             Spacer()
                             Text(row.value, format: .number.precision(.fractionLength(1)))
@@ -595,7 +617,10 @@ private struct DashboardMultiStat: View {
                         let sorted = group.points.sorted { $0.timestamp < $1.timestamp }
                         let values = sorted.map(\.value)
                         VStack(spacing: 5) {
-                            Text(nodeNames[group.nodeId] ?? "!\(String(group.nodeId, radix: 16))")
+                            Text(
+                                nodeNames[group.nodeId]
+                                    ?? TelemetryDashboardNode.fallbackName(for: group.nodeId)
+                            )
                                 .font(.caption.bold())
                                 .lineLimit(1)
                             Text(sorted.last?.value ?? 0, format: .number.precision(.fractionLength(1)))
@@ -668,7 +693,10 @@ private struct DashboardMeshHealth: View {
                         if let nodeHealth = snapshot.healthByNode[nodeId] {
                             HStack(spacing: 8) {
                                 HealthStateIndicator(state: nodeHealth.state, size: 10)
-                                Text(nodeNames[nodeId] ?? "!\(String(nodeId, radix: 16))")
+                                Text(
+                                    nodeNames[nodeId]
+                                        ?? TelemetryDashboardNode.fallbackName(for: nodeId)
+                                )
                                     .lineLimit(1)
                                 Spacer()
                                 Text(nodeHealth.score, format: .number.precision(.fractionLength(0)))

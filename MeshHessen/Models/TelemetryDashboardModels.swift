@@ -1,5 +1,87 @@
 import Foundation
 
+/// A node available to dashboard widgets, including database-only nodes that do
+/// not currently have a live `NodeInfo` object.
+struct TelemetryDashboardNode: Identifiable, Hashable, Sendable {
+    let id: UInt32
+    let name: String
+
+    var displayID: String {
+        String(format: "!%08x", id)
+    }
+
+    static func fallbackName(for nodeID: UInt32) -> String {
+        String(format: "!%08x", nodeID)
+    }
+}
+
+/// Builds the dashboard node picker from every durable and live source without
+/// coupling the selection rules to SwiftUI.
+enum TelemetryDashboardNodeCatalog {
+    private static let comparisonLocale = Locale(identifier: "en_US_POSIX")
+
+    static func nodes(
+        liveNodeNames: [UInt32: String],
+        databaseNodeIDs: [UInt32],
+        storedWidgetNodeIDs: [UInt32]
+    ) -> [TelemetryDashboardNode] {
+        let nodeIDs = Set(liveNodeNames.keys)
+            .union(databaseNodeIDs)
+            .union(storedWidgetNodeIDs)
+
+        return nodeIDs.map { nodeID in
+            let liveName = liveNodeNames[nodeID]?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let name: String
+            if let liveName, !liveName.isEmpty {
+                name = liveName
+            } else {
+                name = TelemetryDashboardNode.fallbackName(for: nodeID)
+            }
+            return TelemetryDashboardNode(
+                id: nodeID,
+                name: name
+            )
+        }
+        .sorted(by: areInIncreasingOrder)
+    }
+
+    static func filtered(
+        _ nodes: [TelemetryDashboardNode],
+        query: String
+    ) -> [TelemetryDashboardNode] {
+        let normalizedQuery = normalized(
+            query.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        guard !normalizedQuery.isEmpty else { return nodes }
+        return nodes.filter { node in
+            normalized(node.name).contains(normalizedQuery)
+                || normalized(node.displayID).contains(normalizedQuery)
+        }
+    }
+
+    static func namesByID(_ nodes: [TelemetryDashboardNode]) -> [UInt32: String] {
+        Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0.name) })
+    }
+
+    private static func areInIncreasingOrder(
+        _ lhs: TelemetryDashboardNode,
+        _ rhs: TelemetryDashboardNode
+    ) -> Bool {
+        let lhsName = normalized(lhs.name)
+        let rhsName = normalized(rhs.name)
+        if lhsName != rhsName { return lhsName < rhsName }
+        return lhs.id < rhs.id
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value.folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: comparisonLocale
+        )
+    }
+}
+
 enum TelemetryDashboardWidgetType: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case line
     case area
@@ -117,6 +199,15 @@ struct TelemetryDashboardWidget: Identifiable, Codable, Hashable, Sendable {
     }
 
     var effectiveDays: Int { days > 0 ? days : 36_500 }
+
+    /// Resolves an empty multi-node selection dynamically, while leaving empty
+    /// single-node selections invalid instead of silently choosing a node.
+    func resolvedNodeIDs(knownNodeIDs: [UInt32]) -> [UInt32] {
+        if nodeIds.isEmpty, type.allowsMultipleNodes {
+            return Array(Set(knownNodeIDs)).sorted()
+        }
+        return nodeIds
+    }
 
     mutating func normalize() {
         nodeIds = Array(Set(nodeIds)).sorted()

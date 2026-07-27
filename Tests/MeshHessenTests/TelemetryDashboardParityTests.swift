@@ -199,6 +199,146 @@ struct TelemetryDatabaseParityTests {
         #expect(values.map(\.value) == [70])
     }
 
+    @Test("Clearing telemetry deletes all twelve tables transactionally and keeps the schema")
+    func clearAllTelemetry() async throws {
+        let (database, directory) = makeDatabase()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let nodeId: UInt32 = 0x42
+        let timestamp = Self.now.addingTimeInterval(-60)
+        let schemaBefore = database.schemaTableNames()
+
+        database.insertPacketRx(
+            nodeId: nodeId,
+            packetId: 1,
+            timestamp: timestamp,
+            snr: 3,
+            rssi: -90,
+            hopCount: 1,
+            wantAck: false
+        )
+        database.insertDeviceTelemetrySample(
+            nodeId: nodeId,
+            timestamp: timestamp,
+            batteryPercent: 80
+        )
+        database.insertEnvironmentTelemetrySample(
+            nodeId: nodeId,
+            timestamp: timestamp,
+            sample: EnvironmentTelemetrySample(temperature: 20)
+        )
+        database.insertAirQualityTelemetry(
+            nodeId: nodeId,
+            timestamp: timestamp,
+            sample: AirQualityTelemetrySample(values: [.co2: 700])
+        )
+        database.insertPowerTelemetry(
+            nodeId: nodeId,
+            timestamp: timestamp,
+            channels: [PowerChannelTelemetrySample(channel: 1, voltage: 12)]
+        )
+        database.insertLocalStatsTelemetry(
+            nodeId: nodeId,
+            timestamp: timestamp,
+            sample: LocalTelemetrySample(packetsRx: 1)
+        )
+        database.insertHostTelemetry(
+            nodeId: nodeId,
+            timestamp: timestamp,
+            sample: HostTelemetrySample(load1: 0.5)
+        )
+        database.insertHealthTelemetry(
+            nodeId: nodeId,
+            timestamp: timestamp,
+            sample: HealthTelemetrySample(heartRate: 70)
+        )
+        database.insertTrafficTelemetry(
+            nodeId: nodeId,
+            timestamp: timestamp,
+            sample: TrafficTelemetrySample(packetsInspected: 10)
+        )
+        database.insertPaxTelemetry(
+            nodeId: nodeId,
+            timestamp: timestamp,
+            sample: PaxTelemetrySample(wifiCount: 2)
+        )
+        database.insertTracerouteHops(
+            requestId: 9,
+            sourceNodeId: nodeId,
+            destNodeId: 0x99,
+            hops: [(nodeId: 0x77, snrTowards: -4, snrBack: 2)]
+        )
+        database.waitForPendingWrites()
+
+        var rowsBeforeClear = 0
+        for table in TelemetryDatabaseService.telemetryTableNames {
+            let count = database.rowCount(in: table)
+            #expect(count > 0, "Expected populated table \(table)")
+            rowsBeforeClear += count
+        }
+        let deletedRows = try await database.clearAllTelemetry()
+
+        #expect(deletedRows == rowsBeforeClear)
+        for table in TelemetryDatabaseService.telemetryTableNames {
+            #expect(database.rowCount(in: table) == 0, "Expected empty table \(table)")
+        }
+        #expect(database.getKnownNodeIds().isEmpty)
+        #expect(database.schemaTableNames() == schemaBefore)
+
+        database.insertDeviceTelemetrySample(
+            nodeId: nodeId,
+            timestamp: Self.now,
+            voltage: 4.1
+        )
+        database.waitForPendingWrites()
+        #expect(database.rowCount(in: "device_telemetry") == 1)
+        #expect(database.rowCount(in: "telemetry_samples") == 1)
+    }
+
+    @Test("Clearing telemetry waits for already queued writes")
+    func clearWaitsForPendingWrites() async throws {
+        let (database, directory) = makeDatabase()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        database.insertDeviceTelemetrySample(
+            nodeId: 5,
+            timestamp: Self.now,
+            batteryPercent: 50
+        )
+        let deletedRows = try await database.clearAllTelemetry()
+
+        #expect(deletedRows == 2)
+        #expect(database.rowCount(in: "device_telemetry") == 0)
+        #expect(database.rowCount(in: "telemetry_samples") == 0)
+    }
+
+    @Test("Clearing an empty telemetry database is idempotent")
+    func clearEmptyTelemetry() async throws {
+        let (database, directory) = makeDatabase()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let schemaBefore = database.schemaTableNames()
+
+        #expect(try await database.clearAllTelemetry() == 0)
+        #expect(database.schemaTableNames() == schemaBefore)
+        #expect(TelemetryDatabaseService.telemetryTableNames.count == 12)
+    }
+
+    @Test("Known node IDs include telemetry and traceroute-only nodes without duplicates")
+    func knownNodeIDsCoverAllSources() {
+        let (database, directory) = makeDatabase()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        database.insertDeviceTelemetrySample(nodeId: 3, voltage: 4)
+        database.insertTracerouteHops(
+            requestId: 1,
+            sourceNodeId: 3,
+            destNodeId: 9,
+            hops: [(nodeId: 7, snrTowards: nil, snrBack: nil)]
+        )
+        database.waitForPendingWrites()
+
+        #expect(database.getKnownNodeIds() == [3, 7, 9])
+    }
+
     @Test("Candlesticks, histograms and activity timelines are derived safely")
     func derivedQueries() {
         let (database, directory) = makeDatabase()
@@ -225,6 +365,44 @@ struct TelemetryDatabaseParityTests {
 
 @Suite("Telemetry Dashboard Models")
 struct TelemetryDashboardModelTests {
+    @Test("Node catalog merges live, database and widget nodes with live names")
+    func nodeCatalogUnion() {
+        let nodes = TelemetryDashboardNodeCatalog.nodes(
+            liveNodeNames: [1: "Live One", 4: "Zulu"],
+            databaseNodeIDs: [1, 2],
+            storedWidgetNodeIDs: [2, 3]
+        )
+
+        #expect(Set(nodes.map(\.id)) == [1, 2, 3, 4])
+        #expect(nodes.first(where: { $0.id == 1 })?.name == "Live One")
+        #expect(nodes.first(where: { $0.id == 2 })?.name == "!00000002")
+        #expect(nodes.map(\.id) == [2, 3, 1, 4])
+    }
+
+    @Test("Node catalog sorts deterministic ties by ID and searches names and padded IDs")
+    func nodeCatalogSortAndSearch() {
+        let nodes = TelemetryDashboardNodeCatalog.nodes(
+            liveNodeNames: [9: "Äther", 3: "ather", 7: "Beta"],
+            databaseNodeIDs: [],
+            storedWidgetNodeIDs: []
+        )
+
+        #expect(nodes.map(\.id) == [3, 9, 7])
+        #expect(TelemetryDashboardNodeCatalog.filtered(nodes, query: "BETA").map(\.id) == [7])
+        #expect(TelemetryDashboardNodeCatalog.filtered(nodes, query: "!00000009").map(\.id) == [9])
+    }
+
+    @Test("Empty multi-node selection stays dynamic while single-node widgets require a node")
+    func dynamicAllKnownNodesSelection() {
+        let dynamicWidget = TelemetryDashboardWidget(type: .line, nodeIds: [])
+        let fixedWidget = TelemetryDashboardWidget(type: .line, nodeIds: [7])
+        let missingSingleNode = TelemetryDashboardWidget(type: .gauge, nodeIds: [])
+
+        #expect(dynamicWidget.resolvedNodeIDs(knownNodeIDs: [3, 1, 3]) == [1, 3])
+        #expect(fixedWidget.resolvedNodeIDs(knownNodeIDs: [1, 7]) == [7])
+        #expect(missingSingleNode.resolvedNodeIDs(knownNodeIDs: [1, 3]) == [])
+    }
+
     @Test("Windows parity exposes exactly all fourteen widget types")
     func allWidgetTypes() {
         #expect(TelemetryDashboardWidgetType.allCases.count == 14)

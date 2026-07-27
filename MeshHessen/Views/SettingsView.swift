@@ -427,6 +427,20 @@ private struct URLSettingField: View {
 
 private struct DataSettingsPane: View {
     @Bindable var settings: SettingsService
+    let telemetryDatabase: TelemetryDatabaseService
+
+    @State private var confirmTelemetryDeletion = false
+    @State private var isClearingTelemetry = false
+    @State private var telemetryClearResult: String?
+    @State private var telemetryClearError: String?
+
+    init(
+        settings: SettingsService,
+        telemetryDatabase: TelemetryDatabaseService = .shared
+    ) {
+        self.settings = settings
+        self.telemetryDatabase = telemetryDatabase
+    }
 
     var body: some View {
         Form {
@@ -457,6 +471,35 @@ private struct DataSettingsPane: View {
                     value: $settings.antennaAnalysisWindowDays,
                     in: 1...365
                 )
+
+                Divider()
+
+                HStack {
+                    Button(
+                        "Delete all telemetry data",
+                        role: .destructive,
+                        action: confirmTelemetryClear
+                    )
+                    .disabled(isClearingTelemetry)
+                    if isClearingTelemetry {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Deleting telemetry data…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let telemetryClearResult {
+                    Label(telemetryClearResult, systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+                if let telemetryClearError {
+                    Label(telemetryClearError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
             }
 
             Section("Position History") {
@@ -490,6 +533,44 @@ private struct DataSettingsPane: View {
         }
         .formStyle(.grouped)
         .padding()
+        .alert(
+            "Delete all telemetry data?",
+            isPresented: $confirmTelemetryDeletion
+        ) {
+            Button("Delete", role: .destructive, action: clearTelemetry)
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text(
+                String(localized: """
+                    This deletes telemetry, packet history, and internal traceroute-hop data. \
+                    Nodes, messages, settings, dashboards, and saved traceroute history remain.
+                    """)
+            )
+        }
+    }
+
+    private func confirmTelemetryClear() {
+        telemetryClearResult = nil
+        telemetryClearError = nil
+        confirmTelemetryDeletion = true
+    }
+
+    private func clearTelemetry() {
+        guard !isClearingTelemetry else { return }
+        isClearingTelemetry = true
+        telemetryClearResult = nil
+        telemetryClearError = nil
+        Task {
+            defer { isClearingTelemetry = false }
+            do {
+                let deletedRows = try await telemetryDatabase.clearAllTelemetry()
+                telemetryClearResult = String(
+                    localized: "\(deletedRows) telemetry records deleted."
+                )
+            } catch {
+                telemetryClearError = error.localizedDescription
+            }
+        }
     }
 }
 

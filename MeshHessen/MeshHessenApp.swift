@@ -112,11 +112,7 @@ struct MeshHessenApp: App {
 
         // MARK: - Telemetry Dashboard
         Window("Telemetry Dashboard", id: "dashboard") {
-            TelemetryDashboardView(
-                nodeNames: Dictionary(
-                    uniqueKeysWithValues: coordinator.appState.nodes.values.map { ($0.id, $0.name) }
-                )
-            )
+            TelemetryDashboardView()
             .font(settings.scaledBodyFont)
             .environment(\.locale, settings.appLocale)
             .preferredColorScheme(settings.preferredColorScheme)

@@ -4,10 +4,13 @@ import UniformTypeIdentifiers
 /// Customizable multi-dashboard telemetry surface matching the Windows client's
 /// dashboard feature set.
 struct TelemetryDashboardView: View {
-    let nodeNames: [UInt32: String]
+    @Environment(\.appState) private var appState
+
     let database: TelemetryDatabaseService
 
     @State private var store = TelemetryDashboardStore.shared
+    @State private var databaseNodeIDs: [UInt32] = []
+    @State private var nodeCatalogLoadGeneration = 0
     @State private var editorRequest: TelemetryWidgetEditorRequest?
     @State private var refreshToken = 0
     @State private var autoRefreshSeconds = 0
@@ -17,11 +20,7 @@ struct TelemetryDashboardView: View {
     @State private var exportDocument = TelemetryCSVDocument(text: "")
     @State private var isExporting = false
 
-    init(
-        nodeNames: [UInt32: String],
-        database: TelemetryDatabaseService = .shared
-    ) {
-        self.nodeNames = nodeNames
+    init(database: TelemetryDatabaseService = .shared) {
         self.database = database
     }
 
@@ -34,7 +33,7 @@ struct TelemetryDashboardView: View {
         .sheet(item: $editorRequest) { request in
             TelemetryWidgetEditor(
                 request: request,
-                nodeNames: nodeNames,
+                nodes: nodeCatalog,
                 onSave: saveWidget
             )
         }
@@ -66,6 +65,29 @@ struct TelemetryDashboardView: View {
         .task(id: autoRefreshSeconds) {
             await runAutoRefresh()
         }
+        .task {
+            await reloadKnownNodeIDs()
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: .telemetryDatabaseDidClear,
+            object: database
+        )) { _ in
+            refresh()
+        }
+    }
+
+    private var nodeCatalog: [TelemetryDashboardNode] {
+        TelemetryDashboardNodeCatalog.nodes(
+            liveNodeNames: appState.nodes.mapValues(\.name),
+            databaseNodeIDs: databaseNodeIDs,
+            storedWidgetNodeIDs: store.dashboards.flatMap { dashboard in
+                dashboard.widgets.flatMap(\.nodeIds)
+            }
+        )
+    }
+
+    private var nodeNames: [UInt32: String] {
+        TelemetryDashboardNodeCatalog.namesByID(nodeCatalog)
     }
 
     private var dashboardToolbar: some View {
@@ -217,6 +239,22 @@ struct TelemetryDashboardView: View {
 
     private func refresh() {
         refreshToken &+= 1
+        Task { await reloadKnownNodeIDs() }
+    }
+
+    private func reloadKnownNodeIDs() async {
+        nodeCatalogLoadGeneration &+= 1
+        let generation = nodeCatalogLoadGeneration
+        let database = database
+        let loaded = await Task.detached(priority: .utility) {
+            database.getKnownNodeIds()
+        }.value
+        guard !Task.isCancelled,
+              nodeCatalogLoadGeneration == generation,
+              loaded != databaseNodeIDs else {
+            return
+        }
+        databaseNodeIDs = loaded
     }
 
     private func runAutoRefresh() async {
@@ -301,7 +339,7 @@ private struct TelemetryWidgetEditor: View {
     @Environment(\.dismiss) private var dismiss
 
     let request: TelemetryWidgetEditorRequest
-    let nodeNames: [UInt32: String]
+    let nodes: [TelemetryDashboardNode]
     let onSave: (TelemetryDashboardWidget, Bool) -> Void
 
     @State private var draft: TelemetryDashboardWidget
@@ -312,16 +350,16 @@ private struct TelemetryWidgetEditor: View {
 
     init(
         request: TelemetryWidgetEditorRequest,
-        nodeNames: [UInt32: String],
+        nodes: [TelemetryDashboardNode],
         onSave: @escaping (TelemetryDashboardWidget, Bool) -> Void
     ) {
         self.request = request
-        self.nodeNames = nodeNames
+        self.nodes = nodes
         self.onSave = onSave
         let initial: TelemetryDashboardWidget
         switch request.mode {
         case .add:
-            initial = TelemetryDashboardWidget(nodeIds: nodeNames.keys.sorted())
+            initial = TelemetryDashboardWidget(nodeIds: [])
         case .edit(let widget):
             initial = widget
         }
@@ -366,32 +404,74 @@ private struct TelemetryWidgetEditor: View {
                 if draft.type != .clock {
                     Section("Nodes") {
                         TextField("Nodes filtern", text: $nodeSearch)
+                        HStack {
+                            Text("\(filteredNodes.count) of \(nodes.count) nodes")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(selectionSummary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if draft.type.allowsMultipleNodes {
+                            Button(action: selectAllKnownNodesDynamically) {
+                                HStack {
+                                    Image(systemName: draft.nodeIds.isEmpty
+                                        ? "checkmark.circle.fill"
+                                        : "circle")
+                                        .foregroundStyle(draft.nodeIds.isEmpty
+                                            ? Color.accentColor
+                                            : Color.secondary)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("All known nodes")
+                                        Text("Dynamic selection includes nodes discovered later.")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
                         if filteredNodes.isEmpty {
                             Text("Keine passenden Nodes")
                                 .foregroundStyle(.secondary)
                         } else {
-                            List(filteredNodes, id: \.id) { node in
-                                Button {
-                                    toggleNode(node.id)
-                                } label: {
-                                    HStack {
-                                        Image(systemName: draft.nodeIds.contains(node.id)
-                                            ? "checkmark.circle.fill"
-                                            : "circle")
-                                            .foregroundStyle(draft.nodeIds.contains(node.id)
-                                                ? Color.accentColor
-                                                : Color.secondary)
-                                        Text(node.name)
-                                        Spacer()
-                                        Text("!\(String(node.id, radix: 16))")
-                                            .font(.caption.monospaced())
-                                            .foregroundStyle(.secondary)
+                            ScrollView(.vertical, showsIndicators: true) {
+                                LazyVStack(spacing: 0) {
+                                    ForEach(filteredNodes) { node in
+                                        Button {
+                                            toggleNode(node.id)
+                                        } label: {
+                                            HStack {
+                                                Image(systemName: draft.nodeIds.contains(node.id)
+                                                    ? "checkmark.circle.fill"
+                                                    : "circle")
+                                                    .foregroundStyle(draft.nodeIds.contains(node.id)
+                                                        ? Color.accentColor
+                                                        : Color.secondary)
+                                                Text(node.name)
+                                                Spacer()
+                                                Text(node.displayID)
+                                                    .font(.caption.monospaced())
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 5)
+                                            .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        Divider()
                                     }
-                                    .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
                             }
-                            .frame(minHeight: 130, maxHeight: 190)
+                            .frame(minHeight: 180, idealHeight: 240, maxHeight: 300)
+                            .background(.quaternary.opacity(0.3), in: .rect(cornerRadius: 6))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .strokeBorder(.quaternary)
+                            }
                         }
                         Text(nodeHint)
                             .font(.caption)
@@ -464,15 +544,8 @@ private struct TelemetryWidgetEditor: View {
         return false
     }
 
-    private var filteredNodes: [(id: UInt32, name: String)] {
-        let query = nodeSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return nodeNames
-            .map { (id: $0.key, name: $0.value) }
-            .filter { node in
-                query.isEmpty || node.name.lowercased().contains(query)
-                    || String(node.id, radix: 16).contains(query)
-            }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    private var filteredNodes: [TelemetryDashboardNode] {
+        TelemetryDashboardNodeCatalog.filtered(nodes, query: nodeSearch)
     }
 
     private var advancedMetrics: [TelemetrySeriesMetric] {
@@ -490,7 +563,14 @@ private struct TelemetryWidgetEditor: View {
     }
 
     private var canSave: Bool {
-        draft.type == .clock || draft.type.allowsMultipleNodes || !draft.nodeIds.isEmpty
+        draft.type == .clock || draft.type.allowsMultipleNodes || draft.nodeIds.count == 1
+    }
+
+    private var selectionSummary: String {
+        if draft.type.allowsMultipleNodes, draft.nodeIds.isEmpty {
+            return String(localized: "All known nodes")
+        }
+        return String(localized: "\(draft.nodeIds.count) selected")
     }
 
     private func metricLabel(_ metric: TelemetrySeriesMetric) -> String {
@@ -506,6 +586,10 @@ private struct TelemetryWidgetEditor: View {
         } else {
             draft.nodeIds = [nodeId]
         }
+    }
+
+    private func selectAllKnownNodesDynamically() {
+        draft.nodeIds = []
     }
 
     private func save() {

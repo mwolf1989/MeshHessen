@@ -16,6 +16,7 @@ struct TelemetryView: View {
     @State private var routingStats = RoutingStats()
     @State private var directContacts: [DirectNeighborContact] = []
     @State private var traceroutes: [TracerouteResult] = []
+    @State private var loadGeneration = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -153,6 +154,12 @@ struct TelemetryView: View {
         .frame(minWidth: 500, minHeight: 400)
         .onAppear { loadStats() }
         .onChange(of: selectedDays) { loadStats() }
+        .onReceive(NotificationCenter.default.publisher(
+            for: .telemetryDatabaseDidClear,
+            object: TelemetryDatabaseService.shared
+        )) { _ in
+            loadStats()
+        }
     }
 
     private var effectiveDays: Int {
@@ -170,6 +177,8 @@ struct TelemetryView: View {
     }
 
     private func loadStats() {
+        loadGeneration &+= 1
+        let generation = loadGeneration
         let days = effectiveDays
         Task.detached {
             let db = TelemetryDatabaseService.shared
@@ -184,6 +193,7 @@ struct TelemetryView: View {
                     && $0.receivedAt >= cutoff
             }
             await MainActor.run {
+                guard loadGeneration == generation else { return }
                 signalStats = signal
                 powerStats = power
                 airtimeStats = airtime

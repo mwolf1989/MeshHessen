@@ -1,6 +1,26 @@
 import Foundation
 import SQLite3
 
+extension Notification.Name {
+    static let telemetryDatabaseDidClear = Notification.Name(
+        "MeshHessen.telemetryDatabaseDidClear"
+    )
+}
+
+enum TelemetryDatabaseError: LocalizedError, Sendable {
+    case unavailable
+    case clearFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable:
+            return String(localized: "The telemetry database is unavailable.")
+        case .clearFailed(let detail):
+            return String(localized: "Telemetry data could not be deleted: \(detail)")
+        }
+    }
+}
+
 /// Persistent SQLite telemetry storage.
 ///
 /// SQLite access is confined to a private serial queue. The type is marked
@@ -28,7 +48,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         let text: [String: String]
     }
 
-    private static let timestampTables = [
+    static let telemetryTableNames = [
         "packet_rx",
         "device_telemetry",
         "environment_telemetry",
@@ -867,7 +887,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         latitude: Double,
         longitude: Double
     ) {
-        guard Self.timestampTables.contains(table) else { return }
+        guard Self.telemetryTableNames.contains(table) else { return }
         let payload = encodePayload(values: values, text: text)
         enqueueWrite { service, db in
             let ts = timestamp.timeIntervalSince1970
@@ -1281,7 +1301,23 @@ final class TelemetryDatabaseService: @unchecked Sendable {
             var statement: OpaquePointer?
             guard sqlite3_prepare_v2(
                 db,
-                "SELECT DISTINCT node_id FROM telemetry_samples ORDER BY node_id",
+                """
+                SELECT node_id FROM packet_rx
+                UNION SELECT node_id FROM device_telemetry
+                UNION SELECT node_id FROM environment_telemetry
+                UNION SELECT node_id FROM air_quality_telemetry
+                UNION SELECT node_id FROM power_telemetry
+                UNION SELECT node_id FROM local_stats_telemetry
+                UNION SELECT node_id FROM host_telemetry
+                UNION SELECT node_id FROM health_telemetry
+                UNION SELECT node_id FROM traffic_telemetry
+                UNION SELECT node_id FROM pax_telemetry
+                UNION SELECT node_id FROM telemetry_samples
+                UNION SELECT source_node_id FROM traceroute_hops
+                UNION SELECT dest_node_id FROM traceroute_hops
+                UNION SELECT node_id FROM traceroute_hops
+                ORDER BY 1
+                """,
                 -1,
                 &statement,
                 nil
@@ -1329,7 +1365,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         enqueueWrite { service, db in
             service.inTransaction(on: db) {
                 var succeeded = true
-                for table in Self.timestampTables {
+                for table in Self.telemetryTableNames {
                     let deleted = service.run(
                         "DELETE FROM \(table) WHERE timestamp < ?",
                         bindings: [.double(cutoff)],
@@ -1340,6 +1376,60 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                 return succeeded
             }
         }
+    }
+
+    /// Deletes all persisted telemetry in one transaction after previously
+    /// queued writes have completed. Database tables and indexes remain intact.
+    func clearAllTelemetry() async throws -> Int {
+        let deletedRows: Int = try await withCheckedThrowingContinuation { continuation in
+            queue.async { [weak self] in
+                guard let self, let db = self.db else {
+                    continuation.resume(throwing: TelemetryDatabaseError.unavailable)
+                    return
+                }
+
+                guard self.execute("BEGIN IMMEDIATE", on: db) else {
+                    continuation.resume(throwing: TelemetryDatabaseError.clearFailed(
+                        String(cString: sqlite3_errmsg(db))
+                    ))
+                    return
+                }
+
+                var deletedRows = 0
+                for table in Self.telemetryTableNames {
+                    guard self.run("DELETE FROM \(table)", bindings: [], on: db) else {
+                        let detail = String(cString: sqlite3_errmsg(db))
+                        _ = self.execute("ROLLBACK", on: db)
+                        continuation.resume(
+                            throwing: TelemetryDatabaseError.clearFailed(detail)
+                        )
+                        return
+                    }
+                    deletedRows += Int(sqlite3_changes(db))
+                }
+
+                guard self.execute("COMMIT", on: db) else {
+                    let detail = String(cString: sqlite3_errmsg(db))
+                    _ = self.execute("ROLLBACK", on: db)
+                    continuation.resume(throwing: TelemetryDatabaseError.clearFailed(detail))
+                    return
+                }
+                AppLogger.shared.log(
+                    "[TelemetryDB] Deleted \(deletedRows) telemetry records",
+                    debug: true
+                )
+                continuation.resume(returning: deletedRows)
+            }
+        }
+
+        await MainActor.run {
+            NotificationCenter.default.post(
+                name: .telemetryDatabaseDidClear,
+                object: self,
+                userInfo: ["deletedRowCount": deletedRows]
+            )
+        }
+        return deletedRows
     }
 
     /// Blocks until all queued writes have completed. Intended for orderly shutdown and tests.
@@ -1369,7 +1459,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
     }
 
     func rowCount(in table: String) -> Int {
-        guard Self.timestampTables.contains(table) else { return 0 }
+        guard Self.telemetryTableNames.contains(table) else { return 0 }
         return queue.sync { [weak self] in
             guard let self, let db = self.db else { return 0 }
             var statement: OpaquePointer?

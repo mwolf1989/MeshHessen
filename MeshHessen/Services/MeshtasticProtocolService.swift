@@ -65,6 +65,7 @@ final class MeshtasticProtocolService {
     // MARK: - Singleton / State
     weak var appState: AppState?
     var coreDataStore: MeshCoreDataStore?
+    private let telemetryDatabase: TelemetryDatabaseService
 
     var connectionService: (any ConnectionService)?
     var onFromRadioPayloadReceived: ((Data) -> Void)?
@@ -129,6 +130,10 @@ final class MeshtasticProtocolService {
     // Hardcoded Mesh Hessen PSK (for decryption hint — actual decrypt not implemented)
     static let meshHessenPSK = "+uTMEaOR7hkqaXv+DROOEd5BhvAIQY/CZ/Hr4soZcOU="
     static let meshHessenChannelName = "Mesh Hessen"
+
+    init(telemetryDatabase: TelemetryDatabaseService = .shared) {
+        self.telemetryDatabase = telemetryDatabase
+    }
 
     // MARK: - Initialize & Connect
 
@@ -569,7 +574,7 @@ final class MeshtasticProtocolService {
         // Record every received packet in the telemetry database
         if packet.from != 0 && packet.from != myNodeId {
             let senderNode = appState?.node(forId: packet.from)
-            TelemetryDatabaseService.shared.insertPacketRx(
+            telemetryDatabase.insertPacketRx(
                 nodeId: packet.from,
                 packetId: packet.id,
                 snr: packet.rxSnr,
@@ -934,7 +939,7 @@ final class MeshtasticProtocolService {
         )
 
         if routingError == .none {
-            TelemetryDatabaseService.shared.markAckReceived(packetId: data.requestID)
+            telemetryDatabase.markAckReceived(packetId: data.requestID)
         }
 
         if routingError == .none {
@@ -1618,7 +1623,7 @@ final class MeshtasticProtocolService {
         let traceHops = hops.enumerated().map { (i, hop) in
             (nodeId: hop.nodeId, snrTowards: hop.snr, snrBack: nil as Float?)
         }
-        TelemetryDatabaseService.shared.insertTracerouteHops(
+        telemetryDatabase.insertTracerouteHops(
             requestId: data.requestID != 0 ? data.requestID : packet.id,
             sourceNodeId: myNodeId,
             destNodeId: packet.from,
@@ -2485,7 +2490,9 @@ final class MeshtasticProtocolService {
     // MARK: - Telemetry
 
     private func handleTelemetry(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
-        guard let node = appState?.node(forId: packet.from) else { return }
+        guard packet.from != 0 else { return }
+        let node = nodeForTelemetry(senderID: packet.from)
+        defer { coreDataStore?.upsertNode(node) }
 
         // Always update lastSeen/lastHeard
         node.lastSeen = formatTime()
@@ -2518,7 +2525,7 @@ final class MeshtasticProtocolService {
                 node.airUtilTx = metrics.airUtilTx
             }
 
-            TelemetryDatabaseService.shared.insertDeviceTelemetrySample(
+            telemetryDatabase.insertDeviceTelemetrySample(
                 nodeId: packet.from,
                 timestamp: timestamp,
                 batteryPercent: metrics.hasBatteryLevel ? Double(metrics.batteryLevel) : nil,
@@ -2537,7 +2544,7 @@ final class MeshtasticProtocolService {
             if env.hasBarometricPressure { node.barometricPressure = env.barometricPressure }
             if env.hasIaq { node.airQualityIndex = env.iaq }
 
-            TelemetryDatabaseService.shared.insertEnvironmentTelemetrySample(
+            telemetryDatabase.insertEnvironmentTelemetrySample(
                 nodeId: packet.from,
                 timestamp: timestamp,
                 sample: EnvironmentTelemetrySample(
@@ -2602,7 +2609,7 @@ final class MeshtasticProtocolService {
             store(.pmHumidity, air.hasPmHumidity, Double(air.pmHumidity))
             store(.pmVocIndex, air.hasPmVocIdx, Double(air.pmVocIdx))
             store(.pmNoxIndex, air.hasPmNoxIdx, Double(air.pmNoxIdx))
-            TelemetryDatabaseService.shared.insertAirQualityTelemetry(
+            telemetryDatabase.insertAirQualityTelemetry(
                 nodeId: packet.from,
                 timestamp: timestamp,
                 sample: AirQualityTelemetrySample(values: values),
@@ -2629,7 +2636,7 @@ final class MeshtasticProtocolService {
                 guard isPresent else { return nil }
                 return PowerChannelMetric(channel: channel, voltage: voltage, current: current)
             }
-            TelemetryDatabaseService.shared.insertPowerTelemetry(
+            telemetryDatabase.insertPowerTelemetry(
                 nodeId: packet.from,
                 timestamp: timestamp,
                 channels: [
@@ -2664,7 +2671,7 @@ final class MeshtasticProtocolService {
                 droppedTransmissions: stats.numTxDropped,
                 noiseFloor: stats.noiseFloor
             )
-            TelemetryDatabaseService.shared.insertLocalStatsTelemetry(
+            telemetryDatabase.insertLocalStatsTelemetry(
                 nodeId: packet.from,
                 timestamp: timestamp,
                 sample: LocalTelemetrySample(
@@ -2694,7 +2701,7 @@ final class MeshtasticProtocolService {
                 oxygenSaturation: health.spO2,
                 temperature: health.temperature
             )
-            TelemetryDatabaseService.shared.insertHealthTelemetry(
+            telemetryDatabase.insertHealthTelemetry(
                 nodeId: packet.from,
                 timestamp: timestamp,
                 sample: HealthTelemetrySample(
@@ -2716,7 +2723,7 @@ final class MeshtasticProtocolService {
                 load15: host.load15,
                 userString: host.userString
             )
-            TelemetryDatabaseService.shared.insertHostTelemetry(
+            telemetryDatabase.insertHostTelemetry(
                 nodeId: packet.from,
                 timestamp: timestamp,
                 sample: HostTelemetrySample(
@@ -2744,7 +2751,7 @@ final class MeshtasticProtocolService {
                 hopExhaustedPackets: stats.hopExhaustedPackets,
                 routerHopsPreserved: stats.routerHopsPreserved
             )
-            TelemetryDatabaseService.shared.insertTrafficTelemetry(
+            telemetryDatabase.insertTrafficTelemetry(
                 nodeId: packet.from,
                 timestamp: timestamp,
                 sample: TrafficTelemetrySample(
@@ -2769,14 +2776,15 @@ final class MeshtasticProtocolService {
     }
 
     private func handlePaxCounter(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
-        guard let node = appState?.node(forId: packet.from) else { return }
+        guard packet.from != 0 else { return }
+        let node = nodeForTelemetry(senderID: packet.from)
         let wifi = UInt32(clamping: parseVarintField(data.payload, fieldNumber: 1) ?? 0)
         let ble = UInt32(clamping: parseVarintField(data.payload, fieldNumber: 2) ?? 0)
         let uptimeSeconds = UInt32(clamping: parseVarintField(data.payload, fieldNumber: 3) ?? 0)
         node.paxMetrics = NodePaxMetrics(wifi: wifi, ble: ble, uptimeSeconds: uptimeSeconds)
         node.lastSeen = formatTime()
         node.lastHeard = Int32(Date().timeIntervalSince1970)
-        TelemetryDatabaseService.shared.insertPaxTelemetry(
+        telemetryDatabase.insertPaxTelemetry(
             nodeId: packet.from,
             sample: PaxTelemetrySample(
                 wifiCount: Double(wifi),
@@ -2786,6 +2794,7 @@ final class MeshtasticProtocolService {
             latitude: node.latitude ?? 0,
             longitude: node.longitude ?? 0
         )
+        coreDataStore?.upsertNode(node)
     }
 
     // MARK: - Channel Requests
@@ -3502,6 +3511,25 @@ final class MeshtasticProtocolService {
 
     private func nodeDisplayName(_ nodeId: UInt32) -> String {
         appState?.node(forId: nodeId)?.name ?? String(format: "!%08x", nodeId)
+    }
+
+    private func nodeForTelemetry(senderID: UInt32) -> NodeInfo {
+        if let existing = appState?.node(forId: senderID) {
+            return existing
+        }
+
+        let node = NodeInfo(
+            id: senderID,
+            nodeId: String(format: "!%08x", senderID),
+            shortName: "",
+            longName: ""
+        )
+        appState?.upsertNode(node)
+        AppLogger.shared.log(
+            "[Protocol] Created fallback node for telemetry sender \(node.nodeId)",
+            debug: SettingsService.shared.debugDevice
+        )
+        return node
     }
 
     private func channelName(for index: Int) -> String {

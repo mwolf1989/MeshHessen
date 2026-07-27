@@ -35,6 +35,7 @@ struct MapView: View {
     @State private var neighborColorMode = NeighborLineColorMode.signalQuality
     @State private var showTraceroutes = false
     @State private var persistedDirectContacts: [DirectNeighborContact] = []
+    @State private var directContactLoadGeneration = 0
     @State private var tracerouteSelection = TracerouteMapSelectionStore.shared
     @State private var errorMessage: String?
 
@@ -226,9 +227,7 @@ struct MapView: View {
             await offlineManager.refresh()
             await loadStoredWaypoints()
             persistProtocolWaypoints(coordinator.protocol_.waypoints)
-            persistedDirectContacts = await Task.detached(priority: .utility) {
-                TelemetryDatabaseService.shared.getDirectNeighborContacts()
-            }.value
+            await loadPersistedDirectContacts()
         }
         .onChange(of: coordinator.protocol_.waypoints) { _, newValue in
             persistProtocolWaypoints(newValue)
@@ -244,6 +243,15 @@ struct MapView: View {
         .onChange(of: tracerouteSelection.results) { _, results in
             if !results.isEmpty { showTraceroutes = true }
         }
+        .onReceive(NotificationCenter.default.publisher(
+            for: .telemetryDatabaseDidClear,
+            object: TelemetryDatabaseService.shared
+        )) { _ in
+            directContactLoadGeneration &+= 1
+            let generation = directContactLoadGeneration
+            persistedDirectContacts = []
+            Task { await loadPersistedDirectContacts(generation: generation) }
+        }
         .alert("Map Error", isPresented: errorAlertBinding) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -252,6 +260,19 @@ struct MapView: View {
     }
 
     // MARK: - Actions
+
+    private func loadPersistedDirectContacts() async {
+        directContactLoadGeneration &+= 1
+        await loadPersistedDirectContacts(generation: directContactLoadGeneration)
+    }
+
+    private func loadPersistedDirectContacts(generation: Int) async {
+        let contacts = await Task.detached(priority: .utility) {
+            TelemetryDatabaseService.shared.getDirectNeighborContacts()
+        }.value
+        guard !Task.isCancelled, directContactLoadGeneration == generation else { return }
+        persistedDirectContacts = contacts
+    }
 
     private func openDirectMessage(_ nodeId: UInt32) {
         appState.ensureDMConversation(for: nodeId)
