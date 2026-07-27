@@ -88,8 +88,8 @@ final class MeshtasticProtocolService {
     private var configComplete = false
     private var sessionPasskey = Data()
 
-    private var tempChannels: [Int32: Meshtastic_Channel] = [:]
-    private var receivedChannelResponses = Set<Int>()
+    private var tempChannels = ChannelSnapshotAccumulator()
+    private var isCollectingChannelSnapshot = false
 
     // Device config storage (populated by admin getConfigResponse / getModuleConfigResponse)
     enum ConfigCategory: String {
@@ -145,8 +145,8 @@ final class MeshtasticProtocolService {
         remoteSessionPasskeyDates.removeAll()
         adminResponses.removeAll()
         adminResponseSequence = 0
-        tempChannels.removeAll()
-        receivedChannelResponses.removeAll()
+        tempChannels.begin(targetNodeID: 0, requestedIndices: Set(0..<8))
+        isCollectingChannelSnapshot = true
         receiveBuffer = Data()
         myNodeId = 0
         consecutiveTextChunks = 0
@@ -228,10 +228,10 @@ final class MeshtasticProtocolService {
         if gotBasicInfo {
             appState?.protocolStatusMessage = String(localized: "Loading channels…")
             await requestAllChannels()
-            // Remove CoreData channels that the device no longer reports
-            coreDataStore?.removeChannelsNotIn(indices: receivedChannelResponses)
+            finishChannelSnapshot()
             appState?.protocolStatusMessage = String(localized: "Finalizing sync…")
         } else {
+            cancelChannelSnapshot()
             AppLogger.shared.log("[Protocol] Skipping channel request (no myNodeId received)", debug: true)
             appState?.protocolStatusMessage = String(localized: "Connected, waiting for mesh data…")
         }
@@ -498,11 +498,14 @@ final class MeshtasticProtocolService {
             handleMeshPacket(packet)
         case .myInfo(let info):
             myNodeId = info.myNodeNum
+            if isCollectingChannelSnapshot {
+                tempChannels.adoptTargetNodeID(myNodeId)
+            }
             AppLogger.shared.log("[Protocol] MyNodeId: \(String(format: "!%08x", myNodeId))", debug: SettingsService.shared.debugDevice)
         case .nodeInfo(let info):
             handleNodeInfo(info)
         case .channel(let channel):
-            handleChannel(channel)
+            handleChannel(channel, sourceNodeID: myNodeId)
         case .config(let config):
             handleConfig(config)
         case .moduleConfig(let moduleConfig):
@@ -1117,24 +1120,26 @@ final class MeshtasticProtocolService {
 
     // MARK: - Channel
 
-    private func handleChannel(_ channel: Meshtastic_Channel) {
-        // Track ALL channel slots (including disabled) so requestAllChannels()
-        // won't re-request slots the device already reported.
-        receivedChannelResponses.insert(Int(channel.index))
-        guard channel.role != .disabled else { return }
+    private func handleChannel(_ channel: Meshtastic_Channel, sourceNodeID: UInt32) {
+        if isCollectingChannelSnapshot {
+            guard tempChannels.record(channel, from: sourceNodeID) else { return }
+            AppLogger.shared.log(
+                "[Protocol] Channel slot \(channel.index) received (\(channel.role)); "
+                    + "\(tempChannels.receivedIndices.count)/\(tempChannels.requestedIndices.count)",
+                debug: SettingsService.shared.debugDevice
+            )
+            return
+        }
 
-        let name = extractChannelName(channel)
-        let s = channel.settings
-        let pskBase64 = s.psk.base64EncodedString()
-        let info = ChannelInfo(
-            id: Int(channel.index),
-            name: name,
-            psk: pskBase64,
-            role: channel.role == .primary ? "PRIMARY" : "SECONDARY",
-            uplinkEnabled: s.uplinkEnabled,
-            downlinkEnabled: s.downlinkEnabled
-        )
-
+        if channel.role == .disabled {
+            appState?.channels.removeAll { $0.id == Int(channel.index) }
+            AppLogger.shared.log(
+                "[Protocol] Channel \(channel.index) disabled",
+                debug: SettingsService.shared.debugDevice
+            )
+            return
+        }
+        let info = channelInfo(from: channel)
         if let idx = appState?.channels.firstIndex(where: { $0.id == info.id }) {
             appState?.channels[idx] = info
         } else {
@@ -1143,7 +1148,54 @@ final class MeshtasticProtocolService {
         appState?.channels.sort { $0.id < $1.id }
         coreDataStore?.upsertChannel(info)
 
-        AppLogger.shared.log("[Protocol] Channel \(channel.index): \(name) [\(info.role)]", debug: SettingsService.shared.debugDevice)
+        AppLogger.shared.log(
+            "[Protocol] Channel \(channel.index): \(info.name) [\(info.role)]",
+            debug: SettingsService.shared.debugDevice
+        )
+    }
+
+    private func channelInfo(from channel: Meshtastic_Channel) -> ChannelInfo {
+        let name = extractChannelName(channel)
+        let s = channel.settings
+        let pskBase64 = s.psk.base64EncodedString()
+        return ChannelInfo(
+            id: Int(channel.index),
+            name: name,
+            psk: pskBase64,
+            role: channel.role == .primary ? "PRIMARY" : "SECONDARY",
+            uplinkEnabled: s.uplinkEnabled,
+            downlinkEnabled: s.downlinkEnabled
+        )
+    }
+
+    private func finishChannelSnapshot() {
+        defer { isCollectingChannelSnapshot = false }
+        guard tempChannels.isComplete else {
+            let missing = tempChannels.requestedIndices.subtracting(tempChannels.receivedIndices).sorted()
+            AppLogger.shared.log(
+                "[Protocol] Channel snapshot incomplete; preserving current channels. Missing slots: \(missing)",
+                debug: true
+            )
+            return
+        }
+
+        let activeChannels = tempChannels.activeChannels.map { channelInfo(from: $0) }
+        appState?.channels = activeChannels
+        activeChannels.forEach { coreDataStore?.upsertChannel($0) }
+        coreDataStore?.removeChannelsNotIn(indices: Set(activeChannels.map(\.id)))
+        AppLogger.shared.log(
+            "[Protocol] Published authoritative channel snapshot with \(activeChannels.count) active slots",
+            debug: true
+        )
+    }
+
+    private func beginChannelSnapshot(for targetNodeID: UInt32, requestedIndices: Set<Int> = Set(0..<8)) {
+        tempChannels.begin(targetNodeID: targetNodeID, requestedIndices: requestedIndices)
+        isCollectingChannelSnapshot = true
+    }
+
+    private func cancelChannelSnapshot() {
+        isCollectingChannelSnapshot = false
     }
 
     private func extractChannelName(_ channel: Meshtastic_Channel) -> String {
@@ -1280,7 +1332,9 @@ final class MeshtasticProtocolService {
 
         switch admin.payloadVariant {
         case .getChannelResponse(let channel):
-            if packet.from == myNodeId { handleChannel(channel) }
+            if packet.from == myNodeId {
+                handleChannel(channel, sourceNodeID: packet.from)
+            }
         case .getOwnerResponse(let owner):
             if packet.from == myNodeId {
                 appState?.myNodeInfo?.shortName = owner.shortName
@@ -1877,9 +1931,26 @@ final class MeshtasticProtocolService {
             requestQueue.append((request, .ringtone))
         }
 
+        let requestedChannelIndices = Set(selection.channelIndices.filter { (0..<8).contains($0) })
+        var channelResponses = ChannelSnapshotAccumulator()
+        channelResponses.begin(
+            targetNodeID: destination,
+            requestedIndices: requestedChannelIndices
+        )
+        let publishesLocalChannelSnapshot = !target.isRemote
+            && requestedChannelIndices == Set(0..<8)
+        if publishesLocalChannelSnapshot {
+            beginChannelSnapshot(for: destination)
+        }
+        defer {
+            if publishesLocalChannelSnapshot {
+                finishChannelSnapshot()
+            }
+        }
+
         var snapshot = MeshConfigurationSnapshot()
         let clock = ContinuousClock()
-        let overallDeadline = clock.now.advanced(by: timeout)
+        var inactivityWindow = AdminInactivityWindow(timeout: timeout, startingAt: clock.now)
         var receivedResponse = false
 
         // Radios have a shallow admin queue. Send exactly one request and wait
@@ -1887,7 +1958,7 @@ final class MeshtasticProtocolService {
         // timeout) before advancing to the next category.
         for (rawRequest, kind) in requestQueue {
             try Task.checkCancellation()
-            guard clock.now < overallDeadline else { break }
+            guard !inactivityWindow.isExpired(at: clock.now) else { break }
             let baselineSequence = adminResponseSequence
             var request = rawRequest
             request.sessionPasskey = key
@@ -1899,7 +1970,10 @@ final class MeshtasticProtocolService {
                 throw DeviceConfigError.requestFailed
             }
 
-            let categoryDeadline = min(overallDeadline, clock.now.advanced(by: .seconds(8)))
+            let categoryDeadline = min(
+                inactivityWindow.deadline,
+                clock.now.advanced(by: .seconds(8))
+            )
             var matchingRecord: AdminResponseRecord?
             while clock.now < categoryDeadline {
                 try Task.checkCancellation()
@@ -1918,7 +1992,14 @@ final class MeshtasticProtocolService {
 
             if let matchingRecord {
                 apply(matchingRecord.message, kind: kind, to: &snapshot)
+                if case .getChannelResponse(let channel) = matchingRecord.message.payloadVariant {
+                    channelResponses.record(channel, from: destination)
+                    if publishesLocalChannelSnapshot {
+                        tempChannels.record(channel, from: destination)
+                    }
+                }
                 receivedResponse = true
+                inactivityWindow.recordActivity(at: clock.now)
             } else {
                 AppLogger.shared.log(
                     "[Admin] No response for \(String(describing: kind)); continuing sequential load",
@@ -1931,6 +2012,10 @@ final class MeshtasticProtocolService {
             throw DeviceConfigError.adminTimedOut(String(localized: "Read configuration"))
         }
 
+        if !requestedChannelIndices.isEmpty {
+            snapshot.channels = channelResponses.activeChannels
+            snapshot.channelsLoaded = channelResponses.isComplete
+        }
         snapshot.channels.sort { $0.index < $1.index }
         if snapshot.position.fixedPosition,
            let node = appState?.node(forId: destination),
@@ -2205,7 +2290,6 @@ final class MeshtasticProtocolService {
         case (.channel, .getChannelResponse(let channel)):
             snapshot.channels.removeAll { $0.index == channel.index }
             snapshot.channels.append(channel)
-            snapshot.channelsLoaded = true
         case (.metadata, .getDeviceMetadataResponse(let metadata)):
             snapshot.metadata = metadata
             snapshot.metadataLoaded = true
@@ -2723,26 +2807,24 @@ final class MeshtasticProtocolService {
 
         AppLogger.shared.log("[Protocol] Requesting channels (BLE=\(isBLE))...", debug: true)
         for round in 0..<3 {
-            let before = receivedChannelResponses.count
             for idx in 0..<8 {
-                if receivedChannelResponses.contains(idx) { continue }
+                if tempChannels.receivedIndices.contains(idx) { continue }
                 await sendGetChannelRequest(index: idx)
                 try? await Task.sleep(for: .milliseconds(delayBetweenRequests))
             }
             try? await Task.sleep(for: .seconds(delayBetweenRounds))
-            let missing = (0..<8).filter { !receivedChannelResponses.contains($0) }
-            AppLogger.shared.log("[Protocol] Channel round \(round+1): received \(receivedChannelResponses.count) channels, missing: \(missing)", debug: true)
+            let missing = (0..<8).filter { !tempChannels.receivedIndices.contains($0) }
+            AppLogger.shared.log(
+                "[Protocol] Channel round \(round + 1): received "
+                    + "\(tempChannels.receivedIndices.count) channels, missing: \(missing)",
+                debug: true
+            )
             if missing.isEmpty { break }
-
-            // Wenn in dieser Runde keine neuen Antworten kamen und wir mindestens
-            // den Primary-Kanal haben, brechen wir ab — die fehlenden Kanäle
-            // sind wahrscheinlich nicht konfiguriert (DISABLED).
-            if receivedChannelResponses.count == before {
-                AppLogger.shared.log("[Protocol] Channel round \(round+1) produced no new responses — stopping early", debug: true)
-                break
-            }
         }
-        AppLogger.shared.log("[Protocol] Channel loading complete: \(receivedChannelResponses.count) channels loaded", debug: true)
+        AppLogger.shared.log(
+            "[Protocol] Channel loading complete: \(tempChannels.receivedIndices.count) slots answered",
+            debug: true
+        )
     }
 
     // MARK: - Send Methods
@@ -3044,13 +3126,16 @@ final class MeshtasticProtocolService {
         admin.setChannel = channel
         admin.sessionPasskey = sessionPasskey
 
-        await sendAdminMessage(admin)
+        guard await sendAdminMessage(admin) else {
+            AppLogger.shared.log("[Protocol] setChannel failed to send slot \(index)", debug: true)
+            return false
+        }
         // Give the device time to process
         try? await Task.sleep(for: .milliseconds(500))
 
         // Optimistic local state update — add the channel to appState immediately
         // so the app can decrypt messages without waiting for a full re-sync.
-        handleChannel(channel)
+        handleChannel(channel, sourceNodeID: myNodeId)
 
         return true
     }
@@ -3122,9 +3207,13 @@ final class MeshtasticProtocolService {
             return true
         }
 
-        guard let psk = Data(base64Encoded: MeshtasticProtocolService.meshHessenPSK) else { return false }
+        guard let psk = Data(base64Encoded: MeshtasticProtocolService.meshHessenPSK),
+              let freeIndex = ChannelSlotAllocator.firstFreeSecondarySlot(
+                  usedIndices: appState?.channels.map(\.id) ?? []
+              )
+        else { return false }
         return await setChannel(
-            index: appState?.channels.count ?? 1,
+            index: freeIndex,
             name: MeshtasticProtocolService.meshHessenChannelName,
             psk: psk,
             isSecondary: true,

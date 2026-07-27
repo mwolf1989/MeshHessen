@@ -73,8 +73,13 @@ struct ChannelsTabView: View {
                         ChannelRow(channel: channel)
                     }
                     .onDelete { indexSet in
-                        for i in indexSet {
-                            Task { await coordinator.deleteChannel(at: i) }
+                        let channelIDs = indexSet.compactMap { offset in
+                            appState.channels.indices.contains(offset)
+                                ? appState.channels[offset].id
+                                : nil
+                        }
+                        for channelID in channelIDs {
+                            Task { await coordinator.deleteChannel(at: channelID) }
                         }
                     }
                 }

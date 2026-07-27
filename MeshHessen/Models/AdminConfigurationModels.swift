@@ -195,6 +195,155 @@ struct MeshConfigurationRequestSelection: Equatable, Sendable {
     }
 }
 
+enum ChannelPSKValidationError: LocalizedError, Equatable, Sendable {
+    case invalidBase64
+    case invalidKeyLength(Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidBase64:
+            return String(localized: "The PSK must be valid Base64.")
+        case .invalidKeyLength(let byteCount):
+            return String(
+                localized: "The PSK must decode to 0, 1, 16, or 32 bytes (currently \(byteCount))."
+            )
+        }
+    }
+}
+
+struct ValidatedChannelPSK: Equatable, Sendable {
+    let base64: String
+    let data: Data
+}
+
+enum ChannelPSKValidator {
+    private static let allowedBase64Bytes = Set(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=".utf8
+    )
+    private static let validKeyLengths: Set<Int> = [0, 1, 16, 32]
+
+    /// Removes only ASCII whitespace accepted in copied Base64 values. Other
+    /// Unicode whitespace and non-Base64 characters remain visible and invalid.
+    static func removingASCIIWhitespace(from value: String) -> String {
+        var normalized = ""
+        for scalar in value.unicodeScalars {
+            guard scalar.value != 0x20,
+                  !(0x09...0x0D).contains(scalar.value)
+            else { continue }
+            normalized.unicodeScalars.append(scalar)
+        }
+        return normalized
+    }
+
+    /// Strictly validates canonical Base64 and the key sizes supported by
+    /// Meshtastic channel settings.
+    static func validate(_ value: String) throws -> ValidatedChannelPSK {
+        let normalized = removingASCIIWhitespace(from: value)
+        guard normalized.utf8.allSatisfy(allowedBase64Bytes.contains),
+              normalized.utf8.count.isMultiple(of: 4),
+              let decoded = Data(base64Encoded: normalized),
+              decoded.base64EncodedString() == normalized
+        else {
+            throw ChannelPSKValidationError.invalidBase64
+        }
+        guard validKeyLengths.contains(decoded.count) else {
+            throw ChannelPSKValidationError.invalidKeyLength(decoded.count)
+        }
+        return ValidatedChannelPSK(base64: normalized, data: decoded)
+    }
+}
+
+enum ChannelSlotAllocator {
+    static func firstFreeSecondarySlot(usedIndices: some Sequence<Int>) -> Int? {
+        let used = Set(usedIndices)
+        return (1..<8).first { !used.contains($0) }
+    }
+}
+
+enum ChannelManagementError: LocalizedError, Equatable, Sendable {
+    case noFreeSecondarySlot
+
+    var errorDescription: String? {
+        switch self {
+        case .noFreeSecondarySlot:
+            return String(localized: "All seven secondary channel slots are already in use.")
+        }
+    }
+}
+
+/// Accumulates an explicit set of channel slot responses for one node. Disabled
+/// slots count as terminal responses but are excluded from the active snapshot.
+struct ChannelSnapshotAccumulator: Equatable, Sendable {
+    private(set) var targetNodeID: UInt32 = 0
+    private(set) var requestedIndices: Set<Int> = []
+    private(set) var responses: [Int: Meshtastic_Channel] = [:]
+
+    mutating func begin(targetNodeID: UInt32, requestedIndices: Set<Int>) {
+        self.targetNodeID = targetNodeID
+        self.requestedIndices = requestedIndices
+        responses.removeAll(keepingCapacity: true)
+    }
+
+    /// The initial config stream can deliver channels before MyNodeInfo. Adopt
+    /// that identity without losing those responses; a real node change resets.
+    mutating func adoptTargetNodeID(_ nodeID: UInt32) {
+        guard nodeID != targetNodeID else { return }
+        if targetNodeID == 0 {
+            targetNodeID = nodeID
+        } else {
+            begin(targetNodeID: nodeID, requestedIndices: requestedIndices)
+        }
+    }
+
+    @discardableResult
+    mutating func record(_ channel: Meshtastic_Channel, from sourceNodeID: UInt32) -> Bool {
+        let index = Int(channel.index)
+        guard sourceNodeID == targetNodeID,
+              requestedIndices.contains(index)
+        else { return false }
+        responses[index] = channel
+        return true
+    }
+
+    var receivedIndices: Set<Int> {
+        Set(responses.keys)
+    }
+
+    var isComplete: Bool {
+        requestedIndices.isSubset(of: receivedIndices)
+    }
+
+    var activeChannels: [Meshtastic_Channel] {
+        responses.values
+            .filter { $0.role != .disabled }
+            .sorted { $0.index < $1.index }
+    }
+}
+
+/// A successful response refreshes this window. It deliberately does not
+/// represent the total duration of a multi-category administration read.
+struct AdminInactivityWindow: Sendable {
+    let timeout: Duration
+    private(set) var lastActivity: ContinuousClock.Instant
+
+    init(timeout: Duration, startingAt instant: ContinuousClock.Instant) {
+        self.timeout = timeout
+        lastActivity = instant
+    }
+
+    var deadline: ContinuousClock.Instant {
+        lastActivity.advanced(by: timeout)
+    }
+
+    mutating func recordActivity(at instant: ContinuousClock.Instant) {
+        lastActivity = instant
+    }
+
+    func isExpired(at instant: ContinuousClock.Instant) -> Bool {
+        instant >= deadline
+    }
+}
+
 /// Complete editable state for a local or remote Meshtastic node.
 ///
 /// The fields deliberately use generated protobuf value types. This preserves
@@ -406,7 +555,9 @@ struct MeshConfigurationDiff: Equatable, Sendable {
             cannedMessageTextChanged: original.cannedMessageTextLoaded
                 && updated.cannedMessageText != original.cannedMessageText,
             ringtoneChanged: original.ringtoneLoaded && updated.ringtone != original.ringtone,
-            fixedPositionChanged: updated.fixedPosition != original.fixedPosition
+            fixedPositionChanged: original.loadedConfigCategories.contains(.position)
+                && updated.loadedConfigCategories.contains(.position)
+                && updated.fixedPosition != original.fixedPosition
         )
     }
 }

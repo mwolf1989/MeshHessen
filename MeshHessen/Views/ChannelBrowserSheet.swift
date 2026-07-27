@@ -10,6 +10,7 @@ struct ChannelBrowserSheet: View {
     @State private var searchText = ""
     @State private var selectedBundesland = "All"
     @State private var isAdding = false
+    @State private var errorMessage: String?
 
     private var bundeslaender: [String] {
         let all = Set(channels.map { $0.bundesland }).sorted()
@@ -81,12 +82,16 @@ struct ChannelBrowserSheet: View {
                         Button("Add") {
                             isAdding = true
                             Task {
-                                await coordinator.addChannel(
-                                    name: ch.name,
-                                    pskBase64: ch.psk,
-                                    uplinkEnabled: false,
-                                    downlinkEnabled: false
-                                )
+                                do {
+                                    try await coordinator.addChannel(
+                                        name: ch.name,
+                                        pskBase64: ch.psk,
+                                        uplinkEnabled: false,
+                                        downlinkEnabled: false
+                                    )
+                                } catch {
+                                    errorMessage = error.localizedDescription
+                                }
                                 isAdding = false
                             }
                         }
@@ -99,6 +104,17 @@ struct ChannelBrowserSheet: View {
         }
         .frame(minWidth: 580, minHeight: 440)
         .task { await loadChannels() }
+        .alert(
+            "Channel could not be added",
+            isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
     }
 
     private func loadChannels() async {

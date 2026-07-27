@@ -446,20 +446,32 @@ final class AppCoordinator {
 
     // MARK: - Channel management
 
-    func addChannel(name: String, pskBase64: String, uplinkEnabled: Bool, downlinkEnabled: Bool) async {
-        AppLogger.shared.log("[Coordinator] Adding channel '\(name)' (index: \(appState.channels.count))", debug: true)
-        guard let psk = Data(base64Encoded: pskBase64) else {
-            AppLogger.shared.log("[Coordinator] Failed to add channel: invalid PSK", debug: true)
-            return
+    @discardableResult
+    func addChannel(
+        name: String,
+        pskBase64: String,
+        uplinkEnabled: Bool,
+        downlinkEnabled: Bool
+    ) async throws -> Bool {
+        let validatedPSK = try ChannelPSKValidator.validate(pskBase64)
+        guard let idx = ChannelSlotAllocator.firstFreeSecondarySlot(
+            usedIndices: appState.channels.map(\.id)
+        ) else {
+            throw ChannelManagementError.noFreeSecondarySlot
         }
-        let idx = appState.channels.count
+        AppLogger.shared.log("[Coordinator] Adding channel '\(name)' (index: \(idx))", debug: true)
         expectSettingsWriteDisconnect()
-        await protocol_.setChannel(
-            index: idx, name: name, psk: psk,
+        let sent = await protocol_.setChannel(
+            index: idx, name: name, psk: validatedPSK.data,
             isSecondary: idx > 0,
             uplinkEnabled: uplinkEnabled,
             downlinkEnabled: downlinkEnabled
         )
+        guard sent else {
+            clearExpectedSettingsWriteDisconnect()
+            throw MeshtasticProtocolService.DeviceConfigError.writeFailed(String(localized: "Channel"))
+        }
+        return true
     }
 
     func deleteChannel(at index: Int) async {

@@ -52,6 +52,7 @@ private struct NodeAdministrationView: View {
     @State private var loadedSections: Set<AdministrationSection> = []
     @State private var showRemoteLoadChoice = false
     @State private var remoteFavoriteNodeID: UInt32?
+    @State private var channelPSKDrafts: [Int32: String] = [:]
 
     private var requiredFeature: KioskFeatureMask {
         target.isRemote ? .remoteAdmin : .nodeConfiguration
@@ -140,8 +141,18 @@ private struct NodeAdministrationView: View {
                 sidebar
                     .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
             } detail: {
-                detail
-                    .padding()
+                VStack(alignment: .leading, spacing: 12) {
+                    if original != nil, !loadedSections.contains(selection) {
+                        Label(
+                            "This section is not fully loaded. Reload it before editing or writing settings.",
+                            systemImage: "exclamationmark.triangle"
+                        )
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                    }
+                    detail
+                }
+                .padding()
             }
         }
         .onChange(of: selection) { _, newValue in
@@ -185,7 +196,13 @@ private struct NodeAdministrationView: View {
                 .disabled(isLoading || isSaving || !appState.protocolReady)
             Button("Review Changes") { reviewChanges() }
                 .buttonStyle(.borderedProminent)
-                .disabled(original == nil || isLoading || isSaving || !appState.protocolReady)
+                .disabled(
+                    original == nil
+                        || isLoading
+                        || isSaving
+                        || !appState.protocolReady
+                        || hasInvalidChannelPSKDraft
+                )
             Button("Close") { dismiss() }
                 .disabled(isSaving)
         }
@@ -322,24 +339,41 @@ private struct NodeAdministrationView: View {
                 .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
+        .disabled(!loadedSections.contains(.fixedPosition))
     }
 
     private var channelEditor: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(draft.channels.indices, id: \.self) { index in
-                    ChannelConfigurationCard(channel: $draft.channels[index])
+        Group {
+            if loadedSections.contains(.channels) {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach($draft.channels, id: \.index) { $channel in
+                            ChannelConfigurationCard(
+                                channel: $channel,
+                                pskDraft: channelPSKDraft(for: channel.index),
+                                pskError: channelPSKValidationError(for: channel.index)
+                            )
+                        }
+                        Button("Add secondary channel") {
+                            guard let free = ChannelSlotAllocator.firstFreeSecondarySlot(
+                                usedIndices: draft.channels.map { Int($0.index) }
+                            ) else { return }
+                            var channel = Meshtastic_Channel()
+                            channel.index = Int32(free)
+                            channel.role = .secondary
+                            draft.channels.append(channel)
+                            draft.channels.sort { $0.index < $1.index }
+                            channelPSKDrafts[Int32(free)] = ""
+                        }
+                        .disabled(draft.channels.count >= 8)
+                    }
                 }
-                Button("Add secondary channel") {
-                    let used = Set(draft.channels.map { Int($0.index) })
-                    guard let free = (1..<8).first(where: { !used.contains($0) }) else { return }
-                    var channel = Meshtastic_Channel()
-                    channel.index = Int32(free)
-                    channel.role = .secondary
-                    draft.channels.append(channel)
-                    draft.channels.sort { $0.index < $1.index }
-                }
-                .disabled(!draft.channelsLoaded || draft.channels.count >= 8)
+            } else {
+                ContentUnavailableView(
+                    "Channels not loaded",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text("Reload this section before editing or writing channel settings.")
+                )
             }
         }
     }
@@ -567,7 +601,10 @@ private struct NodeAdministrationView: View {
             let snapshot = try await coordinator.requestCompleteConfiguration(from: target)
             original = snapshot
             draft = snapshot
-            loadedSections = Set(AdministrationSection.allLoadableSections)
+            loadedSections = Set(
+                AdministrationSection.allLoadableSections.filter { $0.isAvailable(in: snapshot) }
+            )
+            resetChannelPSKDrafts()
             prepareEditor()
             statusMessage = String(localized: "Configuration loaded")
         } catch is CancellationError {
@@ -590,10 +627,19 @@ private struct NodeAdministrationView: View {
                 selection: section.requestSelection
             )
             var baseline = original ?? MeshConfigurationSnapshot()
-            baseline.mergeLoaded(from: incoming)
+            if section.isAvailable(in: incoming) {
+                baseline.mergeLoaded(from: incoming)
+                draft.mergeLoaded(from: incoming)
+                loadedSections.insert(section)
+                if section == .channels {
+                    resetChannelPSKDrafts()
+                }
+            } else {
+                markUnavailable(section, in: &baseline)
+                markUnavailable(section, in: &draft)
+                loadedSections.remove(section)
+            }
             original = baseline
-            draft.mergeLoaded(from: incoming)
-            loadedSections.insert(section)
             prepareEditor()
             statusMessage = section.isAvailable(in: incoming)
                 ? String(localized: "\(section.title) loaded")
@@ -608,6 +654,11 @@ private struct NodeAdministrationView: View {
 
     private func reviewChanges() {
         guard let original else { return }
+        guard !hasInvalidChannelPSKDraft else {
+            selection = .channels
+            statusMessage = String(localized: "Correct the invalid channel PSK before reviewing changes.")
+            return
+        }
         draft.owner.longName = String(draft.owner.longName.prefix(39))
         draft.owner.shortName = String(draft.owner.shortName.prefix(4))
         let diff = MeshConfigurationDiff.between(draft, and: original)
@@ -621,6 +672,11 @@ private struct NodeAdministrationView: View {
 
     private func saveConfirmed() async {
         guard let original else { return }
+        guard !hasInvalidChannelPSKDraft else {
+            selection = .channels
+            statusMessage = String(localized: "Correct the invalid channel PSK before saving.")
+            return
+        }
         isSaving = true
         statusMessage = String(localized: "Writing, reconnecting and verifying…")
         defer { isSaving = false }
@@ -690,6 +746,75 @@ private struct NodeAdministrationView: View {
                 : String(localized: "Remote favorite command could not be sent")
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Channel Drafts
+
+    private var hasInvalidChannelPSKDraft: Bool {
+        guard loadedSections.contains(.channels) else { return false }
+        return draft.channels.contains { channelPSKValidationError(for: $0.index) != nil }
+    }
+
+    private func resetChannelPSKDrafts() {
+        var drafts: [Int32: String] = [:]
+        for channel in draft.channels {
+            drafts[channel.index] = channel.settings.psk.base64EncodedString()
+        }
+        channelPSKDrafts = drafts
+    }
+
+    private func channelPSKDraft(for channelIndex: Int32) -> Binding<String> {
+        Binding(
+            get: {
+                channelPSKDrafts[channelIndex]
+                    ?? draft.channels.first(where: { $0.index == channelIndex })?
+                        .settings.psk.base64EncodedString()
+                    ?? ""
+            },
+            set: { value in
+                let normalized = ChannelPSKValidator.removingASCIIWhitespace(from: value)
+                channelPSKDrafts[channelIndex] = normalized
+                guard let validated = try? ChannelPSKValidator.validate(normalized),
+                      let index = draft.channels.firstIndex(where: { $0.index == channelIndex })
+                else { return }
+                draft.channels[index].settings.psk = validated.data
+            }
+        )
+    }
+
+    private func channelPSKValidationError(for channelIndex: Int32) -> ChannelPSKValidationError? {
+        let value = channelPSKDrafts[channelIndex]
+            ?? draft.channels.first(where: { $0.index == channelIndex })?
+                .settings.psk.base64EncodedString()
+            ?? ""
+        do {
+            _ = try ChannelPSKValidator.validate(value)
+            return nil
+        } catch let error as ChannelPSKValidationError {
+            return error
+        } catch {
+            return .invalidBase64
+        }
+    }
+
+    private func markUnavailable(
+        _ section: AdministrationSection,
+        in snapshot: inout MeshConfigurationSnapshot
+    ) {
+        switch section {
+        case .overview, .actions:
+            snapshot.metadataLoaded = false
+        case .owner:
+            snapshot.ownerLoaded = false
+        case .fixedPosition:
+            snapshot.loadedConfigCategories.remove(.position)
+        case .channels:
+            snapshot.channelsLoaded = false
+        case .config(let category):
+            snapshot.loadedConfigCategories.remove(category)
+        case .module(let category):
+            snapshot.loadedModuleCategories.remove(category)
         }
     }
 
@@ -2127,6 +2252,8 @@ private struct AdvancedProtobufJSONEditor: View {
 
 private struct ChannelConfigurationCard: View {
     @Binding var channel: Meshtastic_Channel
+    @Binding var pskDraft: String
+    let pskError: ChannelPSKValidationError?
 
     var body: some View {
         GroupBox {
@@ -2150,8 +2277,15 @@ private struct ChannelConfigurationCard: View {
                 }
                 GridRow {
                     Text("PSK (Base64)")
-                    TextField("AQ==", text: pskBase64)
-                        .font(.body.monospaced())
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField("AQ==", text: $pskDraft)
+                            .font(.body.monospaced())
+                        if let pskError {
+                            Label(pskError.localizedDescription, systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
                 }
                 GridRow {
                     Text("MQTT")
@@ -2173,14 +2307,5 @@ private struct ChannelConfigurationCard: View {
         } label: {
             Label("Channel \(channel.index)", systemImage: "dot.radiowaves.left.and.right")
         }
-    }
-
-    private var pskBase64: Binding<String> {
-        Binding(
-            get: { channel.settings.psk.base64EncodedString() },
-            set: { value in
-                if let data = Data(base64Encoded: value) { channel.settings.psk = data }
-            }
-        )
     }
 }

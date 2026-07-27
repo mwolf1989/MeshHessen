@@ -31,6 +31,25 @@ struct AdminConfigurationParityTests {
         #expect(!diff.labels.contains(String(localized: "Telemetry")))
     }
 
+    @Test("An unavailable fixed-position section cannot retain a writable draft")
+    func unavailableFixedPositionIsNotWritable() {
+        var original = MeshConfigurationSnapshot()
+        original.loadedConfigCategories = [.position]
+        original.fixedPosition = Meshtastic_Position()
+        original.fixedPosition?.latitudeI = 500_000_000
+
+        var updated = original
+        updated.fixedPosition?.latitudeI = 510_000_000
+        #expect(MeshConfigurationDiff.between(updated, and: original).fixedPositionChanged)
+
+        original.loadedConfigCategories.remove(.position)
+        updated.loadedConfigCategories.remove(.position)
+
+        let unavailableDiff = MeshConfigurationDiff.between(updated, and: original)
+        #expect(!unavailableDiff.fixedPositionChanged)
+        #expect(unavailableDiff.isEmpty)
+    }
+
     @Test("Every generated config and module category round-trips through a snapshot")
     func everyCategoryRoundTrips() {
         let snapshot = MeshConfigurationSnapshot()

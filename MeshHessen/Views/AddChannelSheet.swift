@@ -2,7 +2,6 @@ import SwiftUI
 
 /// Sheet for manually adding a new channel by name + PSK.
 struct AddChannelSheet: View {
-    @Environment(\.appState) private var appState
     @Environment(AppCoordinator.self) private var coordinator
     @Environment(\.dismiss) private var dismiss
 
@@ -23,7 +22,7 @@ struct AddChannelSheet: View {
 
             Form {
                 TextField("Channel Name", text: $channelName)
-                TextField("PSK (base64)", text: $psk)
+                TextField("PSK (base64)", text: pskDraft)
                     .font(.system(.body, design: .monospaced))
 
                 Toggle("Uplink Enabled", isOn: $uplinkEnabled)
@@ -31,6 +30,11 @@ struct AddChannelSheet: View {
             }
             .formStyle(.grouped)
 
+            if let validationError = pskValidationError {
+                Label(validationError.localizedDescription, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                    .font(.caption)
+            }
             if let err = errorMessage {
                 Text(err)
                     .foregroundStyle(.red)
@@ -45,7 +49,11 @@ struct AddChannelSheet: View {
                     addChannel()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(channelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAdding)
+                .disabled(
+                    channelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || pskValidationError != nil
+                        || isAdding
+                )
                 .keyboardShortcut(.return, modifiers: .command)
             }
         }
@@ -59,14 +67,37 @@ struct AddChannelSheet: View {
         isAdding = true
         errorMessage = nil
         Task {
-            await coordinator.addChannel(
+            do {
+                try await coordinator.addChannel(
                     name: name,
                     pskBase64: psk,
                     uplinkEnabled: uplinkEnabled,
                     downlinkEnabled: downlinkEnabled
                 )
-            isAdding = false
-            dismiss()
+                isAdding = false
+                dismiss()
+            } catch {
+                isAdding = false
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private var pskDraft: Binding<String> {
+        Binding(
+            get: { psk },
+            set: { psk = ChannelPSKValidator.removingASCIIWhitespace(from: $0) }
+        )
+    }
+
+    private var pskValidationError: ChannelPSKValidationError? {
+        do {
+            _ = try ChannelPSKValidator.validate(psk)
+            return nil
+        } catch let error as ChannelPSKValidationError {
+            return error
+        } catch {
+            return .invalidBase64
         }
     }
 }
