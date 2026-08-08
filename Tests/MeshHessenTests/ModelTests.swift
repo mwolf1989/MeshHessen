@@ -193,6 +193,23 @@ struct ModelTests {
         #expect(node.lastHeard == 0)
     }
 
+    @Test("Live node updates refresh favorite and own-node state")
+    @MainActor
+    func appStateRefreshesNodeDatabaseFlags() {
+        let state = AppState()
+        let cached = NodeInfo(id: 42, nodeId: "!0000002a", shortName: "OLD", longName: "Cached")
+        state.upsertNode(cached)
+
+        let live = NodeInfo(id: 42, nodeId: "!0000002a", shortName: "NEW", longName: "Live")
+        live.isFavorite = true
+        live.isOwnNode = true
+        state.upsertNode(live)
+
+        #expect(state.node(forId: 42) === cached)
+        #expect(cached.isFavorite)
+        #expect(cached.isOwnNode)
+    }
+
     @Test("MessageItem isDirect for broadcast is false")
     func messageIsDirect() {
         let broadcast = MessageItem(

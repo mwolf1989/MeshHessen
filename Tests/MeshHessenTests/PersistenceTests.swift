@@ -190,6 +190,12 @@ struct PersistenceTests {
         )
         legacyMessage.setValue(Int64(77), forKey: "packetId")
         legacyMessage.setValue("before migration", forKey: "messageText")
+        let legacyNode = NSEntityDescription.insertNewObject(
+            forEntityName: "MHNodeEntity",
+            into: legacyContainer.viewContext
+        )
+        legacyNode.setValue(Int64(0x1234), forKey: "nodeNum")
+        legacyNode.setValue("Legacy Node", forKey: "longName")
         try legacyContainer.viewContext.save()
 
         let legacyStore = try #require(legacyContainer.persistentStoreCoordinator.persistentStores.first)
@@ -221,6 +227,10 @@ struct PersistenceTests {
         #expect(migratedMessage.value(forKey: "packetId") as? Int64 == 77)
         #expect((migratedMessage.value(forKey: "replyToPacketId") as? Int64 ?? 0) == 0)
         #expect(migratedMessage.value(forKey: "messageText") as? String == "before migration")
+
+        let nodeRequest = NSFetchRequest<NSManagedObject>(entityName: "MHNodeEntity")
+        let migratedNode = try #require(currentContainer.viewContext.fetch(nodeRequest).first)
+        #expect(migratedNode.value(forKey: "isInNodeDatabase") as? Bool == true)
     }
 
     @Test("messageExists returns true for existing packetId")
@@ -444,6 +454,82 @@ struct PersistenceTests {
     }
 
     // MARK: - Batch Operations
+
+    @Test("NodeDB reset hides cached nodes while retaining local metadata and history")
+    @MainActor
+    func resetNodeDatabaseMirror() async throws {
+        let (store, _) = makeStore()
+        let node = sampleNode()
+        let channel = ChannelInfo(
+            id: 0,
+            name: "Mesh Hessen",
+            psk: "",
+            role: "PRIMARY",
+            uplinkEnabled: false,
+            downlinkEnabled: false
+        )
+
+        store.upsertNode(node)
+        store.upsertChannel(channel)
+        store.upsertMessage(sampleMessage(), isDirect: false, partnerNodeId: nil)
+        try await Task.sleep(for: .milliseconds(200))
+        store.updateNodePinState(nodeId: node.id, isPinned: true)
+        try await Task.sleep(for: .milliseconds(200))
+
+        let currentState = AppState()
+        _ = store.hydrate(appState: currentState)
+        #expect(currentState.node(forId: node.id) != nil)
+
+        #expect(store.resetNodeDatabaseMirror() == 1)
+        currentState.resetNodeDatabaseMirror()
+        #expect(currentState.nodes.isEmpty)
+        #expect(currentState.channels.count == 1)
+        #expect(currentState.channelMessages[0]?.count == 1)
+
+        let resetState = AppState()
+        let resetStats = store.hydrate(appState: resetState)
+        #expect(resetState.nodes.isEmpty)
+        #expect(resetStats.nodes == 0)
+        #expect(resetState.channels.count == 1)
+        #expect(resetState.channelMessages[0]?.count == 1)
+
+        let liveNode = NodeInfo(
+            id: node.id,
+            nodeId: node.nodeId,
+            shortName: "LIVE",
+            longName: "Fresh after reset"
+        )
+        resetState.upsertNode(liveNode)
+        let liveStats = store.hydrate(appState: resetState)
+
+        #expect(liveStats.nodes == 1)
+        #expect(resetState.node(forId: node.id) === liveNode)
+        #expect(liveNode.colorHex == "#FF0000")
+        #expect(liveNode.note == "A test note")
+        #expect(liveNode.isPinned)
+
+        store.upsertNode(liveNode)
+        try await Task.sleep(for: .milliseconds(200))
+
+        let nextLaunchState = AppState()
+        _ = store.hydrate(appState: nextLaunchState)
+        #expect(nextLaunchState.node(forId: node.id) != nil)
+    }
+
+    @Test("Node writes queued before a NodeDB reset cannot resurrect stale nodes")
+    @MainActor
+    func resetNodeDatabaseMirrorRejectsQueuedWrites() async throws {
+        let (store, _) = makeStore()
+        let node = sampleNode(id: 0xABCD0002)
+
+        store.upsertNode(node)
+        _ = store.resetNodeDatabaseMirror()
+        try await Task.sleep(for: .milliseconds(200))
+
+        let resetState = AppState()
+        _ = store.hydrate(appState: resetState)
+        #expect(resetState.nodes.isEmpty)
+    }
 
     @Test("clearAllData removes all entities")
     func clearAllData() async throws {

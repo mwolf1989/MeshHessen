@@ -27,6 +27,9 @@ enum TestModelFactory {
     /// Schema used by MeshHessen 1.0.18 before context-aware message identity.
     static func makeVersion2Model() -> NSManagedObjectModel {
         let model = makeModel()
+        model.entitiesByName["MHNodeEntity"]?.properties.removeAll {
+            $0.name == "isInNodeDatabase"
+        }
         guard let messageEntity = model.entitiesByName["MHMessageEntity"] else { return model }
         let version3Properties: Set<String> = [
             "messageUUID", "persistenceKey", "hopCount", "receivedSnr",
@@ -69,6 +72,7 @@ enum TestModelFactory {
             double("distanceMeters"),
             bool("viaMqtt"),
             bool("isPinned"),
+            bool("isInNodeDatabase", defaultValue: true),
             int32("lastTracerouteHopCount"),
         ]
         e.uniquenessConstraints = [["nodeNum"]]
@@ -184,11 +188,16 @@ enum TestModelFactory {
         return a
     }
 
-    private static func bool(_ name: String, optional: Bool = true) -> NSAttributeDescription {
+    private static func bool(
+        _ name: String,
+        optional: Bool = true,
+        defaultValue: Bool? = nil
+    ) -> NSAttributeDescription {
         let a = NSAttributeDescription()
         a.name = name
         a.attributeType = .booleanAttributeType
         a.isOptional = optional
+        a.defaultValue = defaultValue
         return a
     }
 

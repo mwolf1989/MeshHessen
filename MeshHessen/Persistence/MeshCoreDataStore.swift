@@ -14,6 +14,8 @@ struct CoreDataHydrationStats {
 final class MeshCoreDataStore {
     private let persistenceController: PersistenceController
     private let isMessageHistoryEnabled: () -> Bool
+    private let nodeDatabaseMutationLock = NSLock()
+    private var nodeDatabaseGeneration: UInt64 = 0
 
     /// Maximum number of messages to keep per channel / conversation.
     /// Older messages are trimmed during retention passes.
@@ -334,6 +336,35 @@ final class MeshCoreDataStore {
         }
     }
 
+    /// Hides every persisted node from NodeDB hydration without deleting local
+    /// customizations. Nodes received from the radio become visible again when
+    /// `upsertNode(_:)` stores fresh NodeDB data for them.
+    @discardableResult
+    func resetNodeDatabaseMirror() -> Int {
+        let context = persistenceController.newBackgroundContext()
+        var resetCount = 0
+
+        nodeDatabaseMutationLock.lock()
+        nodeDatabaseGeneration &+= 1
+        defer { nodeDatabaseMutationLock.unlock() }
+
+        context.performAndWait {
+            let request = NSFetchRequest<NSManagedObject>(entityName: "MHNodeEntity")
+            guard let nodes = try? context.fetch(request) else { return }
+
+            for node in nodes where node.value(forKey: "isInNodeDatabase") as? Bool != false {
+                node.setValue(false, forKey: "isInNodeDatabase")
+                resetCount += 1
+            }
+            self.save(context: context, label: "reset-node-database-mirror")
+        }
+
+        persistenceController.container.viewContext.performAndWait {
+            persistenceController.container.viewContext.refreshAllObjects()
+        }
+        return resetCount
+    }
+
     // MARK: - Paged Message Fetch
 
     /// Cursor-based page of channel history. Results are returned oldest to
@@ -411,7 +442,15 @@ final class MeshCoreDataStore {
 
     func upsertNode(_ node: NodeInfo) {
         let context = persistenceController.newBackgroundContext()
+        nodeDatabaseMutationLock.lock()
+        let generation = nodeDatabaseGeneration
+        nodeDatabaseMutationLock.unlock()
+
         context.perform {
+            self.nodeDatabaseMutationLock.lock()
+            defer { self.nodeDatabaseMutationLock.unlock() }
+            guard generation == self.nodeDatabaseGeneration else { return }
+
             let request = NSFetchRequest<NSManagedObject>(entityName: "MHNodeEntity")
             request.fetchLimit = 1
             request.predicate = NSPredicate(format: "nodeNum == %lld", Int64(node.id))
@@ -442,6 +481,7 @@ final class MeshCoreDataStore {
             object.setValue(node.airUtilTx, forKey: "airUtilTx")
             object.setValue(node.distanceMeters, forKey: "distanceMeters")
             object.setValue(node.viaMqtt, forKey: "viaMqtt")
+            object.setValue(true, forKey: "isInNodeDatabase")
             if node.lastTracerouteHopCount > 0 {
                 object.setValue(Int32(node.lastTracerouteHopCount), forKey: "lastTracerouteHopCount")
             }
@@ -713,8 +753,10 @@ final class MeshCoreDataStore {
                     liveNode.note = node.note
                     liveNode.isPinned = node.isPinned
                     liveNode.lastTracerouteHopCount = node.lastTracerouteHopCount
-                } else {
+                } else if object.value(forKey: "isInNodeDatabase") as? Bool != false {
                     appState.upsertNode(node)
+                } else {
+                    continue
                 }
                 stats.nodes += 1
             }
@@ -1141,13 +1183,15 @@ final class MeshCoreDataStore {
             request.fetchLimit = 1
             request.predicate = NSPredicate(format: "nodeNum == %lld", Int64(nodeId))
 
-            let object = (try? context.fetch(request).first)
+            let existing = try? context.fetch(request).first
+            let object = existing
                 ?? NSEntityDescription.insertNewObject(forEntityName: "MHNodeEntity", into: context)
 
             // Ensure nodeNum is set for new entities
             if (object.value(forKey: "nodeNum") as? Int64 ?? 0) == 0 {
                 object.setValue(Int64(nodeId), forKey: "nodeNum")
                 object.setValue(String(format: "!%08x", nodeId), forKey: "nodeId")
+                object.setValue(false, forKey: "isInNodeDatabase")
             }
             object.setValue(colorHex, forKey: "colorHex")
             object.setValue(note, forKey: "note")
@@ -1164,12 +1208,14 @@ final class MeshCoreDataStore {
             request.fetchLimit = 1
             request.predicate = NSPredicate(format: "nodeNum == %lld", Int64(nodeId))
 
-            let object = (try? context.fetch(request).first)
+            let existing = try? context.fetch(request).first
+            let object = existing
                 ?? NSEntityDescription.insertNewObject(forEntityName: "MHNodeEntity", into: context)
 
             if (object.value(forKey: "nodeNum") as? Int64 ?? 0) == 0 {
                 object.setValue(Int64(nodeId), forKey: "nodeNum")
                 object.setValue(String(format: "!%08x", nodeId), forKey: "nodeId")
+                object.setValue(false, forKey: "isInNodeDatabase")
             }
             object.setValue(isPinned, forKey: "isPinned")
 
@@ -1185,12 +1231,14 @@ final class MeshCoreDataStore {
             request.fetchLimit = 1
             request.predicate = NSPredicate(format: "nodeNum == %lld", Int64(nodeId))
 
-            let object = (try? context.fetch(request).first)
+            let existing = try? context.fetch(request).first
+            let object = existing
                 ?? NSEntityDescription.insertNewObject(forEntityName: "MHNodeEntity", into: context)
 
             if (object.value(forKey: "nodeNum") as? Int64 ?? 0) == 0 {
                 object.setValue(Int64(nodeId), forKey: "nodeNum")
                 object.setValue(String(format: "!%08x", nodeId), forKey: "nodeId")
+                object.setValue(false, forKey: "isInNodeDatabase")
             }
             object.setValue(Int32(clamping: hopCount), forKey: "lastTracerouteHopCount")
             self.save(context: context, label: "node-traceroute-hop-count")

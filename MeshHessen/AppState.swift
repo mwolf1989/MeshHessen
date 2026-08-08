@@ -365,6 +365,8 @@ final class AppState {
             if let lon = info.longitude { existing.longitude = lon }
             if let alt = info.altitude  { existing.altitude = alt }
             existing.viaMqtt = info.viaMqtt
+            existing.isFavorite = info.isFavorite
+            existing.isOwnNode = info.isOwnNode
             // Preserve pin state from existing node (don't overwrite with incoming data)
             if info.isPinned { existing.isPinned = info.isPinned }
             if info.lastTracerouteHopCount > 0 {
@@ -429,6 +431,12 @@ final class AppState {
     }
 
     // MARK: - Reset on disconnect
+
+    /// Clears the client-side mirror of the radio's NodeDB while preserving
+    /// channels, messages, and conversations.
+    func resetNodeDatabaseMirror() {
+        nodes.removeAll()
+    }
 
     /// Resets transient connection state. CoreData-backed data (nodes, channels,
     /// messages) is preserved so it can be rehydrated on reconnect.

@@ -56,6 +56,7 @@ final class AppCoordinator {
     /// and should trigger an immediate reconnect without error UI.
     private var expectingDisconnect: Bool = false
     private var expectedDisconnectTimeoutTask: Task<Void, Never>?
+    private var pendingLocalNodeDatabaseReset: Bool = false
 
     /// Maximum backoff delay in seconds
     private let maxBackoffSeconds: Int = 30
@@ -419,15 +420,26 @@ final class AppCoordinator {
     @discardableResult
     func performAdminAction(_ action: AdminNodeAction, on target: AdminTarget) async throws -> Bool {
         let timeout = Duration.seconds(SettingsService.shared.remoteAdminTimeoutSeconds)
-        if !target.isRemote {
-            switch action {
-            case .reboot, .shutdown, .resetConfiguration, .factoryResetDevice:
-                expectSettingsWriteDisconnect()
-            case .resetNodeDatabase, .synchronizeTime, .removeFixedPosition:
-                break
-            }
+        let resetsLocalNodeDatabase = !target.isRemote && action.resetsNodeDatabase
+        if !target.isRemote, action.expectsLocalDisconnect {
+            expectSettingsWriteDisconnect()
         }
-        return try await protocol_.performAdminAction(action, on: target, timeout: timeout)
+        if resetsLocalNodeDatabase {
+            pendingLocalNodeDatabaseReset = true
+        }
+
+        do {
+            let sent = try await protocol_.performAdminAction(action, on: target, timeout: timeout)
+            if resetsLocalNodeDatabase {
+                resetLocalNodeDatabaseMirror()
+            }
+            return sent
+        } catch {
+            if resetsLocalNodeDatabase {
+                clearExpectedSettingsWriteDisconnect()
+            }
+            throw error
+        }
     }
 
     @discardableResult
@@ -901,6 +913,11 @@ final class AppCoordinator {
         virtualNodeClients = []
         mqttProxyState = .stopped
 
+        if pendingLocalNodeDatabaseReset {
+            resetLocalNodeDatabaseMirror()
+            pendingLocalNodeDatabaseReset = false
+        }
+
         guard autoReconnectEnabled,
               lastConnectionType != nil,
               lastConnectionParameters != nil
@@ -938,6 +955,7 @@ final class AppCoordinator {
             guard let self, self.expectingDisconnect else { return }
             self.expectingDisconnect = false
             self.expectedDisconnectTimeoutTask = nil
+            self.pendingLocalNodeDatabaseReset = false
             AppLogger.shared.log("[Coordinator] Expected settings-write disconnect did not occur", debug: true)
         }
     }
@@ -946,6 +964,15 @@ final class AppCoordinator {
         expectingDisconnect = false
         expectedDisconnectTimeoutTask?.cancel()
         expectedDisconnectTimeoutTask = nil
+        pendingLocalNodeDatabaseReset = false
+    }
+
+    private func resetLocalNodeDatabaseMirror() {
+        let resetCount = coreDataStore.resetNodeDatabaseMirror()
+        appState.resetNodeDatabaseMirror()
+        AppLogger.shared.log(
+            "[Coordinator] Cleared local NodeDB mirror after device reset (\(resetCount) persisted nodes hidden)"
+        )
     }
 
     private func verifyDeviceConfig(

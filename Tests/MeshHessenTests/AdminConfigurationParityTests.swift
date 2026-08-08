@@ -118,6 +118,15 @@ struct AdminConfigurationParityTests {
         #expect(!AdminNodeAction.reboot(afterSeconds: 2).requiresDestructiveConfirmation)
     }
 
+    @Test("NodeDB reset is recognized as a rebooting local action")
+    func nodeDatabaseResetLifecycle() {
+        let action = AdminNodeAction.resetNodeDatabase(preserveFavorites: true)
+
+        #expect(action.resetsNodeDatabase)
+        #expect(action.expectsLocalDisconnect)
+        #expect(!AdminNodeAction.synchronizeTime(.now).expectsLocalDisconnect)
+    }
+
     @Test("Time synchronization uses Unix seconds")
     func timeSynchronization() {
         let date = Date(timeIntervalSince1970: 1_700_000_123)

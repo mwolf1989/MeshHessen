@@ -599,6 +599,20 @@ enum AdminNodeAction: Equatable, Sendable {
         }
     }
 
+    var resetsNodeDatabase: Bool {
+        if case .resetNodeDatabase = self { return true }
+        return false
+    }
+
+    var expectsLocalDisconnect: Bool {
+        switch self {
+        case .reboot, .shutdown, .resetNodeDatabase, .resetConfiguration, .factoryResetDevice:
+            return true
+        case .synchronizeTime, .removeFixedPosition:
+            return false
+        }
+    }
+
     func adminMessage() -> Meshtastic_AdminMessage {
         var message = Meshtastic_AdminMessage()
         switch self {
