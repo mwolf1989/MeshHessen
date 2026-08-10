@@ -583,6 +583,13 @@ final class AppCoordinator {
         return page
     }
 
+    func searchChannelMessages(
+        _ query: String,
+        scope: ChannelMessageSearchScope
+    ) async -> [MessageItem] {
+        await coreDataStore.searchChannelMessages(query: query, scope: scope)
+    }
+
     /// Deletes channel history from every persistence layer before returning.
     @discardableResult
     func clearChannelMessages(

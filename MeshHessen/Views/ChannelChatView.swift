@@ -16,17 +16,28 @@ struct ChannelChatView: View {
     @State private var deletionScope: MessageHistoryDeletionScope = .all
     @State private var showSOSConfirmation = false
     @State private var replyingTo: MessageItem?
+    @State private var searchText = ""
+    @State private var searchResults: [MessageItem] = []
+    @State private var isSearching = false
     @FocusState private var inputFocused: Bool
 
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isSearchActive: Bool { !normalizedSearchText.isEmpty }
+
     private var messages: [MessageItem] {
-        (appState.channelMessages[channelIndex] ?? []).filter {
+        if isSearchActive { return searchResults }
+        return (appState.channelMessages[channelIndex] ?? []).filter {
             $0.hasKnownChannel && $0.channelIndex == channelIndex
         }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 10) {
+                MessageSearchField(text: $searchText, isSearching: isSearching)
                 Spacer()
                 Menu {
                     deletionButton("Alle Nachrichten", scope: .all)
@@ -49,7 +60,13 @@ struct ChannelChatView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
-                        if hasMoreHistory {
+                        if isSearchActive, !isSearching, messages.isEmpty {
+                            ContentUnavailableView.search(text: normalizedSearchText)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 36)
+                        }
+
+                        if hasMoreHistory && !isSearchActive {
                             Button {
                                 loadOlderHistory(using: proxy)
                             } label: {
@@ -86,6 +103,7 @@ struct ChannelChatView: View {
                     .padding(12)
                 }
                 .onChange(of: messages.count) { _, _ in
+                    guard !isSearchActive else { return }
                     if suppressNextAutoScroll {
                         suppressNextAutoScroll = false
                     } else if let last = messages.last {
@@ -160,7 +178,12 @@ struct ChannelChatView: View {
         .onChange(of: channelIndex) { _, new in
             replyingTo = nil
             hasMoreHistory = true
+            searchText = ""
+            searchResults = []
             appState.clearChannelUnread(new)
+        }
+        .task(id: MessageSearchTaskKey(query: normalizedSearchText, channelIndex: channelIndex)) {
+            await runSearch()
         }
         .alert("Nachrichten löschen?", isPresented: $showDeleteConfirmation) {
             Button("Löschen", role: .destructive) {
@@ -179,6 +202,32 @@ struct ChannelChatView: View {
             Button("Abbrechen", role: .cancel) {}
         } message: {
             Text("Der Notruf wird auf Kanal \(channelIndex) gesendet. Text im Eingabefeld wird als Zusatztext übernommen.")
+        }
+    }
+
+    private func runSearch() async {
+        let query = normalizedSearchText
+        guard !query.isEmpty else {
+            searchResults = []
+            isSearching = false
+            return
+        }
+
+        isSearching = true
+        do {
+            try await Task.sleep(for: .milliseconds(250))
+            let results = await coordinator.searchChannelMessages(
+                query,
+                scope: .channel(channelIndex)
+            )
+            try Task.checkCancellation()
+            searchResults = results
+            isSearching = false
+        } catch is CancellationError {
+            return
+        } catch {
+            isSearching = false
+            AppLogger.shared.log("[History] Channel search failed: \(error.localizedDescription)")
         }
     }
 
@@ -301,4 +350,9 @@ struct ChannelChatView: View {
             }
         }
     }
+}
+
+private struct MessageSearchTaskKey: Hashable {
+    let query: String
+    let channelIndex: Int
 }

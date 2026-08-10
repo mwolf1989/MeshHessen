@@ -256,6 +256,74 @@ struct MessagePersistenceParityTests {
         #expect(Set((first.messages + second.messages + third.messages).map(\.id)).count == 5)
     }
 
+    @Test("Search finds retained channel history without including direct messages")
+    @MainActor
+    func searchesRetainedChannelHistory() async throws {
+        let (store, _) = makeStore()
+        let oldDate = Date().addingTimeInterval(-48 * 60 * 60)
+
+        var bodyMatch = message(
+            packetId: 801,
+            senderId: 1,
+            channelIndex: 0,
+            createdAt: oldDate,
+            text: "Grüße aus Köln"
+        )
+        bodyMatch.from = "Funk Ärger"
+        bodyMatch.senderShortName = "FAE"
+        bodyMatch.channelName = "Mesh Hessen"
+
+        var channelNameMatch = message(
+            packetId: 802,
+            senderId: 2,
+            channelIndex: 1,
+            createdAt: oldDate.addingTimeInterval(1),
+            text: "Bereit"
+        )
+        channelNameMatch.channelName = "Notfunk Küste"
+
+        var directMatch = message(
+            packetId: 803,
+            senderId: 3,
+            channelIndex: 0,
+            createdAt: oldDate.addingTimeInterval(2),
+            text: "Köln privat"
+        )
+        directMatch.toId = 99
+
+        store.upsertMessage(bodyMatch, isDirect: false, partnerNodeId: nil)
+        store.upsertMessage(channelNameMatch, isDirect: false, partnerNodeId: nil)
+        store.upsertMessage(directMatch, isDirect: true, partnerNodeId: 3)
+
+        let hydratedState = AppState()
+        _ = store.hydrate(appState: hydratedState)
+        #expect(hydratedState.allMessages.isEmpty)
+
+        let bodyResults = await store.searchChannelMessages(
+            query: "koln",
+            scope: .channel(0)
+        )
+        #expect(bodyResults.map(\.packetId) == [801])
+
+        let senderResults = await store.searchChannelMessages(
+            query: "arger",
+            scope: .channel(0)
+        )
+        #expect(senderResults.map(\.packetId) == [801])
+
+        let channelResults = await store.searchChannelMessages(
+            query: "kuste",
+            scope: .allChannels
+        )
+        #expect(channelResults.map(\.packetId) == [802])
+
+        let scopedOut = await store.searchChannelMessages(
+            query: "bereit",
+            scope: .channel(0)
+        )
+        #expect(scopedOut.isEmpty)
+    }
+
     @Test("Retention and range deletion use message creation dates")
     func retentionAndDeletionScopes() {
         let (store, _) = makeStore()

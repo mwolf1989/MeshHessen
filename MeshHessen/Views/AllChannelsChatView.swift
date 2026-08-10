@@ -11,17 +11,40 @@ struct AllChannelsChatView: View {
     @State private var isSending = false
     @State private var showSOSConfirmation = false
     @State private var replyingTo: MessageItem?
+    @State private var searchText = ""
+    @State private var searchResults: [MessageItem] = []
+    @State private var isSearching = false
     @FocusState private var inputFocused: Bool
 
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isSearchActive: Bool { !normalizedSearchText.isEmpty }
+
     private var messages: [MessageItem] {
-        appState.allMessages.sorted { $0.createdAt < $1.createdAt }
+        if isSearchActive { return searchResults }
+        return appState.allMessages.sorted { $0.createdAt < $1.createdAt }
     }
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack {
+                MessageSearchField(text: $searchText, isSearching: isSearching)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
+                        if isSearchActive, !isSearching, messages.isEmpty {
+                            ContentUnavailableView.search(text: normalizedSearchText)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 36)
+                        }
+
                         ForEach(messages) { message in
                             VStack(alignment: .leading, spacing: 3) {
                                 Label(
@@ -54,6 +77,7 @@ struct AllChannelsChatView: View {
                     .padding(12)
                 }
                 .onChange(of: messages.count) { _, _ in
+                    guard !isSearchActive else { return }
                     if let last = messages.last {
                         withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                     }
@@ -117,11 +141,37 @@ struct AllChannelsChatView: View {
         .onChange(of: sendChannelIndex) { _, newValue in
             appState.selectedChannelIndex = newValue
         }
+        .task(id: normalizedSearchText) {
+            await runSearch()
+        }
         .confirmationDialog("SOS-Alarm senden?", isPresented: $showSOSConfirmation) {
             Button("SOS senden", role: .destructive) { sendSOS() }
             Button("Abbrechen", role: .cancel) {}
         } message: {
             Text("Der Notruf wird auf dem ausgewählten Sendekanal übertragen.")
+        }
+    }
+
+    private func runSearch() async {
+        let query = normalizedSearchText
+        guard !query.isEmpty else {
+            searchResults = []
+            isSearching = false
+            return
+        }
+
+        isSearching = true
+        do {
+            try await Task.sleep(for: .milliseconds(250))
+            let results = await coordinator.searchChannelMessages(query, scope: .allChannels)
+            try Task.checkCancellation()
+            searchResults = results
+            isSearching = false
+        } catch is CancellationError {
+            return
+        } catch {
+            isSearching = false
+            AppLogger.shared.log("[History] All-channel search failed: \(error.localizedDescription)")
         }
     }
 

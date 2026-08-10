@@ -11,6 +11,11 @@ struct CoreDataHydrationStats {
     var migratedNotes: Int = 0
 }
 
+enum ChannelMessageSearchScope: Equatable, Sendable {
+    case channel(Int)
+    case allChannels
+}
+
 final class MeshCoreDataStore {
     private let persistenceController: PersistenceController
     private let isMessageHistoryEnabled: () -> Bool
@@ -417,7 +422,7 @@ final class MeshCoreDataStore {
         request.fetchOffset = offset
 
         guard let results = try? context.fetch(request) else { return [] }
-        return results.reversed().compactMap(makeMessage(from:))
+        return results.reversed().compactMap(Self.makeMessage(from:))
     }
 
     /// Fetches DM messages for a conversation with paging support.
@@ -437,7 +442,50 @@ final class MeshCoreDataStore {
         request.fetchOffset = offset
 
         guard let results = try? context.fetch(request) else { return [] }
-        return results.reversed().compactMap(makeMessage(from:))
+        return results.reversed().compactMap(Self.makeMessage(from:))
+    }
+
+    /// Searches every retained channel message without hydrating older history
+    /// into `AppState`. Direct messages are deliberately outside this scope.
+    func searchChannelMessages(
+        query: String,
+        scope: ChannelMessageSearchScope
+    ) async -> [MessageItem] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return [] }
+
+        preparePersistedMessagesForRead()
+        let context = persistenceController.newBackgroundContext()
+
+        return await context.perform {
+            let request = NSFetchRequest<NSManagedObject>(entityName: "MHMessageEntity")
+            var predicates = [NSPredicate(format: "isDirect == NO")]
+
+            switch scope {
+            case .channel(let channelIndex):
+                predicates.append(NSPredicate(format: "channelIndex == %d", Int32(channelIndex)))
+                predicates.append(NSCompoundPredicate(orPredicateWithSubpredicates: [
+                    NSPredicate(format: "messageText CONTAINS[cd] %@", trimmedQuery),
+                    NSPredicate(format: "fromName CONTAINS[cd] %@", trimmedQuery),
+                    NSPredicate(format: "senderShortName CONTAINS[cd] %@", trimmedQuery),
+                ]))
+            case .allChannels:
+                predicates.append(NSCompoundPredicate(orPredicateWithSubpredicates: [
+                    NSPredicate(format: "messageText CONTAINS[cd] %@", trimmedQuery),
+                    NSPredicate(format: "fromName CONTAINS[cd] %@", trimmedQuery),
+                    NSPredicate(format: "senderShortName CONTAINS[cd] %@", trimmedQuery),
+                    NSPredicate(format: "channelName CONTAINS[cd] %@", trimmedQuery),
+                ]))
+            }
+
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+            request.sortDescriptors = [
+                NSSortDescriptor(key: "createdAt", ascending: true),
+                NSSortDescriptor(key: "persistenceKey", ascending: true),
+            ]
+
+            return ((try? context.fetch(request)) ?? []).compactMap(Self.makeMessage(from:))
+        }
     }
 
     func upsertNode(_ node: NodeInfo) {
@@ -807,7 +855,7 @@ final class MeshCoreDataStore {
         if let messages = try? context.fetch(messageRequest) {
             var seenPersistenceKeys = Set<String>()
             for object in messages {
-                guard let message = makeMessage(from: object) else { continue }
+                guard let message = Self.makeMessage(from: object) else { continue }
 
                 let isDirect = object.value(forKey: "isDirect") as? Bool ?? false
                 let storedPartnerNodeId = UInt32(clamping: (object.value(forKey: "partnerNodeId") as? Int64) ?? 0)
@@ -898,7 +946,7 @@ final class MeshCoreDataStore {
         )
     }
 
-    private func makeMessage(from object: NSManagedObject) -> MessageItem? {
+    private static func makeMessage(from object: NSManagedObject) -> MessageItem? {
         let fromId = UInt32((object.value(forKey: "fromId") as? Int64) ?? 0)
         let toId = UInt32((object.value(forKey: "toId") as? Int64) ?? 0)
         let channelIndex = Int((object.value(forKey: "channelIndex") as? Int32) ?? 0)
@@ -1067,7 +1115,7 @@ final class MeshCoreDataStore {
             guard let objects = try? context.fetch(request), !objects.isEmpty else { return }
 
             for object in objects {
-                guard let message = self.makeMessage(from: object) else { continue }
+                guard let message = Self.makeMessage(from: object) else { continue }
                 let normalized = message.normalizingUnknownChannel()
                 object.setValue(Int32(normalized.channelIndex), forKey: "channelIndex")
                 object.setValue(normalized.channelName, forKey: "channelName")
@@ -1116,7 +1164,7 @@ final class MeshCoreDataStore {
             guard let results = try? context.fetch(request) else { return }
             let hasMore = results.count > limit
             let selected = Array(results.prefix(limit))
-            let messages = selected.reversed().compactMap(self.makeMessage(from:))
+            let messages = selected.reversed().compactMap(Self.makeMessage(from:))
             let nextCursor: MessagePageCursor?
             if hasMore,
                let oldest = selected.last,

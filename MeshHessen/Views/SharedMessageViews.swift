@@ -1,6 +1,43 @@
 import AppKit
 import SwiftUI
 
+struct MessageSearchField: View {
+    @Binding var text: String
+    let isSearching: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+
+            TextField("Nachrichten durchsuchen", text: $text)
+                .textFieldStyle(.plain)
+                .accessibilityLabel("Nachrichten durchsuchen")
+
+            if isSearching {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Nachrichten werden durchsucht")
+            } else if !text.isEmpty {
+                Button("Suche löschen", systemImage: "xmark.circle.fill") {
+                    text = ""
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.quaternary.opacity(0.45), in: .rect(cornerRadius: 7))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(.quaternary)
+        }
+        .frame(minWidth: 180, idealWidth: 280, maxWidth: 360)
+    }
+}
+
 /// Shared delivery state label used in both channel and DM message bubbles.
 struct DeliveryStateLabel: View {
     let state: MessageDeliveryState
