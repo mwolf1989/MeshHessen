@@ -66,15 +66,18 @@ struct AdminConfigurationParityTests {
         }
     }
 
-    @Test("Admin packet preserves the explicit remote request target")
-    func requestTarget() {
+    @Test("Remote admin packet uses PKI, reliable delivery and the explicit target")
+    func pkiRequestTarget() {
         let payload = Data([0x08, 0x01])
+        let publicKey = Data(repeating: 0xA5, count: 32)
         let packet = MeshtasticProtocolService.makeAdminMeshPacket(
             payload: payload,
             fromNodeID: 0x1122_3344,
             toNodeID: 0xAABB_CCDD,
             packetID: 42,
-            wantResponse: true
+            wantResponse: true,
+            targetPublicKey: publicKey,
+            adminChannel: 6
         )
 
         #expect(packet.from == 0x1122_3344)
@@ -83,6 +86,90 @@ struct AdminConfigurationParityTests {
         #expect(packet.decoded.portnum == .adminApp)
         #expect(packet.decoded.payload == payload)
         #expect(packet.decoded.wantResponse)
+        #expect(packet.pkiEncrypted)
+        #expect(packet.publicKey == publicKey)
+        #expect(packet.channel == 0)
+        #expect(packet.wantAck)
+        #expect(packet.priority == .reliable)
+    }
+
+    @Test("Local admin remains unencrypted even when a target key is supplied")
+    func localAdminPacket() {
+        let packet = MeshtasticProtocolService.makeAdminMeshPacket(
+            payload: Data([1]),
+            fromNodeID: 7,
+            toNodeID: 7,
+            packetID: 9,
+            wantResponse: false,
+            targetPublicKey: Data(repeating: 0xCC, count: 32),
+            adminChannel: 5
+        )
+
+        #expect(!packet.pkiEncrypted)
+        #expect(packet.publicKey.isEmpty)
+        #expect(packet.channel == 0)
+        #expect(packet.wantAck)
+        #expect(packet.priority == .reliable)
+    }
+
+    @Test("Remote admin without a valid key uses the configured admin channel or primary fallback")
+    func legacyAdminChannelFallback() {
+        let adminChannelPacket = MeshtasticProtocolService.makeAdminMeshPacket(
+            payload: Data(),
+            fromNodeID: 1,
+            toNodeID: 2,
+            packetID: 10,
+            wantResponse: true,
+            targetPublicKey: Data(repeating: 0, count: 31),
+            adminChannel: 4
+        )
+        let primaryFallbackPacket = MeshtasticProtocolService.makeAdminMeshPacket(
+            payload: Data(),
+            fromNodeID: 1,
+            toNodeID: 2,
+            packetID: 11,
+            wantResponse: true,
+            targetPublicKey: nil,
+            adminChannel: 0
+        )
+
+        #expect(!adminChannelPacket.pkiEncrypted)
+        #expect(adminChannelPacket.channel == 4)
+        #expect(adminChannelPacket.publicKey.isEmpty)
+        #expect(!primaryFallbackPacket.pkiEncrypted)
+        #expect(primaryFallbackPacket.channel == 0)
+    }
+
+    @Test("Routing NACKs correlate only with their pending admin packet ID")
+    func routingNACKCorrelation() {
+        var tracker = MeshtasticProtocolService.AdminRoutingFailureTracker()
+        tracker.register(requestID: 42, destination: 0xAABB_CCDD)
+
+        let unrelatedMatched = tracker.record(
+            requestID: 41,
+            sourceNodeID: 0xAABB_CCDD,
+            error: .pkiFailed
+        )
+        let unrelatedFailure = tracker.takeFailure(for: 42)
+        let pendingMatched = tracker.record(
+            requestID: 42,
+            sourceNodeID: 0x1122_3344,
+            error: .adminPublicKeyUnauthorized
+        )
+        let correlatedFailure = tracker.takeFailure(for: 42)
+
+        #expect(!unrelatedMatched)
+        #expect(unrelatedFailure == nil)
+        #expect(pendingMatched)
+        #expect(correlatedFailure == .adminPublicKeyUnauthorized)
+
+        tracker.finish(42)
+        let finishedMatched = tracker.record(
+            requestID: 42,
+            sourceNodeID: 0xAABB_CCDD,
+            error: .pkiFailed
+        )
+        #expect(!finishedMatched)
     }
 
     @Test("Local and remote target validation rejects broadcast and unknown IDs")

@@ -28,6 +28,7 @@ final class MeshtasticProtocolService {
         case missingSessionKey
         case requestFailed
         case invalidTarget
+        case routingFailed(RoutingError)
         case adminTimedOut(String)
         case incompleteResponse([String])
         case writeFailed(String)
@@ -44,6 +45,8 @@ final class MeshtasticProtocolService {
                 return String(localized: "The configuration request could not be sent.")
             case .invalidTarget:
                 return String(localized: "The administration target is invalid.")
+            case .routingFailed(let error):
+                return String(localized: "The administration request failed: \(error.display).")
             case .adminTimedOut(let operation):
                 return String(localized: "The node did not answer the administration request: \(operation).")
             case .incompleteResponse(let categories):
@@ -108,9 +111,66 @@ final class MeshtasticProtocolService {
 
     private var adminResponseSequence: UInt64 = 0
     private var adminResponses: [AdminResponseRecord] = []
+    private var adminRoutingTracker = AdminRoutingFailureTracker()
     private var remoteSessionPasskeys: [UInt32: Data] = [:]
     private var remoteSessionPasskeyDates: [UInt32: Date] = [:]
     private var localSessionPasskeyDate: Date?
+
+    struct AdminRoutingFailureTracker {
+        private var pendingDestinations: [UInt32: UInt32] = [:]
+        private var zeroSourceRequestIDs: Set<UInt32> = []
+        private var failures: [UInt32: RoutingError] = [:]
+        private var acknowledgements: Set<UInt32> = []
+
+        mutating func register(
+            requestID: UInt32,
+            destination: UInt32,
+            acceptsZeroSource: Bool = false
+        ) {
+            pendingDestinations[requestID] = destination
+            if acceptsZeroSource {
+                zeroSourceRequestIDs.insert(requestID)
+            } else {
+                zeroSourceRequestIDs.remove(requestID)
+            }
+            failures.removeValue(forKey: requestID)
+            acknowledgements.remove(requestID)
+        }
+
+        @discardableResult
+        mutating func record(
+            requestID: UInt32,
+            sourceNodeID: UInt32,
+            error: RoutingError
+        ) -> Bool {
+            guard let destination = pendingDestinations[requestID] else { return false }
+            if error != .none {
+                failures[requestID] = error
+                return true
+            }
+            if sourceNodeID == destination
+                || (sourceNodeID == 0 && zeroSourceRequestIDs.contains(requestID)) {
+                acknowledgements.insert(requestID)
+                return true
+            }
+            return false
+        }
+
+        mutating func takeFailure(for requestID: UInt32) -> RoutingError? {
+            failures.removeValue(forKey: requestID)
+        }
+
+        func isAcknowledged(_ requestID: UInt32) -> Bool {
+            acknowledgements.contains(requestID)
+        }
+
+        mutating func finish(_ requestID: UInt32) {
+            pendingDestinations.removeValue(forKey: requestID)
+            zeroSourceRequestIDs.remove(requestID)
+            failures.removeValue(forKey: requestID)
+            acknowledgements.remove(requestID)
+        }
+    }
 
     // TCP heartbeat keepalive
     private var heartbeatTask: Task<Void, Never>?
@@ -886,6 +946,17 @@ final class MeshtasticProtocolService {
         // Parse it from the raw payload to determine success vs. error code.
         let errorCode = parseRoutingErrorReason(from: data.payload)
         let routingError = RoutingError(rawValue: errorCode) ?? .none
+        let matchedAdminRequest = adminRoutingTracker.record(
+            requestID: data.requestID,
+            sourceNodeID: packet.from,
+            error: routingError
+        )
+        if matchedAdminRequest, routingError != .none {
+            AppLogger.shared.log(
+                "[Admin] Routing NACK correlated with packetID=\(data.requestID): \(routingError.display)",
+                debug: true
+            )
+        }
         let storageContext: MessageStorageContext? = {
             if packet.from != 0 && packet.from != myNodeId {
                 return .directMessage(partnerNodeId: packet.from)
@@ -1982,6 +2053,7 @@ final class MeshtasticProtocolService {
             var matchingRecord: AdminResponseRecord?
             while clock.now < categoryDeadline {
                 try Task.checkCancellation()
+                try throwIfAdminRoutingFailed(requestID: requestID)
                 matchingRecord = adminResponses.first { record in
                     guard record.sequence > baselineSequence,
                           record.sourceNodeID == destination
@@ -1994,6 +2066,8 @@ final class MeshtasticProtocolService {
                 if matchingRecord != nil { break }
                 try await Task.sleep(for: .milliseconds(100))
             }
+            try throwIfAdminRoutingFailed(requestID: requestID)
+            adminRoutingTracker.finish(requestID)
 
             if let matchingRecord {
                 apply(matchingRecord.message, kind: kind, to: &snapshot)
@@ -2058,14 +2132,14 @@ final class MeshtasticProtocolService {
         func write(_ message: Meshtastic_AdminMessage, label: String) async throws {
             var authenticated = message
             authenticated.sessionPasskey = key
-            guard await sendAdminPacket(
+            guard let requestID = await sendAdminPacket(
                 authenticated,
                 toNodeID: destination,
                 wantResponse: false
-            ) != nil else {
+            ) else {
                 throw DeviceConfigError.writeFailed(label)
             }
-            try await Task.sleep(for: .milliseconds(50))
+            try await waitForAdminRoutingOutcome(requestID: requestID)
         }
 
         var begin = Meshtastic_AdminMessage()
@@ -2150,9 +2224,14 @@ final class MeshtasticProtocolService {
         let key = try await ensureAdminSession(for: target, destination: destination, timeout: timeout)
         var message = action.adminMessage()
         message.sessionPasskey = key
-        guard await sendAdminPacket(message, toNodeID: destination, wantResponse: false) != nil else {
+        guard let requestID = await sendAdminPacket(
+            message,
+            toNodeID: destination,
+            wantResponse: false
+        ) else {
             throw DeviceConfigError.writeFailed(String(localized: "Administrative action"))
         }
+        try await waitForAdminRoutingOutcome(requestID: requestID)
         return true
     }
 
@@ -2230,7 +2309,11 @@ final class MeshtasticProtocolService {
         let baseline = adminResponseSequence
         var request = Meshtastic_AdminMessage()
         request.getConfigRequest = .sessionkeyConfig
-        guard await sendAdminPacket(request, toNodeID: destination, wantResponse: true) != nil else {
+        guard let requestID = await sendAdminPacket(
+            request,
+            toNodeID: destination,
+            wantResponse: true
+        ) else {
             throw DeviceConfigError.requestFailed
         }
 
@@ -2238,21 +2321,29 @@ final class MeshtasticProtocolService {
         let deadline = clock.now.advanced(by: timeout)
         while clock.now < deadline {
             try Task.checkCancellation()
+            try throwIfAdminRoutingFailed(requestID: requestID)
             if target.isRemote,
                let key = remoteSessionPasskeys[destination], !key.isEmpty {
+                adminRoutingTracker.finish(requestID)
                 return key
             }
-            if !target.isRemote, !sessionPasskey.isEmpty { return sessionPasskey }
+            if !target.isRemote, !sessionPasskey.isEmpty {
+                adminRoutingTracker.finish(requestID)
+                return sessionPasskey
+            }
 
             if let response = adminResponses.last(where: {
                 $0.sequence > baseline
                     && ($0.sourceNodeID == destination || (!target.isRemote && $0.sourceNodeID == 0))
                     && !$0.message.sessionPasskey.isEmpty
             }) {
+                adminRoutingTracker.finish(requestID)
                 return response.message.sessionPasskey
             }
             try await Task.sleep(for: .milliseconds(100))
         }
+        try throwIfAdminRoutingFailed(requestID: requestID)
+        adminRoutingTracker.finish(requestID)
         throw DeviceConfigError.missingSessionKey
     }
 
@@ -3067,7 +3158,15 @@ final class MeshtasticProtocolService {
             admin.removeFavoriteNode = nodeId
         }
         admin.sessionPasskey = key
-        return await sendAdminPacket(admin, toNodeID: destination, wantResponse: true) != nil
+        guard let requestID = await sendAdminPacket(
+            admin,
+            toNodeID: destination,
+            wantResponse: true
+        ) else {
+            return false
+        }
+        try await waitForAdminRoutingOutcome(requestID: requestID)
+        return true
     }
 
     @discardableResult
@@ -3386,7 +3485,9 @@ final class MeshtasticProtocolService {
         fromNodeID: UInt32,
         toNodeID: UInt32,
         packetID: UInt32,
-        wantResponse: Bool
+        wantResponse: Bool,
+        targetPublicKey: Data?,
+        adminChannel: UInt32
     ) -> Meshtastic_MeshPacket {
         var innerData = Meshtastic_Data()
         innerData.portnum = .adminApp
@@ -3398,6 +3499,19 @@ final class MeshtasticProtocolService {
         packet.to = toNodeID
         packet.id = packetID
         packet.decoded = innerData
+        packet.wantAck = true
+        packet.priority = .reliable
+
+        let isRemote = fromNodeID != toNodeID
+        if isRemote, let targetPublicKey, targetPublicKey.count == 32 {
+            packet.channel = 0
+            packet.publicKey = targetPublicKey
+            packet.pkiEncrypted = true
+        } else if isRemote {
+            packet.channel = adminChannel
+        } else {
+            packet.channel = 0
+        }
         return packet
     }
 
@@ -3410,18 +3524,94 @@ final class MeshtasticProtocolService {
         guard let data = try? admin.serializedData() else { return nil }
         guard myNodeId != 0, toNodeID != 0, toNodeID != UInt32.max else { return nil }
         let packetID = UInt32.random(in: 1..<UInt32(Int32.max))
+        let isRemote = toNodeID != myNodeId
+        let targetPublicKey = isRemote ? adminTargetPublicKey(for: toNodeID) : nil
+        let configuredAdminChannel = isRemote ? configuredAdminChannelIndex() : nil
         let packet = Self.makeAdminMeshPacket(
             payload: data,
             fromNodeID: myNodeId,
             toNodeID: toNodeID,
             packetID: packetID,
-            wantResponse: wantResponse
+            wantResponse: wantResponse,
+            targetPublicKey: targetPublicKey,
+            adminChannel: configuredAdminChannel ?? 0
         )
-        // Leave hopLimit, wantAck, priority at defaults (0/false/unset)
-        // to match the Windows client's local and remote admin packets.
+        let path: String
+        if !isRemote {
+            path = "local"
+        } else if packet.pkiEncrypted {
+            path = "pki"
+        } else if configuredAdminChannel != nil {
+            path = "admin-channel"
+        } else {
+            path = "primary-fallback"
+        }
 
-        AppLogger.shared.log("[Protocol] Sending admin message (id=\(packet.id), from=\(String(format: "!%08x", packet.from)), payloadSize=\(data.count))", debug: true)
-        return await sendToRadio(packet: packet) ? packetID : nil
+        AppLogger.shared.log(
+            "[Admin] Sending target=\(String(format: "!%08x", toNodeID)) "
+                + "path=\(path) channel=\(packet.channel) pki=\(packet.pkiEncrypted) "
+                + "keySize=\(targetPublicKey?.count ?? 0) packetID=\(packetID) payloadSize=\(data.count)",
+            debug: true
+        )
+
+        adminRoutingTracker.register(
+            requestID: packetID,
+            destination: toNodeID,
+            acceptsZeroSource: toNodeID == myNodeId
+        )
+        guard await sendToRadio(packet: packet) else {
+            adminRoutingTracker.finish(packetID)
+            return nil
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(60))
+            self?.adminRoutingTracker.finish(packetID)
+        }
+        return packetID
+    }
+
+    private func adminTargetPublicKey(for nodeID: UInt32) -> Data? {
+        if let liveKey = appState?.node(forId: nodeID)?.publicKey, liveKey.count == 32 {
+            return liveKey
+        }
+        if let storedKey = NodeKeyService.shared.publicKey(for: nodeID), storedKey.count == 32 {
+            return storedKey
+        }
+        return nil
+    }
+
+    private func configuredAdminChannelIndex() -> UInt32? {
+        appState?.channels
+            .filter { (0..<8).contains($0.id) }
+            .sorted { $0.id < $1.id }
+            .first { channel in
+                channel.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                    == "admin"
+            }
+            .map { UInt32($0.id) }
+    }
+
+    private func throwIfAdminRoutingFailed(requestID: UInt32) throws {
+        guard let error = adminRoutingTracker.takeFailure(for: requestID) else { return }
+        adminRoutingTracker.finish(requestID)
+        throw DeviceConfigError.routingFailed(error)
+    }
+
+    private func waitForAdminRoutingOutcome(
+        requestID: UInt32,
+        timeout: Duration = .seconds(1)
+    ) async throws {
+        defer { adminRoutingTracker.finish(requestID) }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while clock.now < deadline {
+            try Task.checkCancellation()
+            try throwIfAdminRoutingFailed(requestID: requestID)
+            if adminRoutingTracker.isAcknowledged(requestID) { return }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try throwIfAdminRoutingFailed(requestID: requestID)
     }
 
     @discardableResult
