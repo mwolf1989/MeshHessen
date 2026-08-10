@@ -1,8 +1,8 @@
-import SwiftUI
 import AppKit
-import UserNotifications
 import CoreData
+import SwiftUI
 import TipKit
+import UserNotifications
 
 @main
 struct MeshHessenApp: App {
@@ -179,52 +179,16 @@ struct MeshHessenApp: App {
         postSystemNotification(for: msg, partnerId: partnerId)
     }
 
-    // MARK: - System Notification
-
-    /// Cached notification authorization state to avoid requesting on every DM
-    @State private var notificationAuthorized: Bool?
-
     private func postSystemNotification(for message: MessageItem?, partnerId: UInt32) {
-        let center = UNUserNotificationCenter.current()
-
-        // Only request authorization once, then cache the result
-        if let authorized = notificationAuthorized {
-            guard authorized else { return }
-            postNotificationContent(for: message, partnerId: partnerId, center: center)
-        } else {
-            center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-                if let error {
-                    AppLogger.shared.log("[App] Notification authorization error: \(error.localizedDescription)", debug: true)
-                }
-                Task { @MainActor in
-                    notificationAuthorized = granted
-                }
-                guard granted else {
-                    AppLogger.shared.log("[App] Notification authorization denied", debug: true)
-                    return
-                }
-                postNotificationContent(for: message, partnerId: partnerId, center: center)
-            }
-        }
-    }
-
-    private func postNotificationContent(for message: MessageItem?, partnerId: UInt32, center: UNUserNotificationCenter) {
-        let content = UNMutableNotificationContent()
         let senderName = message?.from ?? "Node \(partnerId)"
-        content.title = String(localized: "DM from \(senderName)")
-        content.body = message?.message ?? String(localized: "New direct message")
-        content.sound = .default
-        content.categoryIdentifier = "INCOMING_DM"
-
-        let request = UNNotificationRequest(
+        let notification = AppNotification(
             identifier: "dm-\(partnerId)-\(Date().timeIntervalSince1970)",
-            content: content,
-            trigger: nil  // deliver immediately
+            title: String(localized: "DM from \(senderName)"),
+            body: message?.message ?? String(localized: "New direct message"),
+            categoryIdentifier: "INCOMING_DM"
         )
-        center.add(request) { error in
-            if let error {
-                AppLogger.shared.log("[App] Failed to post notification: \(error.localizedDescription)", debug: true)
-            }
+        Task {
+            await SystemNotificationService.shared.deliver(notification)
         }
     }
 }

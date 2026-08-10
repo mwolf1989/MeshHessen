@@ -74,6 +74,9 @@ struct TelemetryDashboardView: View {
         )) { _ in
             refresh()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .telemetryAlarmStateDidChange)) { _ in
+            refresh()
+        }
     }
 
     private var nodeCatalog: [TelemetryDashboardNode] {
@@ -344,6 +347,10 @@ private struct TelemetryWidgetEditor: View {
 
     @State private var draft: TelemetryDashboardWidget
     @State private var thresholdText: String
+    @State private var displayMinimumText: String
+    @State private var displayMaximumText: String
+    @State private var alarmMinimumText: String
+    @State private var alarmMaximumText: String
     @State private var nodeSearch = ""
 
     private let dayOptions = [1, 7, 14, 30, 0]
@@ -367,6 +374,10 @@ private struct TelemetryWidgetEditor: View {
         _thresholdText = State(
             initialValue: initial.threshold.map { String(format: "%.4g", $0) } ?? ""
         )
+        _displayMinimumText = State(initialValue: Self.formatted(initial.displayMinimum))
+        _displayMaximumText = State(initialValue: Self.formatted(initial.displayMaximum))
+        _alarmMinimumText = State(initialValue: Self.formatted(initial.alarmMinimum))
+        _alarmMaximumText = State(initialValue: Self.formatted(initial.alarmMaximum))
     }
 
     var body: some View {
@@ -516,6 +527,40 @@ private struct TelemetryWidgetEditor: View {
                         Toggle("Gleitenden Mittelwert anzeigen", isOn: $draft.showMovingAverage)
                     }
                 }
+
+                if draft.type.supportsDisplayRange {
+                    Section("Anzeigebereich") {
+                        HStack {
+                            TextField("Minimum", text: $displayMinimumText)
+                            TextField("Maximum", text: $displayMaximumText)
+                        }
+                        Text("Beide Werte setzen; ohne Werte wird der vorgeschlagene Metrikbereich verwendet.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if !isDisplayRangeValid {
+                            Text("Minimum und Maximum müssen endliche Zahlen sein; Minimum muss kleiner sein.")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
+
+                if draft.type.usesMetric {
+                    Section("Alarme") {
+                        HStack {
+                            TextField("Untergrenze", text: $alarmMinimumText)
+                            TextField("Obergrenze", text: $alarmMaximumText)
+                        }
+                        Text("Grenzen können einzeln gesetzt werden. Nach einer Erholung wird erneut alarmiert.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if !isAlarmRangeValid {
+                            Text("Alarmgrenzen müssen endlich sein; bei zwei Grenzen muss die Untergrenze kleiner sein.")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
             }
             .formStyle(.grouped)
 
@@ -563,7 +608,34 @@ private struct TelemetryWidgetEditor: View {
     }
 
     private var canSave: Bool {
-        draft.type == .clock || draft.type.allowsMultipleNodes || draft.nodeIds.count == 1
+        let hasValidNode = draft.type == .clock
+            || draft.type.allowsMultipleNodes
+            || draft.nodeIds.count == 1
+        return hasValidNode && isDisplayRangeValid && isAlarmRangeValid
+    }
+
+    private var isDisplayRangeValid: Bool {
+        let minimumText = normalizedNumberText(displayMinimumText)
+        let maximumText = normalizedNumberText(displayMaximumText)
+        if minimumText.isEmpty && maximumText.isEmpty { return true }
+        guard let minimum = finiteNumber(minimumText),
+              let maximum = finiteNumber(maximumText) else {
+            return false
+        }
+        return minimum < maximum
+    }
+
+    private var isAlarmRangeValid: Bool {
+        let minimumText = normalizedNumberText(alarmMinimumText)
+        let maximumText = normalizedNumberText(alarmMaximumText)
+        let minimum = finiteNumber(minimumText)
+        let maximum = finiteNumber(maximumText)
+        guard minimumText.isEmpty || minimum != nil,
+              maximumText.isEmpty || maximum != nil else {
+            return false
+        }
+        if let minimum, let maximum { return minimum < maximum }
+        return true
     }
 
     private var selectionSummary: String {
@@ -593,13 +665,30 @@ private struct TelemetryWidgetEditor: View {
     }
 
     private func save() {
-        let normalizedThreshold = thresholdText
-            .replacingOccurrences(of: ",", with: ".")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedThreshold = normalizedNumberText(thresholdText)
         draft.threshold = normalizedThreshold.isEmpty ? nil : Double(normalizedThreshold)
+        draft.displayMinimum = finiteNumber(normalizedNumberText(displayMinimumText))
+        draft.displayMaximum = finiteNumber(normalizedNumberText(displayMaximumText))
+        draft.alarmMinimum = finiteNumber(normalizedNumberText(alarmMinimumText))
+        draft.alarmMaximum = finiteNumber(normalizedNumberText(alarmMaximumText))
         draft.normalize()
         onSave(draft, isNew)
         dismiss()
+    }
+
+    private func normalizedNumberText(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: ",", with: ".")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func finiteNumber(_ value: String) -> Double? {
+        guard let number = Double(value), number.isFinite else { return nil }
+        return number
+    }
+
+    private static func formatted(_ value: Double?) -> String {
+        value.map { String(format: "%.4g", $0) } ?? ""
     }
 }
 

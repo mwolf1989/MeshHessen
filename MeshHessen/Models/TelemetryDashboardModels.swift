@@ -150,6 +150,43 @@ enum TelemetryDashboardWidgetType: String, CaseIterable, Codable, Hashable, Iden
     var usesMetric: Bool { self != .clock && self != .meshhealth }
 
     var supportsChartOptions: Bool { self == .line || self == .area }
+
+    var supportsDisplayRange: Bool {
+        switch self {
+        case .line, .area, .bar, .scatter, .gauge, .heatmap, .histogram, .candlestick:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+enum TelemetryAlarmState: String, Codable, Hashable, Sendable {
+    case normal
+    case belowMinimum
+    case aboveMaximum
+}
+
+enum TelemetryAlarmEvaluator {
+    static func state(
+        value: Double,
+        minimum: Double?,
+        maximum: Double?
+    ) -> TelemetryAlarmState {
+        guard value.isFinite else { return .normal }
+        if let minimum, minimum.isFinite, value < minimum { return .belowMinimum }
+        if let maximum, maximum.isFinite, value > maximum { return .aboveMaximum }
+        return .normal
+    }
+
+    /// An alarm is armed only while normal. Crossing directly from one alarm
+    /// side to the other therefore does not emit a second notification.
+    static func shouldNotify(
+        previous: TelemetryAlarmState,
+        current: TelemetryAlarmState
+    ) -> Bool {
+        previous == .normal && current != .normal
+    }
 }
 
 struct TelemetryDashboardWidget: Identifiable, Codable, Hashable, Sendable {
@@ -165,6 +202,10 @@ struct TelemetryDashboardWidget: Identifiable, Codable, Hashable, Sendable {
     var width: Double
     var height: Double
     var threshold: Double?
+    var displayMinimum: Double?
+    var displayMaximum: Double?
+    var alarmMinimum: Double?
+    var alarmMaximum: Double?
     var showMovingAverage: Bool
 
     init(
@@ -177,6 +218,10 @@ struct TelemetryDashboardWidget: Identifiable, Codable, Hashable, Sendable {
         width: Double = 420,
         height: Double = 300,
         threshold: Double? = nil,
+        displayMinimum: Double? = nil,
+        displayMaximum: Double? = nil,
+        alarmMinimum: Double? = nil,
+        alarmMaximum: Double? = nil,
         showMovingAverage: Bool = false
     ) {
         self.id = id
@@ -188,7 +233,12 @@ struct TelemetryDashboardWidget: Identifiable, Codable, Hashable, Sendable {
         self.width = max(Self.minimumWidth, width)
         self.height = max(Self.minimumHeight, height)
         self.threshold = threshold?.isFinite == true ? threshold : nil
+        self.displayMinimum = displayMinimum
+        self.displayMaximum = displayMaximum
+        self.alarmMinimum = alarmMinimum
+        self.alarmMaximum = alarmMaximum
         self.showMovingAverage = showMovingAverage
+        normalizeRanges()
     }
 
     var effectiveTitle: String {
@@ -199,6 +249,25 @@ struct TelemetryDashboardWidget: Identifiable, Codable, Hashable, Sendable {
     }
 
     var effectiveDays: Int { days > 0 ? days : 36_500 }
+
+    var displayRange: ClosedRange<Double>? {
+        guard let displayMinimum,
+              let displayMaximum,
+              displayMinimum.isFinite,
+              displayMaximum.isFinite,
+              displayMinimum < displayMaximum else {
+            return nil
+        }
+        return displayMinimum...displayMaximum
+    }
+
+    var effectiveDisplayRange: ClosedRange<Double>? {
+        displayRange ?? metric.suggestedRange
+    }
+
+    var hasAlarm: Bool {
+        alarmMinimum != nil || alarmMaximum != nil
+    }
 
     /// Resolves an empty multi-node selection dynamically, while leaving empty
     /// single-node selections invalid instead of silently choosing a node.
@@ -215,8 +284,84 @@ struct TelemetryDashboardWidget: Identifiable, Codable, Hashable, Sendable {
         width = max(Self.minimumWidth, width.isFinite ? width : 420)
         height = max(Self.minimumHeight, height.isFinite ? height : 300)
         if threshold?.isFinite != true { threshold = nil }
+        normalizeRanges()
         if !type.allowsMultipleNodes, let first = nodeIds.first { nodeIds = [first] }
         if !type.supportsChartOptions { showMovingAverage = false }
+    }
+
+    private mutating func normalizeRanges() {
+        if let displayMinimum,
+           let displayMaximum,
+           displayMinimum.isFinite,
+           displayMaximum.isFinite,
+           displayMinimum < displayMaximum {
+            // Keep the valid custom range.
+        } else {
+            displayMinimum = nil
+            displayMaximum = nil
+        }
+
+        if alarmMinimum?.isFinite != true { alarmMinimum = nil }
+        if alarmMaximum?.isFinite != true { alarmMaximum = nil }
+        if let alarmMinimum, let alarmMaximum, alarmMinimum >= alarmMaximum {
+            self.alarmMinimum = nil
+            self.alarmMaximum = nil
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case type
+        case metric
+        case nodeIds
+        case days
+        case title
+        case width
+        case height
+        case threshold
+        case displayMinimum
+        case displayMaximum
+        case alarmMinimum
+        case alarmMaximum
+        case showMovingAverage
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID(),
+            type: try container.decodeIfPresent(TelemetryDashboardWidgetType.self, forKey: .type) ?? .line,
+            metric: try container.decodeIfPresent(TelemetrySeriesMetric.self, forKey: .metric) ?? .snr,
+            nodeIds: try container.decodeIfPresent([UInt32].self, forKey: .nodeIds) ?? [],
+            days: try container.decodeIfPresent(Int.self, forKey: .days) ?? 7,
+            title: try container.decodeIfPresent(String.self, forKey: .title) ?? "",
+            width: try container.decodeIfPresent(Double.self, forKey: .width) ?? 420,
+            height: try container.decodeIfPresent(Double.self, forKey: .height) ?? 300,
+            threshold: try container.decodeIfPresent(Double.self, forKey: .threshold),
+            displayMinimum: try container.decodeIfPresent(Double.self, forKey: .displayMinimum),
+            displayMaximum: try container.decodeIfPresent(Double.self, forKey: .displayMaximum),
+            alarmMinimum: try container.decodeIfPresent(Double.self, forKey: .alarmMinimum),
+            alarmMaximum: try container.decodeIfPresent(Double.self, forKey: .alarmMaximum),
+            showMovingAverage: try container.decodeIfPresent(Bool.self, forKey: .showMovingAverage) ?? false
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(type, forKey: .type)
+        try container.encode(metric, forKey: .metric)
+        try container.encode(nodeIds, forKey: .nodeIds)
+        try container.encode(days, forKey: .days)
+        try container.encode(title, forKey: .title)
+        try container.encode(width, forKey: .width)
+        try container.encode(height, forKey: .height)
+        try container.encodeIfPresent(threshold, forKey: .threshold)
+        try container.encodeIfPresent(displayMinimum, forKey: .displayMinimum)
+        try container.encodeIfPresent(displayMaximum, forKey: .displayMaximum)
+        try container.encodeIfPresent(alarmMinimum, forKey: .alarmMinimum)
+        try container.encodeIfPresent(alarmMaximum, forKey: .alarmMaximum)
+        try container.encode(showMovingAverage, forKey: .showMovingAverage)
     }
 
     private static func validDays(_ value: Int) -> Int {

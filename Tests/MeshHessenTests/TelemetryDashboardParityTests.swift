@@ -431,6 +431,46 @@ struct TelemetryDashboardModelTests {
         #expect(!widget.showMovingAverage)
     }
 
+    @Test("Custom display ranges override suggestions and invalid bounds are discarded")
+    func widgetRangeValidation() {
+        let configured = TelemetryDashboardWidget(
+            type: .gauge,
+            metric: .temperature,
+            nodeIds: [1],
+            displayMinimum: -10,
+            displayMaximum: 35,
+            alarmMinimum: 0
+        )
+        #expect(configured.displayRange == -10...35)
+        #expect(configured.effectiveDisplayRange == -10...35)
+        #expect(configured.alarmMinimum == 0)
+        #expect(configured.alarmMaximum == nil)
+
+        var invalid = TelemetryDashboardWidget(
+            metric: .temperature,
+            displayMinimum: 20,
+            displayMaximum: 10,
+            alarmMinimum: 30,
+            alarmMaximum: 5
+        )
+        invalid.normalize()
+        #expect(invalid.displayMinimum == nil)
+        #expect(invalid.displayMaximum == nil)
+        #expect(invalid.effectiveDisplayRange == TelemetrySeriesMetric.temperature.suggestedRange)
+        #expect(invalid.alarmMinimum == nil)
+        #expect(invalid.alarmMaximum == nil)
+    }
+
+    @Test("Alarm evaluator rearms only after returning to normal")
+    func alarmEvaluation() {
+        #expect(TelemetryAlarmEvaluator.state(value: -1, minimum: 0, maximum: 30) == .belowMinimum)
+        #expect(TelemetryAlarmEvaluator.state(value: 15, minimum: 0, maximum: 30) == .normal)
+        #expect(TelemetryAlarmEvaluator.state(value: 31, minimum: 0, maximum: 30) == .aboveMaximum)
+        #expect(TelemetryAlarmEvaluator.shouldNotify(previous: .normal, current: .aboveMaximum))
+        #expect(!TelemetryAlarmEvaluator.shouldNotify(previous: .aboveMaximum, current: .aboveMaximum))
+        #expect(!TelemetryAlarmEvaluator.shouldNotify(previous: .belowMinimum, current: .aboveMaximum))
+    }
+
     @Test("Layout engine packs cards into stable width-aware rows")
     func layoutRows() {
         let first = TelemetryDashboardWidget(width: 300)
@@ -458,6 +498,18 @@ struct TelemetryDashboardModelTests {
         let average = TelemetryDatabaseService.rollingAverage(points, window: 60)
         #expect(average.first(where: { $0.nodeId == 1 && $0.timestamp > start })?.value == 2)
         #expect(average.first(where: { $0.nodeId == 2 })?.value == 100)
+    }
+}
+
+private actor RecordingNotificationDelivery: SystemNotificationDelivering {
+    private var notifications: [AppNotification] = []
+
+    func deliver(_ notification: AppNotification) async {
+        notifications.append(notification)
+    }
+
+    func deliveredCount() -> Int {
+        notifications.count
     }
 }
 
@@ -512,5 +564,120 @@ struct TelemetryDashboardStoreTests {
 
         store.removeWidget(id: second.id)
         #expect(store.currentDashboard?.widgets.map(\.id) == [first.id])
+    }
+
+    @Test("Schema version one migrates without losing existing widget settings")
+    func schemaVersionOneMigration() throws {
+        let (suite, defaults) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = "schema-migration"
+        let source = TelemetryDashboardStore(defaults: defaults, storageKey: key)
+        source.addWidget(TelemetryDashboardWidget(
+            type: .line,
+            metric: .temperature,
+            nodeIds: [7],
+            days: 30,
+            title: "Legacy temperature",
+            threshold: 22,
+            displayMinimum: -10,
+            displayMaximum: 40,
+            alarmMaximum: 35,
+            showMovingAverage: true
+        ))
+
+        var root = try #require(
+            JSONSerialization.jsonObject(with: source.encodedState()) as? [String: Any]
+        )
+        root["schemaVersion"] = 1
+        var dashboards = try #require(root["dashboards"] as? [[String: Any]])
+        var dashboard = try #require(dashboards.first)
+        var widgets = try #require(dashboard["widgets"] as? [[String: Any]])
+        var widget = try #require(widgets.first)
+        for key in ["displayMinimum", "displayMaximum", "alarmMinimum", "alarmMaximum"] {
+            widget.removeValue(forKey: key)
+        }
+        widgets[0] = widget
+        dashboard["widgets"] = widgets
+        dashboards[0] = dashboard
+        root["dashboards"] = dashboards
+        defaults.set(try JSONSerialization.data(withJSONObject: root), forKey: key)
+
+        let migrated = TelemetryDashboardStore(defaults: defaults, storageKey: key)
+        let restored = try #require(migrated.currentDashboard?.widgets.first)
+        #expect(restored.title == "Legacy temperature")
+        #expect(restored.metric == .temperature)
+        #expect(restored.nodeIds == [7])
+        #expect(restored.days == 30)
+        #expect(restored.threshold == 22)
+        #expect(restored.showMovingAverage)
+        #expect(restored.displayMinimum == nil)
+        #expect(restored.alarmMaximum == nil)
+
+        let encoded = try #require(
+            JSONSerialization.jsonObject(with: migrated.encodedState()) as? [String: Any]
+        )
+        #expect(encoded["schemaVersion"] as? Int == 2)
+    }
+
+    @Test("Identical alarms coalesce, persist and rearm after recovery")
+    func alarmPersistenceAndDebouncing() async throws {
+        let (suite, defaults) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = TelemetryDashboardStore(defaults: defaults, storageKey: "alarm-dashboards")
+        let widget = TelemetryDashboardWidget(
+            type: .line,
+            metric: .temperature,
+            nodeIds: [42],
+            alarmMinimum: 0,
+            alarmMaximum: 30
+        )
+        store.addWidget(widget)
+        let secondDashboardID = store.addDashboard(named: "Also active")
+        store.addWidget(widget, to: secondDashboardID)
+
+        let firstRecorder = RecordingNotificationDelivery()
+        let firstService = TelemetryAlarmService(
+            dashboardStore: store,
+            defaults: defaults,
+            stateStorageKey: "alarm-state",
+            notifications: firstRecorder
+        )
+        await firstService.process(TelemetrySampleBatch(
+            nodeID: 42,
+            timestamp: Date(timeIntervalSince1970: 1),
+            values: [.temperature: 31]
+        ))
+        await firstService.process(TelemetrySampleBatch(
+            nodeID: 42,
+            timestamp: Date(timeIntervalSince1970: 2),
+            values: [.temperature: 35]
+        ))
+        #expect(await firstRecorder.deliveredCount() == 1)
+
+        let restartedRecorder = RecordingNotificationDelivery()
+        let restartedService = TelemetryAlarmService(
+            dashboardStore: store,
+            defaults: defaults,
+            stateStorageKey: "alarm-state",
+            notifications: restartedRecorder
+        )
+        await restartedService.process(TelemetrySampleBatch(
+            nodeID: 42,
+            timestamp: Date(timeIntervalSince1970: 3),
+            values: [.temperature: 40]
+        ))
+        #expect(await restartedRecorder.deliveredCount() == 0)
+
+        await restartedService.process(TelemetrySampleBatch(
+            nodeID: 42,
+            timestamp: Date(timeIntervalSince1970: 4),
+            values: [.temperature: 20]
+        ))
+        await restartedService.process(TelemetrySampleBatch(
+            nodeID: 42,
+            timestamp: Date(timeIntervalSince1970: 5),
+            values: [.temperature: -1]
+        ))
+        #expect(await restartedRecorder.deliveredCount() == 1)
     }
 }

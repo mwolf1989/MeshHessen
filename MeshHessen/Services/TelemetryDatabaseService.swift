@@ -5,6 +5,12 @@ extension Notification.Name {
     static let telemetryDatabaseDidClear = Notification.Name(
         "MeshHessen.telemetryDatabaseDidClear"
     )
+    static let telemetrySampleDidInsert = Notification.Name(
+        "MeshHessen.telemetrySampleDidInsert"
+    )
+    static let telemetryAlarmStateDidChange = Notification.Name(
+        "MeshHessen.telemetryAlarmStateDidChange"
+    )
 }
 
 enum TelemetryDatabaseError: LocalizedError, Sendable {
@@ -455,7 +461,10 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         enqueueWrite { service, db in
             let isDay = service.dayFlag(timestamp, latitude: latitude, longitude: longitude)
             let ts = timestamp.timeIntervalSince1970
-            service.inTransaction(on: db) {
+            let samples: [TelemetrySeriesMetric: Double] = [
+                .snr: Double(snr), .rssi: Double(rssi), .packetCount: 1,
+            ]
+            let succeeded = service.inTransaction(on: db) {
                 let inserted = service.run(
                     """
                     INSERT INTO packet_rx
@@ -470,17 +479,20 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                     ],
                     on: db
                 )
-                let samples: [TelemetrySeriesMetric: Double] = [
+                let storedSamples: [TelemetrySeriesMetric: Double] = [
                     .snr: Double(snr), .rssi: Double(rssi),
                 ]
                 return inserted && service.insertSamples(
                     nodeId: nodeId,
                     timestamp: ts,
                     variant: "packet",
-                    values: samples,
+                    values: storedSamples,
                     isDay: isDay,
                     on: db
                 )
+            }
+            if succeeded {
+                service.publishFreshTelemetry(nodeID: nodeId, timestamp: timestamp, values: samples)
             }
         }
     }
@@ -589,7 +601,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                 .airUtilTx: airUtilTx,
                 .uptimeSeconds: uptimeSeconds,
             ]
-            service.inTransaction(on: db) {
+            let succeeded = service.inTransaction(on: db) {
                 let inserted = service.run(
                     """
                     INSERT INTO device_telemetry
@@ -612,6 +624,13 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                     values: values.compactMapValues { $0 },
                     isDay: isDay,
                     on: db
+                )
+            }
+            if succeeded {
+                service.publishFreshTelemetry(
+                    nodeID: nodeId,
+                    timestamp: timestamp,
+                    values: values.compactMapValues { $0 }
                 )
             }
         }
@@ -653,7 +672,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
             let ts = timestamp.timeIntervalSince1970
             let isDay = service.dayFlag(timestamp, latitude: latitude, longitude: longitude)
             let values = service.environmentValues(sample)
-            service.inTransaction(on: db) {
+            let succeeded = service.inTransaction(on: db) {
                 let inserted = service.run(
                     """
                     INSERT INTO environment_telemetry
@@ -688,6 +707,9 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                     isDay: isDay,
                     on: db
                 )
+            }
+            if succeeded {
+                service.publishFreshTelemetry(nodeID: nodeId, timestamp: timestamp, values: values)
             }
         }
     }
@@ -892,7 +914,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         enqueueWrite { service, db in
             let ts = timestamp.timeIntervalSince1970
             let isDay = service.dayFlag(timestamp, latitude: latitude, longitude: longitude)
-            service.inTransaction(on: db) {
+            let succeeded = service.inTransaction(on: db) {
                 let inserted = service.run(
                     "INSERT INTO \(table) (node_id, timestamp, payload_json, is_day) VALUES (?, ?, ?, ?)",
                     bindings: [
@@ -908,6 +930,9 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                     isDay: isDay,
                     on: db
                 )
+            }
+            if succeeded {
+                service.publishFreshTelemetry(nodeID: nodeId, timestamp: timestamp, values: values)
             }
         }
     }
@@ -1529,6 +1554,24 @@ final class TelemetryDatabaseService: @unchecked Sendable {
             succeeded = inserted && succeeded
         }
         return succeeded
+    }
+
+    private func publishFreshTelemetry(
+        nodeID: UInt32,
+        timestamp: Date,
+        values: [TelemetrySeriesMetric: Double]
+    ) {
+        let finiteValues = values.filter { $0.value.isFinite }
+        guard !finiteValues.isEmpty else { return }
+        let batch = TelemetrySampleBatch(
+            nodeID: nodeID,
+            timestamp: timestamp,
+            values: finiteValues
+        )
+        Task { @MainActor in
+            NotificationCenter.default.post(name: .telemetrySampleDidInsert, object: self)
+            await TelemetryAlarmService.shared.process(batch)
+        }
     }
 
     @discardableResult

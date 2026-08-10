@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UserNotifications
 
 /// UserDefaults-backed dashboard layout store.
 ///
@@ -16,7 +17,7 @@ final class TelemetryDashboardStore {
         var dashboards: [TelemetryDashboard]
     }
 
-    private static let currentSchemaVersion = 1
+    private static let currentSchemaVersion = 2
     private let defaults: UserDefaults
     private let storageKey: String
     private let encoder: JSONEncoder
@@ -220,6 +221,207 @@ final class TelemetryDashboardStore {
         } catch {
             lastPersistenceError = error.localizedDescription
             AppLogger.shared.log("[TelemetryDashboard] Persist failed: \(error)")
+        }
+    }
+}
+
+struct AppNotification: Sendable {
+    let identifier: String
+    let title: String
+    let body: String
+    let categoryIdentifier: String
+}
+
+protocol SystemNotificationDelivering: Sendable {
+    func deliver(_ notification: AppNotification) async
+}
+
+actor SystemNotificationService: SystemNotificationDelivering {
+    static let shared = SystemNotificationService()
+
+    func deliver(_ notification: AppNotification) async {
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        let isAuthorized: Bool
+        switch settings.authorizationStatus {
+        case .authorized, .provisional:
+            isAuthorized = true
+        case .notDetermined:
+            do {
+                isAuthorized = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+            } catch {
+                AppLogger.shared.log(
+                    "[Notifications] Authorization failed: \(error.localizedDescription)",
+                    debug: true
+                )
+                return
+            }
+        case .denied:
+            isAuthorized = false
+        @unknown default:
+            isAuthorized = false
+        }
+
+        guard isAuthorized else {
+            AppLogger.shared.log("[Notifications] Authorization denied", debug: true)
+            return
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = notification.title
+        content.body = notification.body
+        content.sound = .default
+        content.categoryIdentifier = notification.categoryIdentifier
+
+        do {
+            try await center.add(UNNotificationRequest(
+                identifier: notification.identifier,
+                content: content,
+                trigger: nil
+            ))
+        } catch {
+            AppLogger.shared.log(
+                "[Notifications] Delivery failed: \(error.localizedDescription)",
+                debug: true
+            )
+        }
+    }
+}
+
+struct TelemetrySampleBatch: Sendable {
+    let nodeID: UInt32
+    let timestamp: Date
+    let values: [TelemetrySeriesMetric: Double]
+}
+
+@MainActor
+final class TelemetryAlarmService {
+    static let shared = TelemetryAlarmService(dashboardStore: .shared)
+
+    private struct Rule: Hashable {
+        let nodeID: UInt32
+        let metric: TelemetrySeriesMetric
+        let minimum: Double?
+        let maximum: Double?
+
+        var persistenceKey: String {
+            let minimumKey = minimum.map { String($0.bitPattern, radix: 16) } ?? "none"
+            let maximumKey = maximum.map { String($0.bitPattern, radix: 16) } ?? "none"
+            return "\(nodeID):\(metric.rawValue):\(minimumKey):\(maximumKey)"
+        }
+    }
+
+    private let dashboardStore: TelemetryDashboardStore
+    private let defaults: UserDefaults
+    private let stateStorageKey: String
+    private let notifications: any SystemNotificationDelivering
+    private var states: [String: TelemetryAlarmState]
+
+    init(
+        dashboardStore: TelemetryDashboardStore,
+        defaults: UserDefaults = .standard,
+        stateStorageKey: String = "telemetryAlarmStates.v1",
+        notifications: any SystemNotificationDelivering = SystemNotificationService.shared
+    ) {
+        self.dashboardStore = dashboardStore
+        self.defaults = defaults
+        self.stateStorageKey = stateStorageKey
+        self.notifications = notifications
+        if let data = defaults.data(forKey: stateStorageKey),
+           let decoded = try? JSONDecoder().decode(
+               [String: TelemetryAlarmState].self,
+               from: data
+           ) {
+            self.states = decoded
+        } else {
+            self.states = [:]
+        }
+    }
+
+    func process(_ batch: TelemetrySampleBatch) async {
+        var didChange = false
+        for (metric, value) in batch.values where value.isFinite {
+            let rules = rules(nodeID: batch.nodeID, metric: metric)
+            for rule in rules {
+                let key = rule.persistenceKey
+                let previous = states[key] ?? .normal
+                let current = TelemetryAlarmEvaluator.state(
+                    value: value,
+                    minimum: rule.minimum,
+                    maximum: rule.maximum
+                )
+                guard previous != current else { continue }
+                states[key] = current
+                didChange = true
+
+                if TelemetryAlarmEvaluator.shouldNotify(previous: previous, current: current) {
+                    await notifications.deliver(notification(
+                        for: rule,
+                        state: current,
+                        value: value,
+                        timestamp: batch.timestamp
+                    ))
+                }
+            }
+        }
+
+        if didChange {
+            persistStates()
+            NotificationCenter.default.post(name: .telemetryAlarmStateDidChange, object: self)
+        }
+    }
+
+    private func rules(nodeID: UInt32, metric: TelemetrySeriesMetric) -> Set<Rule> {
+        Set(dashboardStore.dashboards.flatMap(\.widgets).compactMap { widget in
+            guard widget.type.usesMetric,
+                  widget.metric == metric,
+                  widget.hasAlarm,
+                  matches(widget: widget, nodeID: nodeID) else {
+                return nil
+            }
+            return Rule(
+                nodeID: nodeID,
+                metric: metric,
+                minimum: widget.alarmMinimum,
+                maximum: widget.alarmMaximum
+            )
+        })
+    }
+
+    private func matches(widget: TelemetryDashboardWidget, nodeID: UInt32) -> Bool {
+        if widget.nodeIds.isEmpty { return widget.type.allowsMultipleNodes }
+        return widget.nodeIds.contains(nodeID)
+    }
+
+    private func notification(
+        for rule: Rule,
+        state: TelemetryAlarmState,
+        value: Double,
+        timestamp: Date
+    ) -> AppNotification {
+        let nodeName = TelemetryDashboardNode.fallbackName(for: rule.nodeID)
+        let condition: String
+        switch state {
+        case .belowMinimum:
+            condition = String(localized: "below the minimum of \(rule.minimum ?? value)")
+        case .aboveMaximum:
+            condition = String(localized: "above the maximum of \(rule.maximum ?? value)")
+        case .normal:
+            condition = String(localized: "within the normal range")
+        }
+        return AppNotification(
+            identifier: "telemetry-\(rule.persistenceKey)-\(timestamp.timeIntervalSince1970)",
+            title: String(localized: "Telemetry alarm: \(rule.metric.displayName)"),
+            body: String(localized: "\(nodeName): \(value) \(rule.metric.unit), \(condition)"),
+            categoryIdentifier: "TELEMETRY_ALARM"
+        )
+    }
+
+    private func persistStates() {
+        do {
+            defaults.set(try JSONEncoder().encode(states), forKey: stateStorageKey)
+        } catch {
+            AppLogger.shared.log("[TelemetryAlarm] State persistence failed: \(error)")
         }
     }
 }

@@ -35,11 +35,15 @@ struct TelemetryDashboardWidgetCard: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(hasActiveAlarm ? Color.red.opacity(0.08) : Color.clear)
         .background(.background)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay {
             RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(.quaternary, lineWidth: 1)
+                .strokeBorder(
+                    hasActiveAlarm ? Color.red : Color.secondary.opacity(0.2),
+                    lineWidth: hasActiveAlarm ? 2 : 1
+                )
         }
         .shadow(color: .black.opacity(0.07), radius: 4, y: 2)
         .contextMenu {
@@ -71,6 +75,12 @@ struct TelemetryDashboardWidgetCard: View {
             Text(widget.effectiveTitle)
                 .font(.headline)
                 .lineLimit(1)
+            if let alarmReading {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .help(alarmDescription(for: alarmReading))
+                    .accessibilityLabel(alarmDescription(for: alarmReading))
+            }
             Spacer(minLength: 6)
             if widget.type != .clock {
                 Menu {
@@ -127,6 +137,36 @@ struct TelemetryDashboardWidgetCard: View {
         case .stat, .stateline, .multistat: return .cyan
         case .heatmap, .candlestick: return .red
         case .scatter: return .indigo
+        }
+    }
+
+    private var alarmReading: (state: TelemetryAlarmState, point: TelemetrySeriesPoint)? {
+        guard widget.hasAlarm else { return nil }
+        for point in snapshot.latestByNode.values.sorted(by: { $0.nodeId < $1.nodeId }) {
+            let state = TelemetryAlarmEvaluator.state(
+                value: point.value,
+                minimum: widget.alarmMinimum,
+                maximum: widget.alarmMaximum
+            )
+            if state != .normal { return (state, point) }
+        }
+        return nil
+    }
+
+    private var hasActiveAlarm: Bool { alarmReading != nil }
+
+    private func alarmDescription(
+        for reading: (state: TelemetryAlarmState, point: TelemetrySeriesPoint)
+    ) -> String {
+        let node = nodeNames[reading.point.nodeId]
+            ?? TelemetryDashboardNode.fallbackName(for: reading.point.nodeId)
+        switch reading.state {
+        case .belowMinimum:
+            return String(localized: "\(node) is below the alarm minimum")
+        case .aboveMaximum:
+            return String(localized: "\(node) is above the alarm maximum")
+        case .normal:
+            return String(localized: "\(node) is within the normal range")
         }
     }
 
@@ -259,7 +299,7 @@ private struct DashboardLineChart: View {
                 }
             }
             .chartYAxis { AxisMarks(position: .leading) }
-            .modifier(DashboardMetricScale(metric: widget.metric))
+            .modifier(DashboardMetricScale(widget: widget))
         }
     }
 
@@ -310,7 +350,7 @@ private struct DashboardBarChart: View {
                     AxisValueLabel(format: .dateTime.day().month(.abbreviated))
                 }
             }
-            .modifier(DashboardMetricScale(metric: widget.metric))
+            .modifier(DashboardMetricScale(widget: widget))
         }
     }
 }
@@ -343,7 +383,7 @@ private struct DashboardScatterChart: View {
                     AxisValueLabel(format: .dateTime.day().month(.abbreviated))
                 }
             }
-            .modifier(DashboardMetricScale(metric: widget.metric))
+            .modifier(DashboardMetricScale(widget: widget))
         }
     }
 }
@@ -358,7 +398,7 @@ private struct DashboardGauge: View {
     }
 
     private var range: ClosedRange<Double> {
-        if let suggested = widget.metric.suggestedRange { return suggested }
+        if let configured = widget.effectiveDisplayRange { return configured }
         let values = points.map(\.value)
         let minimum = min(0, values.min() ?? 0)
         let maximum = values.max() ?? 1
@@ -368,7 +408,7 @@ private struct DashboardGauge: View {
     var body: some View {
         if let latest {
             VStack(spacing: 8) {
-                Gauge(value: latest.value, in: range) {
+                Gauge(value: min(max(latest.value, range.lowerBound), range.upperBound), in: range) {
                     Text(widget.metric.displayName)
                 } currentValueLabel: {
                     Text(latest.value, format: .number.precision(.fractionLength(1)))
@@ -445,6 +485,9 @@ private struct DashboardHeatmap: View {
     let cells: [TelemetryHeatmapCell]
 
     private var bounds: (minimum: Double, maximum: Double) {
+        if let range = widget.effectiveDisplayRange {
+            return (range.lowerBound, range.upperBound)
+        }
         let values = cells.map(\.value)
         return (values.min() ?? 0, values.max() ?? 1)
     }
@@ -469,7 +512,8 @@ private struct DashboardHeatmap: View {
     private func opacity(for value: Double) -> Double {
         let span = bounds.maximum - bounds.minimum
         guard span > 0 else { return 0.85 }
-        return 0.12 + 0.88 * ((value - bounds.minimum) / span)
+        let normalized = min(1, max(0, (value - bounds.minimum) / span))
+        return 0.12 + 0.88 * normalized
     }
 }
 
@@ -491,6 +535,7 @@ private struct DashboardHistogram: View {
             }
             .chartXAxisLabel(widget.metric.unit)
             .chartYAxisLabel("Messungen")
+            .modifier(DashboardHistogramScale(widget: widget))
         }
     }
 }
@@ -526,7 +571,7 @@ private struct DashboardCandlestick: View {
                 }
             }
             .chartYAxisLabel(widget.metric.unit)
-            .modifier(DashboardMetricScale(metric: widget.metric))
+            .modifier(DashboardMetricScale(widget: widget))
         }
     }
 }
@@ -809,12 +854,25 @@ private struct HealthStateIndicator: View {
 }
 
 private struct DashboardMetricScale: ViewModifier {
-    let metric: TelemetrySeriesMetric
+    let widget: TelemetryDashboardWidget
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if let range = metric.suggestedRange {
+        if let range = widget.effectiveDisplayRange {
             content.chartYScale(domain: range)
+        } else {
+            content
+        }
+    }
+}
+
+private struct DashboardHistogramScale: ViewModifier {
+    let widget: TelemetryDashboardWidget
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let range = widget.effectiveDisplayRange {
+            content.chartXScale(domain: range)
         } else {
             content
         }
