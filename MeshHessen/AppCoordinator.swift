@@ -376,13 +376,15 @@ final class AppCoordinator {
     /// remote administration views.
     func requestCompleteConfiguration(
         from target: AdminTarget = .local,
-        selection: MeshConfigurationRequestSelection = .all
+        selection: MeshConfigurationRequestSelection = .all,
+        progress: ((AdminConfigurationLoadProgress) -> Void)? = nil
     ) async throws -> MeshConfigurationSnapshot {
         let timeout = Duration.seconds(SettingsService.shared.remoteAdminTimeoutSeconds)
         return try await protocol_.requestCompleteConfiguration(
             from: target,
             selection: selection,
-            timeout: timeout
+            timeout: timeout,
+            progress: progress
         )
     }
 

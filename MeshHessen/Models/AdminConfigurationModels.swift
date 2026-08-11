@@ -193,6 +193,29 @@ struct MeshConfigurationRequestSelection: Equatable, Sendable {
             && !includeCannedMessages
             && !includeRingtone
     }
+
+    /// Number of serial admin requests required for this selection.
+    var requestCount: Int {
+        (includeOwner ? 1 : 0)
+            + configCategories.count
+            + moduleCategories.count
+            + channelIndices.filter { (0..<8).contains($0) }.count
+            + (includeMetadata ? 1 : 0)
+            + (includeCannedMessages ? 1 : 0)
+            + (includeRingtone ? 1 : 0)
+    }
+}
+
+/// Progress emitted while the radio processes a serialized configuration load.
+struct AdminConfigurationLoadProgress: Equatable, Sendable {
+    let completedSteps: Int
+    let totalSteps: Int
+    let currentStep: String
+
+    var fractionCompleted: Double {
+        guard totalSteps > 0 else { return 0 }
+        return min(1, max(0, Double(completedSteps) / Double(totalSteps)))
+    }
 }
 
 enum ChannelPSKValidationError: LocalizedError, Equatable, Sendable {

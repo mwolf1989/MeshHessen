@@ -1950,6 +1950,18 @@ final class MeshtasticProtocolService {
         case metadata
         case cannedMessages
         case ringtone
+
+        var progressTitle: String {
+            switch self {
+            case .owner: return String(localized: "Owner")
+            case .config(let category): return category.title
+            case .module(let category): return category.title
+            case .channel(let index): return String(localized: "Channel \(index + 1)")
+            case .metadata: return String(localized: "Device metadata")
+            case .cannedMessages: return String(localized: "Canned messages")
+            case .ringtone: return String(localized: "Ringtone")
+            }
+        }
     }
 
     /// Reads every core and module category supported by the generated schema.
@@ -1958,7 +1970,8 @@ final class MeshtasticProtocolService {
     func requestCompleteConfiguration(
         from target: AdminTarget = .local,
         selection: MeshConfigurationRequestSelection = .all,
-        timeout: Duration = .seconds(30)
+        timeout: Duration = .seconds(30),
+        progress: ((AdminConfigurationLoadProgress) -> Void)? = nil
     ) async throws -> MeshConfigurationSnapshot {
         guard connectionService?.isConnected == true else {
             throw DeviceConfigError.notConnected
@@ -1968,7 +1981,6 @@ final class MeshtasticProtocolService {
         }
 
         guard !selection.isEmpty else { return MeshConfigurationSnapshot() }
-        let key = try await ensureAdminSession(for: target, destination: destination, timeout: timeout)
         var requestQueue: [(Meshtastic_AdminMessage, CompleteAdminRequestKind)] = []
 
         if selection.includeOwner {
@@ -2007,6 +2019,19 @@ final class MeshtasticProtocolService {
             requestQueue.append((request, .ringtone))
         }
 
+        let totalSteps = selection.requestCount
+        assert(totalSteps == requestQueue.count)
+        if let firstRequest = requestQueue.first {
+            progress?(
+                AdminConfigurationLoadProgress(
+                    completedSteps: 0,
+                    totalSteps: totalSteps,
+                    currentStep: firstRequest.1.progressTitle
+                )
+            )
+        }
+        let key = try await ensureAdminSession(for: target, destination: destination, timeout: timeout)
+
         let requestedChannelIndices = Set(selection.channelIndices.filter { (0..<8).contains($0) })
         var channelResponses = ChannelSnapshotAccumulator()
         channelResponses.begin(
@@ -2032,9 +2057,17 @@ final class MeshtasticProtocolService {
         // Radios have a shallow admin queue. Send exactly one request and wait
         // for its response (or the Windows-compatible 8-second category
         // timeout) before advancing to the next category.
-        for (rawRequest, kind) in requestQueue {
+        for (stepIndex, requestEntry) in requestQueue.enumerated() {
+            let (rawRequest, kind) = requestEntry
             try Task.checkCancellation()
             guard !inactivityWindow.isExpired(at: clock.now) else { break }
+            progress?(
+                AdminConfigurationLoadProgress(
+                    completedSteps: stepIndex,
+                    totalSteps: totalSteps,
+                    currentStep: kind.progressTitle
+                )
+            )
             let baselineSequence = adminResponseSequence
             var request = rawRequest
             request.sessionPasskey = key
@@ -2085,6 +2118,13 @@ final class MeshtasticProtocolService {
                     debug: SettingsService.shared.debugDevice
                 )
             }
+            progress?(
+                AdminConfigurationLoadProgress(
+                    completedSteps: stepIndex + 1,
+                    totalSteps: totalSteps,
+                    currentStep: kind.progressTitle
+                )
+            )
         }
 
         if selection == .all, !receivedResponse {

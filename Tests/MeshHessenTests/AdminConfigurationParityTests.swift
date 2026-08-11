@@ -181,6 +181,29 @@ struct AdminConfigurationParityTests {
         #expect(AdminTarget.remote(UInt32.max).destination(localNodeID: 0x1234) == nil)
     }
 
+    @Test("Complete administration load exposes bounded step progress")
+    func completeLoadProgress() {
+        let expectedRequestCount = 4
+            + MeshConfigCategory.allCases.count
+            + MeshModuleConfigCategory.allCases.count
+            + 8
+        #expect(MeshConfigurationRequestSelection.all.requestCount == expectedRequestCount)
+
+        let progress = AdminConfigurationLoadProgress(
+            completedSteps: 7,
+            totalSteps: expectedRequestCount,
+            currentStep: "LoRa"
+        )
+        #expect(progress.fractionCompleted == Double(7) / Double(expectedRequestCount))
+        #expect(
+            AdminConfigurationLoadProgress(
+                completedSteps: expectedRequestCount + 1,
+                totalSteps: expectedRequestCount,
+                currentStep: "Ringtone"
+            ).fractionCompleted == 1
+        )
+    }
+
     @Test("Administrative actions map to the exact protobuf oneof")
     func actionMessages() {
         #expect(AdminNodeAction.reboot(afterSeconds: 2).adminMessage().payloadVariant == .rebootSeconds(2))

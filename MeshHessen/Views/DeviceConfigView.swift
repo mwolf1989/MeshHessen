@@ -42,6 +42,7 @@ private struct NodeAdministrationView: View {
     @State private var statusMessage: String?
     @State private var errorMessage: String?
     @State private var isLoading = false
+    @State private var loadProgress: AdminConfigurationLoadProgress?
     @State private var isSaving = false
     @State private var pendingDiff: MeshConfigurationDiff?
     @State private var showSaveConfirmation = false
@@ -84,7 +85,7 @@ private struct NodeAdministrationView: View {
             isPresented: $showRemoteLoadChoice,
             titleVisibility: .visible
         ) {
-            Button("Load all sections now") {
+            Button("Load all sections now (may take several minutes)") {
                 loadMode = .complete
                 Task { await loadAll() }
             }
@@ -94,7 +95,7 @@ private struct NodeAdministrationView: View {
             }
             Button("Cancel", role: .cancel) { dismiss() }
         } message: {
-            Text("Loading section by section reduces mesh traffic. You can reload only the current section at any time.")
+            Text("Loading all sections over the mesh can take several minutes, especially when requests time out. Loading section by section reduces mesh traffic, and you can reload the current section at any time.")
         }
         .alert(
             "Administration Error",
@@ -175,11 +176,22 @@ private struct NodeAdministrationView: View {
                 }
             }
             Spacer()
-            if isLoading || isSaving {
+            if let loadProgress {
+                VStack(alignment: .trailing, spacing: 2) {
+                    ProgressView(value: loadProgress.fractionCompleted)
+                        .frame(width: 140)
+                    Text("\(loadProgress.completedSteps)/\(loadProgress.totalSteps) · \(loadProgress.currentStep)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Loading all configuration categories…")
+                .accessibilityValue("\(loadProgress.completedSteps) of \(loadProgress.totalSteps), \(loadProgress.currentStep)")
+            } else if isLoading || isSaving {
                 ProgressView()
                     .controlSize(.small)
             }
-            if let statusMessage {
+            if let statusMessage, loadProgress == nil {
                 Text(statusMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -594,11 +606,17 @@ private struct NodeAdministrationView: View {
 
     private func loadAll() async {
         isLoading = true
+        loadProgress = nil
         statusMessage = String(localized: "Loading all configuration categories…")
         errorMessage = nil
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            loadProgress = nil
+        }
         do {
-            let snapshot = try await coordinator.requestCompleteConfiguration(from: target)
+            let snapshot = try await coordinator.requestCompleteConfiguration(from: target) { progress in
+                loadProgress = progress
+            }
             original = snapshot
             draft = snapshot
             loadedSections = Set(
