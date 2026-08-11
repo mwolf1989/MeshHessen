@@ -251,12 +251,15 @@ struct MessageBubbleView: View {
                             .italic()
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
+                            .contextMenu { messageContextMenu }
                     } else if let attributed = Self.detectLinks(in: visibleMessageText) {
                         Text(attributed)
                             .textSelection(.enabled)
+                            .contextMenu { messageContextMenu }
                     } else {
                         Text(visibleMessageText)
                             .textSelection(.enabled)
+                            .contextMenu { messageContextMenu }
                     }
                 }
             }
@@ -268,104 +271,7 @@ struct MessageBubbleView: View {
                     : (isMine ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12))
             )
             .clipShape(RoundedRectangle(cornerRadius: 10))
-            .contextMenu {
-                Button {
-                    copyMessageText()
-                } label: {
-                    Label("Nachricht kopieren", systemImage: "doc.on.doc")
-                }
-
-                if message.routablePacketId != nil {
-                    if onReply != nil || onReaction != nil {
-                        Divider()
-                    }
-                    if let onReply {
-                        Button {
-                            onReply()
-                        } label: {
-                            Label("Antworten", systemImage: "arrowshape.turn.up.left")
-                        }
-                    }
-
-                    if let onReaction {
-                        if onReply != nil {
-                            Divider()
-                        }
-                        // Quick reactions
-                        ForEach(["👍", "❤️", "😂", "👎"], id: \.self) { emoji in
-                            Button(emoji) { onReaction(emoji) }
-                        }
-                        Divider()
-                        Button("More Reactions…") { showEmojiPicker = true }
-                    }
-                }
-
-                if let senderNode {
-                    Divider()
-                    if senderNode.id != appState.myNodeInfo?.nodeId {
-                        Button {
-                            appState.ensureDMConversation(for: senderNode.id)
-                            appState.dmTargetNodeId = senderNode.id
-                            openWindow(id: "dm")
-                        } label: {
-                            Label("Send Direct Message", systemImage: "bubble.left")
-                        }
-                    }
-                    Button { showNodeInfo = senderNode } label: {
-                        Label("Show Node Info", systemImage: "info.circle")
-                    }
-                    Button {
-                        coordinator.router.navigateToNodeOnMap(nodeNum: senderNode.id)
-                    } label: {
-                        Label("Show on Map", systemImage: "map")
-                    }
-                    .disabled(senderNode.latitude == nil || senderNode.longitude == nil)
-                    Button(
-                        senderNode.isFavorite
-                            ? String(localized: "Remove Favorite")
-                            : String(localized: "Add Favorite")
-                    ) {
-                        Task {
-                            _ = await coordinator.protocol_.setFavorite(
-                                !senderNode.isFavorite,
-                                nodeId: senderNode.id
-                            )
-                        }
-                    }
-                    Button(
-                        senderNode.isPinned
-                            ? String(localized: "Unpin")
-                            : String(localized: "Pin")
-                    ) {
-                        senderNode.isPinned.toggle()
-                        coordinator.coreDataStore.updateNodePinState(
-                            nodeId: senderNode.id,
-                            isPinned: senderNode.isPinned
-                        )
-                    }
-                    Button("Edit Note…") {
-                        noteDraft = senderNode.note
-                        showNoteEditor = true
-                    }
-                    Menu("Set Color") {
-                        ForEach(nodeColorPresets, id: \.hex) { preset in
-                            Button(preset.name) {
-                                setColor(preset.hex, for: senderNode)
-                            }
-                        }
-                        Divider()
-                        Button("Clear Color") { setColor("", for: senderNode) }
-                    }
-                    Divider()
-                    Button("Toggle Position Track") {
-                        appState.mapPathToggleNodeId = senderNode.id
-                        coordinator.router.navigateToNodeOnMap(nodeNum: senderNode.id)
-                    }
-                    Button("Traceroute…") { showTraceroute = senderNode }
-                        .disabled(senderNode.id == appState.myNodeInfo?.nodeId)
-                    Button("Telemetry…") { showTelemetry = senderNode }
-                }
-            }
+            .contextMenu { messageContextMenu }
             .popover(isPresented: $showEmojiPicker) {
                 EmojiPickerView { emoji in
                     showEmojiPicker = false
@@ -430,6 +336,105 @@ struct MessageBubbleView: View {
         }
         .sheet(item: $showTelemetry) { node in
             TelemetryView(nodeId: node.id, nodeName: node.name)
+        }
+    }
+
+    @ViewBuilder
+    private var messageContextMenu: some View {
+        Button {
+            copyMessageText()
+        } label: {
+            Label("Nachricht kopieren", systemImage: "doc.on.doc")
+        }
+
+        if message.routablePacketId != nil {
+            if onReply != nil || onReaction != nil {
+                Divider()
+            }
+            if let onReply {
+                Button {
+                    onReply()
+                } label: {
+                    Label("Antworten", systemImage: "arrowshape.turn.up.left")
+                }
+            }
+
+            if let onReaction {
+                if onReply != nil {
+                    Divider()
+                }
+                ForEach(["👍", "❤️", "😂", "👎"], id: \.self) { emoji in
+                    Button(emoji) { onReaction(emoji) }
+                }
+                Divider()
+                Button("More Reactions…") { showEmojiPicker = true }
+            }
+        }
+
+        if let senderNode {
+            Divider()
+            if senderNode.id != appState.myNodeInfo?.nodeId {
+                Button {
+                    appState.ensureDMConversation(for: senderNode.id)
+                    appState.dmTargetNodeId = senderNode.id
+                    openWindow(id: "dm")
+                } label: {
+                    Label("Send Direct Message", systemImage: "bubble.left")
+                }
+            }
+            Button { showNodeInfo = senderNode } label: {
+                Label("Show Node Info", systemImage: "info.circle")
+            }
+            Button {
+                coordinator.router.navigateToNodeOnMap(nodeNum: senderNode.id)
+            } label: {
+                Label("Show on Map", systemImage: "map")
+            }
+            .disabled(senderNode.latitude == nil || senderNode.longitude == nil)
+            Button(
+                senderNode.isFavorite
+                    ? String(localized: "Remove Favorite")
+                    : String(localized: "Add Favorite")
+            ) {
+                Task {
+                    _ = await coordinator.protocol_.setFavorite(
+                        !senderNode.isFavorite,
+                        nodeId: senderNode.id
+                    )
+                }
+            }
+            Button(
+                senderNode.isPinned
+                    ? String(localized: "Unpin")
+                    : String(localized: "Pin")
+            ) {
+                senderNode.isPinned.toggle()
+                coordinator.coreDataStore.updateNodePinState(
+                    nodeId: senderNode.id,
+                    isPinned: senderNode.isPinned
+                )
+            }
+            Button("Edit Note…") {
+                noteDraft = senderNode.note
+                showNoteEditor = true
+            }
+            Menu("Set Color") {
+                ForEach(nodeColorPresets, id: \.hex) { preset in
+                    Button(preset.name) {
+                        setColor(preset.hex, for: senderNode)
+                    }
+                }
+                Divider()
+                Button("Clear Color") { setColor("", for: senderNode) }
+            }
+            Divider()
+            Button("Toggle Position Track") {
+                appState.mapPathToggleNodeId = senderNode.id
+                coordinator.router.navigateToNodeOnMap(nodeNum: senderNode.id)
+            }
+            Button("Traceroute…") { showTraceroute = senderNode }
+                .disabled(senderNode.id == appState.myNodeInfo?.nodeId)
+            Button("Telemetry…") { showTelemetry = senderNode }
         }
     }
 
