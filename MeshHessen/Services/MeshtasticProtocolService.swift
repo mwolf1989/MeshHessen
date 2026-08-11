@@ -1188,7 +1188,7 @@ final class MeshtasticProtocolService {
             )
         }
 
-        appState?.upsertNode(node)
+        appState?.upsertNode(node, refreshNodeDatabaseFlags: true)
         coreDataStore?.upsertNode(node)
 
         AppLogger.shared.log("[Protocol] NodeInfo: \(node.name) (\(node.nodeId))", debug: SettingsService.shared.debugDevice)

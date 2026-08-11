@@ -352,7 +352,7 @@ final class AppState {
 
     func node(forId id: UInt32) -> NodeInfo? { nodes[id] }
 
-    func upsertNode(_ info: NodeInfo) {
+    func upsertNode(_ info: NodeInfo, refreshNodeDatabaseFlags: Bool = false) {
         if let existing = nodes[info.id] {
             existing.shortName = info.shortName
             existing.longName = info.longName
@@ -365,8 +365,10 @@ final class AppState {
             if let lon = info.longitude { existing.longitude = lon }
             if let alt = info.altitude  { existing.altitude = alt }
             existing.viaMqtt = info.viaMqtt
-            existing.isFavorite = info.isFavorite
-            existing.isOwnNode = info.isOwnNode
+            if refreshNodeDatabaseFlags {
+                existing.isFavorite = info.isFavorite
+                existing.isOwnNode = info.isOwnNode
+            }
             // Preserve pin state from existing node (don't overwrite with incoming data)
             if info.isPinned { existing.isPinned = info.isPinned }
             if info.lastTracerouteHopCount > 0 {

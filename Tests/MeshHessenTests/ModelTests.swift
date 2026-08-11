@@ -203,7 +203,24 @@ struct ModelTests {
         let live = NodeInfo(id: 42, nodeId: "!0000002a", shortName: "NEW", longName: "Live")
         live.isFavorite = true
         live.isOwnNode = true
-        state.upsertNode(live)
+        state.upsertNode(live, refreshNodeDatabaseFlags: true)
+
+        #expect(state.node(forId: 42) === cached)
+        #expect(cached.isFavorite)
+        #expect(cached.isOwnNode)
+    }
+
+    @Test("Partial node info preserves NodeDB favorite and own-node state")
+    @MainActor
+    func appStatePreservesNodeDatabaseFlagsForPartialUpdates() {
+        let state = AppState()
+        let cached = NodeInfo(id: 42, nodeId: "!0000002a", shortName: "OLD", longName: "Cached")
+        cached.isFavorite = true
+        cached.isOwnNode = true
+        state.upsertNode(cached)
+
+        let partial = NodeInfo(id: 42, nodeId: "!0000002a", shortName: "NEW", longName: "Partial")
+        state.upsertNode(partial)
 
         #expect(state.node(forId: 42) === cached)
         #expect(cached.isFavorite)
