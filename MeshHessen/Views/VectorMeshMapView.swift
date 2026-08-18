@@ -383,20 +383,24 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
             for (routeIndex, route) in parent.traceroutes.enumerated() {
                 let color = Self.tracerouteColors[routeIndex % Self.tracerouteColors.count]
                 let ownId = route.sourceNodeId ?? parent.appState.myNodeInfo?.nodeId ?? 0
+                let sourceCoordinate = resolvedTracerouteSourceCoordinate(
+                    route,
+                    ownCoordinate: parent.ownCoordinate,
+                    nodes: parent.nodes
+                )
                 var points: [TracePoint] = [
                     .init(
                         nodeId: ownId,
-                        coordinate: parent.ownCoordinate.map { [$0.longitude, $0.latitude] },
+                        coordinate: sourceCoordinate.map { [$0.longitude, $0.latitude] },
                         viaMqtt: false,
                         snr: nil
                     ),
                 ]
                 points.append(contentsOf: route.hops.map { hop in
-                    TracePoint(
+                    let coordinate = resolvedTracerouteHopCoordinate(hop, nodes: parent.nodes)
+                    return TracePoint(
                         nodeId: hop.nodeId,
-                        coordinate: hop.latitude.flatMap { latitude in
-                            hop.longitude.map { [$0, latitude] }
-                        },
+                        coordinate: coordinate.map { [$0.longitude, $0.latitude] },
                         viaMqtt: hop.viaMqtt,
                         snr: hop.snr
                     )

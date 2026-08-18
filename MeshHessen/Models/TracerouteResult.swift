@@ -16,6 +16,8 @@ struct TracerouteResult: Identifiable, Codable, Equatable, Sendable {
     let requestId: UInt32?
     let requestTime: Date
     let sourceNodeId: UInt32?
+    let sourceLatitude: Double?
+    let sourceLongitude: Double?
     let targetNodeId: UInt32
     let targetName: String
     let hops: [TracerouteHop]
@@ -51,6 +53,8 @@ struct TracerouteResult: Identifiable, Codable, Equatable, Sendable {
         requestId: UInt32? = nil,
         requestTime: Date = Date(),
         sourceNodeId: UInt32? = nil,
+        sourceLatitude: Double? = nil,
+        sourceLongitude: Double? = nil,
         targetNodeId: UInt32,
         targetName: String,
         hops: [TracerouteHop] = [],
@@ -60,6 +64,8 @@ struct TracerouteResult: Identifiable, Codable, Equatable, Sendable {
         self.requestId = requestId
         self.requestTime = requestTime
         self.sourceNodeId = sourceNodeId
+        self.sourceLatitude = sourceLatitude
+        self.sourceLongitude = sourceLongitude
         self.targetNodeId = targetNodeId
         self.targetName = targetName
         self.hops = hops
@@ -80,6 +86,9 @@ struct TracerouteResult: Identifiable, Codable, Equatable, Sendable {
 
 /// A single hop in a traceroute.
 struct TracerouteHop: Identifiable, Codable, Equatable, Sendable {
+    /// Firmware sentinel used when the hop count is known but the relaying node is not.
+    static let unknownNodeId = UInt32.max
+
     let id: UUID
     let nodeId: UInt32
     let nodeName: String
@@ -90,6 +99,10 @@ struct TracerouteHop: Identifiable, Codable, Equatable, Sendable {
 
     /// Optional persisted distance to the next hop in metres.
     var distanceToNext: Double?
+
+    var isUnknown: Bool {
+        nodeId == Self.unknownNodeId
+    }
 
     init(
         id: UUID = UUID(),
@@ -109,6 +122,25 @@ struct TracerouteHop: Identifiable, Codable, Equatable, Sendable {
         self.longitude = longitude
         self.viaMqtt = viaMqtt
         self.distanceToNext = distanceToNext
+    }
+
+    /// Decodes the firmware's quarter-dB SNR representation while preserving its unknown sentinel.
+    static func decodedSNR(_ encodedSNR: Int32?) -> Float? {
+        guard let encodedSNR, encodedSNR != Int32(Int8.min) else { return nil }
+        return Float(encodedSNR) / 4.0
+    }
+
+    /// Uses the position captured with the trace, then falls back to a more recently resolved position.
+    func resolvedPosition(
+        fallbackLatitude: Double?,
+        fallbackLongitude: Double?
+    ) -> (latitude: Double, longitude: Double)? {
+        guard !isUnknown else { return nil }
+        if let latitude, let longitude {
+            return (latitude, longitude)
+        }
+        guard let fallbackLatitude, let fallbackLongitude else { return nil }
+        return (fallbackLatitude, fallbackLongitude)
     }
 
     /// Great-circle distance to another positioned hop in metres.
@@ -560,11 +592,19 @@ final class TracerouteStore: @unchecked Sendable {
         let hops = route.enumerated().map { index, nodeId in
             let node = nodes[nodeId]
             let encodedSnr = result.snrTowards.indices.contains(index) ? result.snrTowards[index] : Int.min
+            let snr: Float?
+            if encodedSnr < Int(Int32.min) || encodedSnr > Int(Int32.max) {
+                snr = nil
+            } else {
+                snr = TracerouteHop.decodedSNR(Int32(encodedSnr))
+            }
             return TracerouteHop(
                 id: stableUUID("windows-hop-\(result.requestId)-\(nodeId)-\(index)-\(result.receivedAt.timeIntervalSince1970)"),
                 nodeId: nodeId,
-                nodeName: node?.name.nonEmpty ?? String(format: "!%08x", nodeId),
-                snr: encodedSnr == Int.min || encodedSnr == Int(Int32.min) ? nil : Float(encodedSnr) / 4,
+                nodeName: nodeId == TracerouteHop.unknownNodeId
+                    ? String(localized: "Unknown intermediate hop")
+                    : node?.name.nonEmpty ?? String(format: "!%08x", nodeId),
+                snr: snr,
                 latitude: node?.latitude,
                 longitude: node?.longitude,
                 viaMqtt: result.isViaMqtt
@@ -573,11 +613,14 @@ final class TracerouteStore: @unchecked Sendable {
         let id = stableUUID(
             "windows-result-\(result.requestId)-\(result.sourceNodeId)-\(result.destinationNodeId)-\(result.receivedAt.timeIntervalSince1970)"
         )
+        let sourceNode = nodes[result.sourceNodeId]
         return TracerouteResult(
             id: id,
             requestId: result.requestId,
             requestTime: result.receivedAt,
             sourceNodeId: result.sourceNodeId == 0 ? nil : result.sourceNodeId,
+            sourceLatitude: sourceNode?.latitude,
+            sourceLongitude: sourceNode?.longitude,
             targetNodeId: result.destinationNodeId,
             targetName: saveData.destinationName.nonEmpty
                 ?? nodes[result.destinationNodeId]?.name.nonEmpty

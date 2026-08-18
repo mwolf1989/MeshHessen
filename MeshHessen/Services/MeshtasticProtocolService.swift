@@ -1629,7 +1629,11 @@ final class MeshtasticProtocolService {
 
         let from = nodeDisplayName(packet.from)
         let hopNodeIds = route.route
-        let hopNames = hopNodeIds.map { nodeDisplayName($0) }
+        let hopNames = hopNodeIds.map { nodeId in
+            nodeId == TracerouteHop.unknownNodeId
+                ? String(localized: "Unknown intermediate hop")
+                : nodeDisplayName(nodeId)
+        }
         let hopStr = hopNames.isEmpty ? "(direct)" : hopNames.joined(separator: " → ")
 
         AppLogger.shared.log(
@@ -1642,12 +1646,15 @@ final class MeshtasticProtocolService {
         // Build TracerouteResult
         var hops: [TracerouteHop] = []
         for (i, hopNodeId) in hopNodeIds.enumerated() {
-            let hopNode = appState?.node(forId: hopNodeId)
-            let snr: Float? = i < snrTowards.count ? Float(snrTowards[i]) / 4.0 : nil
+            let isUnknown = hopNodeId == TracerouteHop.unknownNodeId
+            let hopNode = isUnknown ? nil : appState?.node(forId: hopNodeId)
+            let encodedSNR = i < snrTowards.count ? snrTowards[i] : nil
             hops.append(TracerouteHop(
                 nodeId: hopNodeId,
-                nodeName: hopNode?.name ?? nodeDisplayName(hopNodeId),
-                snr: snr,
+                nodeName: isUnknown
+                    ? String(localized: "Unknown intermediate hop")
+                    : hopNode?.name ?? nodeDisplayName(hopNodeId),
+                snr: TracerouteHop.decodedSNR(encodedSNR),
                 latitude: hopNode?.latitude,
                 longitude: hopNode?.longitude,
                 viaMqtt: hopNode?.viaMqtt ?? false
@@ -1656,9 +1663,13 @@ final class MeshtasticProtocolService {
 
         // Add the target node as the final hop
         let targetNode = appState?.node(forId: packet.from)
+        let targetEncodedSNR = hopNodeIds.count < snrTowards.count
+            ? snrTowards[hopNodeIds.count]
+            : nil
         hops.append(TracerouteHop(
             nodeId: packet.from,
             nodeName: targetNode?.name ?? from,
+            snr: TracerouteHop.decodedSNR(targetEncodedSNR),
             latitude: targetNode?.latitude,
             longitude: targetNode?.longitude,
             viaMqtt: targetNode?.viaMqtt ?? false
@@ -1668,10 +1679,13 @@ final class MeshtasticProtocolService {
         if let requestId = data.requestID != 0 ? data.requestID : nil,
            let pending = pendingTraceroutes.removeValue(forKey: requestId) {
             let responseTime = Date()
+            let sourcePosition = appState?.effectiveOwnCoordinate()
             let completed = TracerouteResult(
                 requestId: requestId,
                 requestTime: pending.requestTime,
                 sourceNodeId: myNodeId,
+                sourceLatitude: pending.sourceLatitude ?? sourcePosition?.latitude,
+                sourceLongitude: pending.sourceLongitude ?? sourcePosition?.longitude,
                 targetNodeId: pending.targetNodeId,
                 targetName: pending.targetName,
                 hops: hops,
@@ -1679,9 +1693,12 @@ final class MeshtasticProtocolService {
             )
             storeTracerouteResult(completed)
         } else {
+            let sourcePosition = appState?.effectiveOwnCoordinate()
             let result = TracerouteResult(
                 requestId: data.requestID != 0 ? data.requestID : packet.id,
                 sourceNodeId: myNodeId,
+                sourceLatitude: sourcePosition?.latitude,
+                sourceLongitude: sourcePosition?.longitude,
                 targetNodeId: packet.from,
                 targetName: from,
                 hops: hops,
@@ -1739,9 +1756,12 @@ final class MeshtasticProtocolService {
 
         // Record pending traceroute
         let targetName = nodeDisplayName(targetNodeId)
+        let sourcePosition = appState?.effectiveOwnCoordinate()
         let pending = TracerouteResult(
             requestId: packetId,
             sourceNodeId: myNodeId,
+            sourceLatitude: sourcePosition?.latitude,
+            sourceLongitude: sourcePosition?.longitude,
             targetNodeId: targetNodeId,
             targetName: targetName
         )

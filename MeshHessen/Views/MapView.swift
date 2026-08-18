@@ -502,6 +502,45 @@ struct MapPointCoordinate: Equatable {
     }
 }
 
+func resolvedTracerouteHopCoordinate(
+    _ hop: TracerouteHop,
+    nodes: [NodeInfo]
+) -> MapPointCoordinate? {
+    guard !hop.isUnknown else { return nil }
+    if let position = hop.resolvedPosition(fallbackLatitude: nil, fallbackLongitude: nil) {
+        return MapPointCoordinate(latitude: position.latitude, longitude: position.longitude)
+    }
+    let node = nodes.first { $0.id == hop.nodeId }
+    if let latitude = node?.latitude, let longitude = node?.longitude {
+        return MapPointCoordinate(latitude: latitude, longitude: longitude)
+    }
+    let loggedPosition = LocationLogger.shared.readPositions(for: hop.nodeId).last
+    guard let position = hop.resolvedPosition(
+        fallbackLatitude: loggedPosition?.latitude,
+        fallbackLongitude: loggedPosition?.longitude
+    ) else { return nil }
+    return MapPointCoordinate(latitude: position.latitude, longitude: position.longitude)
+}
+
+func resolvedTracerouteSourceCoordinate(
+    _ traceroute: TracerouteResult,
+    ownCoordinate: MapPointCoordinate?,
+    nodes: [NodeInfo]
+) -> MapPointCoordinate? {
+    if let latitude = traceroute.sourceLatitude, let longitude = traceroute.sourceLongitude {
+        return MapPointCoordinate(latitude: latitude, longitude: longitude)
+    }
+    if let ownCoordinate { return ownCoordinate }
+    guard let sourceNodeId = traceroute.sourceNodeId,
+          sourceNodeId != 0,
+          sourceNodeId != TracerouteHop.unknownNodeId else { return nil }
+    let sourceNode = nodes.first { $0.id == sourceNodeId }
+    let loggedPosition = LocationLogger.shared.readPositions(for: sourceNodeId).last
+    guard let latitude = sourceNode?.latitude ?? loggedPosition?.latitude,
+          let longitude = sourceNode?.longitude ?? loggedPosition?.longitude else { return nil }
+    return MapPointCoordinate(latitude: latitude, longitude: longitude)
+}
+
 private struct WaypointCoordinateDraft: Identifiable {
     let id = UUID()
     let coordinate: CLLocationCoordinate2D
@@ -1012,14 +1051,15 @@ private struct MeshMapViewRepresentable: NSViewRepresentable {
             guard parent.showTraceroutes else { return }
             for (index, traceroute) in parent.traceroutes.enumerated() {
                 var points: [(coordinate: CLLocationCoordinate2D?, viaMqtt: Bool, snr: Float?)] = []
-                points.append((parent.ownCoordinate?.coreLocationCoordinate, false, nil))
+                let sourceCoordinate = resolvedTracerouteSourceCoordinate(
+                    traceroute,
+                    ownCoordinate: parent.ownCoordinate,
+                    nodes: parent.nodes
+                )
+                points.append((sourceCoordinate?.coreLocationCoordinate, false, nil))
                 points.append(contentsOf: traceroute.hops.map { hop in
-                    let coordinate = hop.latitude.flatMap { latitude in
-                        hop.longitude.map { longitude in
-                            CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
-                        }
-                    }
-                    return (coordinate, hop.viaMqtt, hop.snr)
+                    let coordinate = resolvedTracerouteHopCoordinate(hop, nodes: parent.nodes)
+                    return (coordinate?.coreLocationCoordinate, hop.viaMqtt, hop.snr)
                 })
 
                 let color = Self.tracerouteColors[index % Self.tracerouteColors.count]

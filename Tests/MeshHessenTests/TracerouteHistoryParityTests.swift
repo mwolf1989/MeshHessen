@@ -227,6 +227,31 @@ struct TracerouteHistoryParityTests {
         #expect(abs((distance ?? 0) - 1_111.95) < 1)
     }
 
+    @Test("firmware unknown-hop sentinels do not become nodes or SNR readings")
+    func unknownHopSentinels() {
+        let hop = TracerouteHop(
+            nodeId: TracerouteHop.unknownNodeId,
+            nodeName: "Unknown",
+            snr: TracerouteHop.decodedSNR(Int32(Int8.min))
+        )
+
+        #expect(hop.isUnknown)
+        #expect(hop.snr == nil)
+        #expect(hop.resolvedPosition(fallbackLatitude: 50, fallbackLongitude: 8) == nil)
+        #expect(TracerouteHop.decodedSNR(57) == 14.25)
+    }
+
+    @Test("a trace hop can use a position learned after the trace completed")
+    func hopPositionFallback() throws {
+        let hop = TracerouteHop(nodeId: 42, nodeName: "Relay")
+        let position = try #require(
+            hop.resolvedPosition(fallbackLatitude: 50.123, fallbackLongitude: 8.456)
+        )
+
+        #expect(position.latitude == 50.123)
+        #expect(position.longitude == 8.456)
+    }
+
     private func query(_ period: TracerouteHistoryPeriod) -> TracerouteHistoryQuery {
         TracerouteHistoryQuery(period: period, newestPerNodePair: false)
     }
