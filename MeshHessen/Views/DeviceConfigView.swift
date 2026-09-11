@@ -29,6 +29,7 @@ private struct NodeAdministrationView: View {
     @Environment(AppCoordinator.self) private var coordinator
     @Environment(\.appState) private var appState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.locale) private var locale
 
     let target: AdminTarget
     let title: String
@@ -54,6 +55,7 @@ private struct NodeAdministrationView: View {
     @State private var showRemoteLoadChoice = false
     @State private var remoteFavoriteNodeID: UInt32?
     @State private var channelPSKDrafts: [Int32: String] = [:]
+    @State private var fixedCoordinateDrafts: [FixedPositionCoordinate: String] = [:]
 
     private var requiredFeature: KioskFeatureMask {
         target.isRemote ? .remoteAdmin : .nodeConfiguration
@@ -214,6 +216,7 @@ private struct NodeAdministrationView: View {
                         || isSaving
                         || !appState.protocolReady
                         || hasInvalidChannelPSKDraft
+                        || fixedPositionValidationMessage != nil
                 )
             Button("Close") { dismiss() }
                 .disabled(isSaving)
@@ -337,12 +340,13 @@ private struct NodeAdministrationView: View {
                         set: { enabled in
                             if enabled, draft.fixedPosition == nil { draft.fixedPosition = Meshtastic_Position() }
                             if !enabled { draft.fixedPosition = nil }
+                            fixedCoordinateDrafts = [:]
                         }
                     )
                 )
                 if draft.fixedPosition != nil {
-                    decimalField("Latitude", value: fixedLatitude, width: 150)
-                    decimalField("Longitude", value: fixedLongitude, width: 150)
+                    fixedCoordinateField(.latitude)
+                    fixedCoordinateField(.longitude)
                     integerField("Altitude (m)", value: fixedAltitude, width: 110)
                 }
             }
@@ -619,6 +623,7 @@ private struct NodeAdministrationView: View {
             }
             original = snapshot
             draft = snapshot
+            fixedCoordinateDrafts = [:]
             loadedSections = Set(
                 AdministrationSection.allLoadableSections.filter { $0.isAvailable(in: snapshot) }
             )
@@ -648,6 +653,9 @@ private struct NodeAdministrationView: View {
             if section.isAvailable(in: incoming) {
                 baseline.mergeLoaded(from: incoming)
                 draft.mergeLoaded(from: incoming)
+                if incoming.loadedConfigCategories.contains(.position) {
+                    fixedCoordinateDrafts = [:]
+                }
                 loadedSections.insert(section)
                 if section == .channels {
                     resetChannelPSKDrafts()
@@ -672,6 +680,11 @@ private struct NodeAdministrationView: View {
 
     private func reviewChanges() {
         guard let original else { return }
+        if let message = fixedPositionValidationMessage {
+            selection = .fixedPosition
+            errorMessage = message
+            return
+        }
         guard !hasInvalidChannelPSKDraft else {
             selection = .channels
             statusMessage = String(localized: "Correct the invalid channel PSK before reviewing changes.")
@@ -690,6 +703,11 @@ private struct NodeAdministrationView: View {
 
     private func saveConfirmed() async {
         guard let original else { return }
+        if let message = fixedPositionValidationMessage {
+            selection = .fixedPosition
+            errorMessage = message
+            return
+        }
         guard !hasInvalidChannelPSKDraft else {
             selection = .channels
             statusMessage = String(localized: "Correct the invalid channel PSK before saving.")
@@ -1009,18 +1027,26 @@ private struct NodeAdministrationView: View {
                 .map(\.title)
     }
 
-    private var fixedLatitude: Binding<Double> {
-        Binding(
-            get: { Double(draft.fixedPosition?.latitudeI ?? 0) / 1e7 },
-            set: { draft.fixedPosition?.latitudeI = Int32(($0 * 1e7).rounded()) }
+    private func fixedCoordinate(_ coordinate: FixedPositionCoordinate) -> Binding<String> {
+        let keyPath = coordinate == .latitude ? \Meshtastic_Position.latitudeI : \Meshtastic_Position.longitudeI
+        return Binding(
+            get: {
+                fixedCoordinateDrafts[coordinate]
+                    ?? coordinate.format(draft.fixedPosition?[keyPath: keyPath] ?? 0, locale: locale)
+            },
+            set: { text in
+                fixedCoordinateDrafts[coordinate] = text
+                guard let value = coordinate.parse(text) else { return }
+                draft.fixedPosition?[keyPath: keyPath] = value
+            }
         )
     }
 
-    private var fixedLongitude: Binding<Double> {
-        Binding(
-            get: { Double(draft.fixedPosition?.longitudeI ?? 0) / 1e7 },
-            set: { draft.fixedPosition?.longitudeI = Int32(($0 * 1e7).rounded()) }
-        )
+    private var fixedPositionValidationMessage: String? {
+        guard loadedSections.contains(.fixedPosition), draft.fixedPosition != nil else { return nil }
+        return FixedPositionCoordinate.allCases.first {
+            $0.parse(fixedCoordinate($0).wrappedValue) == nil
+        }?.validationMessage
     }
 
     private var fixedAltitude: Binding<Int32> {
@@ -1030,14 +1056,22 @@ private struct NodeAdministrationView: View {
         )
     }
 
-    private func decimalField(_ title: String, value: Binding<Double>, width: CGFloat) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            TextField(title, value: value, format: .number.precision(.fractionLength(0...7)))
-                .textFieldStyle(.roundedBorder)
-                .frame(width: width)
-                .accessibilityLabel(title)
+    private func fixedCoordinateField(_ coordinate: FixedPositionCoordinate) -> some View {
+        let text = fixedCoordinate(coordinate)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(coordinate.title)
+                Spacer()
+                TextField(coordinate.title, text: text)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 150)
+                    .accessibilityLabel(coordinate.title)
+            }
+            if coordinate.parse(text.wrappedValue) == nil {
+                Text(coordinate.validationMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
         }
     }
 

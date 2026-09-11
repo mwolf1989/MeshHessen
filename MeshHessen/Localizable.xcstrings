@@ -5266,6 +5266,26 @@
     "Enter a kiosk password." : {
 
     },
+    "Enter a latitude from -90 to 90 using a decimal point or comma." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gib einen Breitengrad von -90 bis 90 mit Punkt oder Komma als Dezimaltrennzeichen ein."
+          }
+        }
+      }
+    },
+    "Enter a longitude from -180 to 180 using a decimal point or comma." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gib einen Längengrad von -180 bis 180 mit Punkt oder Komma als Dezimaltrennzeichen ein."
+          }
+        }
+      }
+    },
     "Enter a note for this node:" : {
       "localizations" : {
         "de" : {
