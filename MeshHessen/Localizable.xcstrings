@@ -10191,6 +10191,16 @@
         }
       }
     },
+    "Offline packages in this assistant are limited to Germany, Austria and Switzerland." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offlinepakete in diesem Assistenten sind auf Deutschland, Österreich und die Schweiz beschränkt."
+          }
+        }
+      }
+    },
     "Offline packages in this assistant are limited to Germany." : {
       "localizations" : {
         "de" : {

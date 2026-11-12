@@ -169,7 +169,7 @@ struct TDeckWizardView: View {
                 WizardFeatureRow(icon: "shippingbox", text: "Cache downloaded tiles locally and export them as a ZIP archive")
             }
 
-            Label("Offline packages in this assistant are limited to Germany.", systemImage: "info.circle")
+            Label("Offline packages in this assistant are limited to Germany, Austria and Switzerland.", systemImage: "info.circle")
                 .foregroundStyle(.secondary)
         }
     }
