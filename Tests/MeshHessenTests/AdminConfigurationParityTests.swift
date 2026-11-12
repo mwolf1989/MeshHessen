@@ -172,6 +172,26 @@ struct AdminConfigurationParityTests {
         #expect(!finishedMatched)
     }
 
+    @Test("Rejected remote-admin requests carry a remediation hint")
+    func remoteAdminHints() {
+        let hinted: [RoutingError] = [.adminPublicKeyUnauthorized, .pkiFailed, .pkiUnknownPubkey, .maxRetransmit, .noRoute]
+        for error in hinted {
+            #expect(error.adminHint != nil, "missing hint for \(error)")
+        }
+        #expect(RoutingError.adminPublicKeyUnauthorized.adminHint != RoutingError.pkiFailed.adminHint)
+        #expect(RoutingError.pkiFailed.adminHint == RoutingError.pkiUnknownPubkey.adminHint)
+        #expect(RoutingError.maxRetransmit.adminHint == RoutingError.noRoute.adminHint)
+        #expect(RoutingError.tooLarge.adminHint == nil)
+        #expect(RoutingError.none.adminHint == nil)
+
+        let description = MeshtasticProtocolService.DeviceConfigError
+            .routingFailed(.adminPublicKeyUnauthorized)
+            .errorDescription ?? ""
+        #expect(description.hasSuffix(RoutingError.adminPublicKeyUnauthorized.adminHint ?? "<missing>"))
+        let plain = MeshtasticProtocolService.DeviceConfigError.routingFailed(.tooLarge).errorDescription ?? ""
+        #expect(!plain.contains("\n"))
+    }
+
     @Test("Local and remote target validation rejects broadcast and unknown IDs")
     func targetValidation() {
         #expect(AdminTarget.local.destination(localNodeID: 0x1234) == 0x1234)

@@ -46,7 +46,9 @@ final class MeshtasticProtocolService {
             case .invalidTarget:
                 return String(localized: "The administration target is invalid.")
             case .routingFailed(let error):
-                return String(localized: "The administration request failed: \(error.display).")
+                let message = String(localized: "The administration request failed: \(error.display).")
+                guard let hint = error.adminHint else { return message }
+                return message + "\n\n" + hint
             case .adminTimedOut(let operation):
                 return String(localized: "The node did not answer the administration request: \(operation).")
             case .incompleteResponse(let categories):
