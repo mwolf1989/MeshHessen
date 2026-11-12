@@ -74,6 +74,8 @@ final class MeshtasticProtocolService {
     var onFromRadioPayloadReceived: ((Data) -> Void)?
     var onMqttProxyMessageReceived: ((Meshtastic_MqttClientProxyMessage) -> Void)?
     var onMqttConfigurationReceived: ((Meshtastic_ModuleConfig.MQTTConfig) -> Void)?
+    /// Called once per silence period when the link watchdog declares the device link dead.
+    var onLinkStale: (@MainActor () -> Void)?
 
     /// Waypoints and direct contacts are observable protocol state so map views can
     /// consume them without performing I/O themselves.
@@ -81,6 +83,9 @@ final class MeshtasticProtocolService {
     private(set) var directNeighborContacts: [DirectNeighborContact] = []
 
     var currentNodeId: UInt32 { myNodeId }
+
+    /// Read-only view of the link watchdog (diagnostics and tests).
+    var linkWatchdogState: LinkWatchdog { linkWatchdog }
 
     // MARK: - Protocol state (non-isolated mutable, protected by dataLock)
     private let dataLock = NSLock()
@@ -177,8 +182,9 @@ final class MeshtasticProtocolService {
         }
     }
 
-    // TCP heartbeat keepalive
+    // Heartbeat keepalive + link liveness (all transports)
     private var heartbeatTask: Task<Void, Never>?
+    @ObservationIgnored private var linkWatchdog = LinkWatchdog()
 
     // Text-mode recovery
     private var lastValidPacketTime = Date()
@@ -311,8 +317,9 @@ final class MeshtasticProtocolService {
         // 9. Finish init; data continues to stream in live
         isInitializing = false
 
-        // 10. Start TCP heartbeat to prevent idle disconnects
-        if gotBasicInfo && connectionService?.type != .bluetooth {
+        // 10. Start the heartbeat: keeps the firmware's client API open and
+        //     lets the link watchdog detect a silently dead link.
+        if gotBasicInfo {
             startHeartbeat()
         }
 
@@ -446,7 +453,7 @@ final class MeshtasticProtocolService {
             if forwardToVirtualNode {
                 onFromRadioPayloadReceived?(data)
             }
-            handleFromRadio(fromRadio)
+            handleFromRadio(fromRadio, fromDevice: forwardToVirtualNode)
         } catch {
             AppLogger.shared.log("[Protocol] Parse error: \(error.localizedDescription) (bytes: \(data.count))", debug: true)
         }
@@ -542,7 +549,15 @@ final class MeshtasticProtocolService {
 
     // MARK: - FromRadio Dispatch
 
-    private func handleFromRadio(_ fromRadio: Meshtastic_FromRadio) {
+    /// `fromDevice` is false for frames synthesised locally for Virtual Node
+    /// clients; those must not count as proof that the physical link is alive.
+    private func handleFromRadio(_ fromRadio: Meshtastic_FromRadio, fromDevice: Bool = true) {
+        if fromDevice {
+            var isQueueStatus = false
+            if case .queueStatus = fromRadio.payloadVariant { isQueueStatus = true }
+            linkWatchdog.onFrameReceived(isQueueStatus: isQueueStatus, now: Date())
+        }
+
         let variant: String
         switch fromRadio.payloadVariant {
         case .packet: variant = "packet"
@@ -3546,18 +3561,36 @@ final class MeshtasticProtocolService {
         connectionService?.disconnect()
     }
 
-    // MARK: - TCP Heartbeat
+    // MARK: - Heartbeat / Link watchdog
+
+    /// A plain keepalive. The nonce must stay 0: a non-zero nonce makes the
+    /// firmware broadcast its NodeInfo on the mesh.
+    nonisolated static func makeHeartbeat() -> Meshtastic_ToRadio {
+        var toRadio = Meshtastic_ToRadio()
+        toRadio.heartbeat = Meshtastic_Heartbeat()
+        return toRadio
+    }
 
     private func startHeartbeat() {
         stopHeartbeat()
+        linkWatchdog.reset(now: Date())
         heartbeatTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
+                try? await Task.sleep(for: .seconds(LinkWatchdog.heartbeatInterval))
                 guard !Task.isCancelled else { break }
-                guard let self, !self.isDisconnecting else { break }
-                var toRadio = Meshtastic_ToRadio()
-                toRadio.heartbeat = Meshtastic_Heartbeat()
-                await self.sendRaw(toRadio)
+                guard let self, !self.isDisconnecting, self.connectionService != nil else { break }
+
+                let now = Date()
+                if self.linkWatchdog.checkStale(now: now) {
+                    AppLogger.shared.log(
+                        "[Protocol] Link stale — requesting reconnect (\(self.linkWatchdog.describe(now: now)))"
+                    )
+                    self.onLinkStale?()
+                    break
+                }
+
+                await self.sendRaw(Self.makeHeartbeat())
+                self.linkWatchdog.onHeartbeatSent(now: Date())
                 AppLogger.shared.log("[Protocol] Heartbeat sent", debug: SettingsService.shared.debugDevice)
             }
         }

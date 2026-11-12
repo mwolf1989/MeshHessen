@@ -148,4 +148,17 @@ struct LinkWatchdogTests {
         probe.watchdog.reset(now: minute(50))
         #expect(probe.isStale(minute(96)))
     }
+
+    @Test("Heartbeat is a plain keepalive with nonce 0")
+    func heartbeatWireFormat() throws {
+        let toRadio = MeshtasticProtocolService.makeHeartbeat()
+        guard case .heartbeat(let heartbeat) = toRadio.payloadVariant else {
+            Issue.record("Expected a heartbeat payload, got \(String(describing: toRadio.payloadVariant))")
+            return
+        }
+        // A non-zero nonce makes the firmware broadcast its NodeInfo on the mesh.
+        #expect(heartbeat.nonce == 0)
+        let decoded = try Meshtastic_ToRadio(serializedBytes: try toRadio.serializedData())
+        #expect(decoded == toRadio)
+    }
 }
