@@ -199,7 +199,7 @@ struct TelemetryDatabaseParityTests {
         #expect(values.map(\.value) == [70])
     }
 
-    @Test("Clearing telemetry deletes all twelve tables transactionally and keeps the schema")
+    @Test("Clearing telemetry deletes all thirteen tables transactionally and keeps the schema")
     func clearAllTelemetry() async throws {
         let (database, directory) = makeDatabase()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -267,6 +267,15 @@ struct TelemetryDatabaseParityTests {
             destNodeId: 0x99,
             hops: [(nodeId: 0x77, snrTowards: -4, snrBack: 2)]
         )
+        database.insertNodePosition(
+            nodeId: nodeId,
+            latitude: 50.1,
+            longitude: 8.7,
+            altitude: 120,
+            groundSpeed: 0,
+            groundTrack: 0,
+            timestamp: timestamp
+        )
         database.waitForPendingWrites()
 
         var rowsBeforeClear = 0
@@ -319,7 +328,7 @@ struct TelemetryDatabaseParityTests {
 
         #expect(try await database.clearAllTelemetry() == 0)
         #expect(database.schemaTableNames() == schemaBefore)
-        #expect(TelemetryDatabaseService.telemetryTableNames.count == 12)
+        #expect(TelemetryDatabaseService.telemetryTableNames.count == 13)
     }
 
     @Test("Known node IDs include telemetry and traceroute-only nodes without duplicates")
