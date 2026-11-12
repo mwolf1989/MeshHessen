@@ -1458,6 +1458,16 @@
         }
       }
     },
+    "Also remove favorites" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auch Favoriten entfernen"
+          }
+        }
+      }
+    },
     "Älter als 30 Tage" : {
       "localizations" : {
         "de" : {
@@ -12665,6 +12675,26 @@
         }
       }
     },
+    "Reset node database?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Node-Datenbank zurücksetzen?"
+          }
+        }
+      }
+    },
+    "Reset node database…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Node-Datenbank zurücksetzen …"
+          }
+        }
+      }
+    },
     "Reset NodeDB" : {
       "localizations" : {
         "de" : {
@@ -15462,6 +15492,16 @@
     },
     "The selected map region is invalid." : {
 
+    },
+    "The selected node forgets all known nodes. This cannot be undone." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der ausgewählte Node vergisst alle bekannten Nodes. Dies kann nicht rückgängig gemacht werden."
+          }
+        }
+      }
     },
     "The selected zoom range is invalid." : {
       "localizations" : {
