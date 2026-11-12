@@ -197,6 +197,10 @@ struct AllChannelsChatView: View {
         if message.isUnknownChannel {
             return message.channelName
         }
+        if let channel = appState.channels.first(where: { $0.id == message.channelIndex }),
+           !channel.name.isEmpty {
+            return channel.name
+        }
         return message.channelName.isEmpty
             ? String(localized: "Channel \(message.channelIndex)")
             : message.channelName
