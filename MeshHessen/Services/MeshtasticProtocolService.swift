@@ -76,6 +76,9 @@ final class MeshtasticProtocolService {
     var onMqttConfigurationReceived: ((Meshtastic_ModuleConfig.MQTTConfig) -> Void)?
     /// Called once per silence period when the link watchdog declares the device link dead.
     var onLinkStale: (@MainActor () -> Void)?
+    /// Firmware-originated notices (`FromRadio.clientNotification`), e.g. rejected
+    /// sends, duty-cycle limits or key-verification prompts.
+    var onClientNotification: ((Meshtastic_ClientNotification) -> Void)?
 
     /// Waypoints and direct contacts are observable protocol state so map views can
     /// consume them without performing I/O themselves.
@@ -83,6 +86,9 @@ final class MeshtasticProtocolService {
     private(set) var directNeighborContacts: [DirectNeighborContact] = []
 
     var currentNodeId: UInt32 { myNodeId }
+
+    /// Last `DeviceMetadata` of the local device in this session (nil until received).
+    var deviceMetadata: Meshtastic_DeviceMetadata? { lastDeviceMetadata }
 
     /// Read-only view of the link watchdog (diagnostics and tests).
     var linkWatchdogState: LinkWatchdog { linkWatchdog }
@@ -104,6 +110,11 @@ final class MeshtasticProtocolService {
     // writes must start from the device's own protos (local node only).
     private var rawChannels: [Int: Meshtastic_Channel] = [:]
     private var rawOwner: Meshtastic_User?
+
+    // Device identity details that may arrive before the own NodeInfo; re-applied
+    // whenever `appState.myNodeInfo` is (re)created.
+    private var lastDeviceMetadata: Meshtastic_DeviceMetadata?
+    private var lastPioEnv = ""
 
     // Device config storage (populated by admin getConfigResponse / getModuleConfigResponse)
     enum ConfigCategory: String {
@@ -225,6 +236,7 @@ final class MeshtasticProtocolService {
         isCollectingChannelSnapshot = true
         rawChannels.removeAll()
         rawOwner = nil
+        clearDeviceInfoCache()
         receiveBuffer = Data()
         myNodeId = 0
         consecutiveTextChunks = 0
@@ -589,6 +601,10 @@ final class MeshtasticProtocolService {
             handleMeshPacket(packet)
         case .myInfo(let info):
             myNodeId = info.myNodeNum
+            lastPioEnv = info.pioEnv
+            if !info.pioEnv.isEmpty, appState?.myNodeInfo?.nodeId == myNodeId {
+                appState?.myNodeInfo?.pioEnv = info.pioEnv
+            }
             if isCollectingChannelSnapshot {
                 tempChannels.adoptTargetNodeID(myNodeId)
             }
@@ -608,6 +624,9 @@ final class MeshtasticProtocolService {
             handleDeviceMetadata(meta)
         case .mqttClientProxyMessage(let message):
             onMqttProxyMessageReceived?(message)
+        case .clientNotification(let note):
+            AppLogger.shared.log("[Protocol] ClientNotification: \(note.message)")
+            onClientNotification?(note)
         default:
             break
         }
@@ -1161,13 +1180,16 @@ final class MeshtasticProtocolService {
             }
             let existingFW = appState?.myNodeInfo?.firmwareVersion ?? ""
             let hwModel = user.hwModel != .unset ? hardwareModelName(user.hwModel) : (appState?.myNodeInfo?.hardwareModel ?? "Unknown")
-            appState?.myNodeInfo = MyNodeInfo(
+            var myInfo = MyNodeInfo(
                 nodeId: packet.from,
                 shortName: user.shortName,
                 longName: user.longName,
                 hardwareModel: hwModel,
                 firmwareVersion: existingFW
             )
+            if user.hwModel != .unset { myInfo.hardwareModelRaw = user.hwModel.rawValue }
+            applyCachedDeviceInfo(to: &myInfo)
+            appState?.myNodeInfo = myInfo
         }
 
         let nodeId = packet.from
@@ -1213,13 +1235,16 @@ final class MeshtasticProtocolService {
             rawOwner = user
             let existingFW = appState?.myNodeInfo?.firmwareVersion ?? ""
             let hwModel = user.hwModel != .unset ? hardwareModelName(user.hwModel) : (appState?.myNodeInfo?.hardwareModel ?? "Unknown")
-            appState?.myNodeInfo = MyNodeInfo(
+            var myInfo = MyNodeInfo(
                 nodeId: info.num,
                 shortName: user.shortName,
                 longName: user.longName,
                 hardwareModel: hwModel,
                 firmwareVersion: existingFW
             )
+            if user.hwModel != .unset { myInfo.hardwareModelRaw = user.hwModel.rawValue }
+            applyCachedDeviceInfo(to: &myInfo)
+            appState?.myNodeInfo = myInfo
         }
 
         appState?.upsertNode(node, refreshNodeDatabaseFlags: true)
@@ -1494,13 +1519,51 @@ final class MeshtasticProtocolService {
     // MARK: - DeviceMetadata
 
     private func handleDeviceMetadata(_ meta: Meshtastic_DeviceMetadata) {
+        lastDeviceMetadata = meta
+        // Metadata can arrive before the own NodeInfo; keep it instead of dropping it.
+        if appState?.myNodeInfo == nil, myNodeId != 0 {
+            appState?.myNodeInfo = MyNodeInfo(
+                nodeId: myNodeId,
+                shortName: "",
+                longName: "",
+                hardwareModel: hardwareModelName(meta.hwModel),
+                firmwareVersion: ""
+            )
+        }
+        if var myInfo = appState?.myNodeInfo {
+            if meta.hwModel != .unset {
+                myInfo.hardwareModel = hardwareModelName(meta.hwModel)
+            }
+            applyCachedDeviceInfo(to: &myInfo)
+            appState?.myNodeInfo = myInfo
+        }
+        AppLogger.shared.log(
+            "[Protocol] DeviceMetadata: FW=\(meta.firmwareVersion), HW=\(meta.hwModel), "
+                + "wifi=\(meta.hasWifi_p), bt=\(meta.hasBluetooth_p)",
+            debug: SettingsService.shared.debugDevice
+        )
+    }
+
+    /// Re-applies the session's cached `DeviceMetadata` and `pio_env` to a
+    /// (re)created `MyNodeInfo` so they are not lost.
+    private func applyCachedDeviceInfo(to info: inout MyNodeInfo) {
+        if !lastPioEnv.isEmpty {
+            info.pioEnv = lastPioEnv
+        }
+        guard let meta = lastDeviceMetadata else { return }
         if !meta.firmwareVersion.isEmpty {
-            appState?.myNodeInfo?.firmwareVersion = meta.firmwareVersion
+            info.firmwareVersion = meta.firmwareVersion
         }
         if meta.hwModel != .unset {
-            appState?.myNodeInfo?.hardwareModel = hardwareModelName(meta.hwModel)
+            info.hardwareModelRaw = meta.hwModel.rawValue
         }
-        AppLogger.shared.log("[Protocol] DeviceMetadata: FW=\(meta.firmwareVersion), HW=\(meta.hwModel)", debug: SettingsService.shared.debugDevice)
+        info.hasWifi = meta.hasWifi_p
+        info.hasBluetooth = meta.hasBluetooth_p
+    }
+
+    private func clearDeviceInfoCache() {
+        lastDeviceMetadata = nil
+        lastPioEnv = ""
     }
 
     private func requestDeviceMetadata() async {
@@ -3556,6 +3619,7 @@ final class MeshtasticProtocolService {
         isDisconnecting = true
         rawChannels.removeAll()
         rawOwner = nil
+        clearDeviceInfoCache()
         stopHeartbeat()
         PkiDecryptionService.shared.clearPrivateKey()
         connectionService?.disconnect()
