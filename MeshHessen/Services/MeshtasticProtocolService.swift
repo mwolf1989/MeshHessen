@@ -100,6 +100,18 @@ final class MeshtasticProtocolService {
     private var rawChannels: [Int: Meshtastic_Channel] = [:]
     private var rawOwner: Meshtastic_User?
 
+    // Positions can arrive before the sender's NodeInfo. They are buffered and
+    // applied once the node becomes known instead of being dropped.
+    private struct PendingPosition {
+        let latitude: Double
+        let longitude: Double
+        let altitude: Int
+        let receivedAt: Date
+    }
+    private static let maxPendingPositions = 500
+    private static let pendingPositionLifetime: TimeInterval = 6 * 3_600
+    private var pendingPositions: [UInt32: PendingPosition] = [:]
+
     // Device config storage (populated by admin getConfigResponse / getModuleConfigResponse)
     enum ConfigCategory: String {
         case device, position, power, network, display, lora, bluetooth, security, session, deviceUI
@@ -310,6 +322,7 @@ final class MeshtasticProtocolService {
 
         // 9. Finish init; data continues to stream in live
         isInitializing = false
+        Task { await self.backfillStoredPositions() }
 
         // 10. Start TCP heartbeat to prevent idle disconnects
         if gotBasicInfo && connectionService?.type != .bluetooth {
@@ -1120,13 +1133,81 @@ final class MeshtasticProtocolService {
             node.groundSpeed = pos.groundSpeed
             node.groundTrack = pos.groundTrack
             appState?.recalculateDistance(for: packet.from)
+        } else {
+            bufferPendingPosition(nodeId: packet.from, latitude: lat, longitude: lon, altitude: alt)
         }
+
+        telemetryDatabase.insertNodePosition(
+            nodeId: packet.from,
+            latitude: lat,
+            longitude: lon,
+            altitude: alt,
+            groundSpeed: pos.groundSpeed,
+            groundTrack: pos.groundTrack,
+            timestamp: Date()
+        )
 
         // Location logging
         if SettingsService.shared.locationLoggingEnabled {
             let name = appState?.node(forId: packet.from)?.name ?? String(format: "!%08x", packet.from)
             LocationLogger.shared.logPosition(nodeId: packet.from, name: name, latitude: lat, longitude: lon, altitude: alt)
         }
+    }
+
+    private func bufferPendingPosition(nodeId: UInt32, latitude: Double, longitude: Double, altitude: Int) {
+        let now = Date()
+        pendingPositions = pendingPositions.filter {
+            now.timeIntervalSince($0.value.receivedAt) <= Self.pendingPositionLifetime
+        }
+        if pendingPositions[nodeId] == nil, pendingPositions.count >= Self.maxPendingPositions,
+           let oldest = pendingPositions.min(by: { $0.value.receivedAt < $1.value.receivedAt })?.key {
+            pendingPositions.removeValue(forKey: oldest)
+        }
+        pendingPositions[nodeId] = PendingPosition(
+            latitude: latitude,
+            longitude: longitude,
+            altitude: altitude,
+            receivedAt: now
+        )
+        AppLogger.shared.log(
+            "[Protocol] Buffered position for unknown node \(String(format: "!%08x", nodeId))",
+            debug: SettingsService.shared.debugDevice
+        )
+    }
+
+    /// Applies (and removes) a buffered position once the node is known.
+    private func applyPendingPosition(to nodeId: UInt32) {
+        guard let pending = pendingPositions.removeValue(forKey: nodeId) else { return }
+        guard Date().timeIntervalSince(pending.receivedAt) <= Self.pendingPositionLifetime,
+              let node = appState?.node(forId: nodeId) else { return }
+        node.latitude = pending.latitude
+        node.longitude = pending.longitude
+        node.altitude = pending.altitude
+        appState?.recalculateDistance(for: nodeId)
+        AppLogger.shared.log(
+            "[Protocol] Applied buffered position to \(node.nodeId)",
+            debug: SettingsService.shared.debugDevice
+        )
+    }
+
+    /// Restores the last stored position of nodes the radio no longer has a
+    /// position for. Existing positions are never overwritten.
+    @discardableResult
+    func backfillStoredPositions() async -> Int {
+        let stored = await telemetryDatabase.latestNodePositions()
+        guard let appState, !stored.isEmpty else { return 0 }
+        var restored = 0
+        for (nodeId, position) in stored {
+            guard let node = appState.node(forId: nodeId),
+                  node.latitude == nil || node.longitude == nil else { continue }
+            node.latitude = position.latitude
+            node.longitude = position.longitude
+            node.altitude = position.altitude
+            appState.recalculateDistance(for: nodeId)
+            restored += 1
+        }
+        AppLogger.shared.log("[Protocol] Restored \(restored) node positions from the position history", debug: true)
+        return restored
     }
 
     // MARK: - NodeInfo (portnum 4)
@@ -1158,7 +1239,10 @@ final class MeshtasticProtocolService {
         let nodeId = packet.from
         let node = makeNodeInfo(from: user, num: nodeId)
         appState?.upsertNode(node)
-        coreDataStore?.upsertNode(node)
+        applyPendingPosition(to: nodeId)
+        // A User packet never carries a position: persist the merged node so
+        // the stored coordinates, battery and SNR are not overwritten with nil.
+        coreDataStore?.upsertNode(appState?.node(forId: nodeId) ?? node)
     }
 
     // MARK: - NodeInfo (from NodeInfo message)
@@ -1208,7 +1292,8 @@ final class MeshtasticProtocolService {
         }
 
         appState?.upsertNode(node, refreshNodeDatabaseFlags: true)
-        coreDataStore?.upsertNode(node)
+        applyPendingPosition(to: info.num)
+        coreDataStore?.upsertNode(appState?.node(forId: info.num) ?? node)
 
         AppLogger.shared.log("[Protocol] NodeInfo: \(node.name) (\(node.nodeId))", debug: SettingsService.shared.debugDevice)
     }
@@ -3541,6 +3626,7 @@ final class MeshtasticProtocolService {
         isDisconnecting = true
         rawChannels.removeAll()
         rawOwner = nil
+        pendingPositions.removeAll()
         stopHeartbeat()
         PkiDecryptionService.shared.clearPrivateKey()
         connectionService?.disconnect()

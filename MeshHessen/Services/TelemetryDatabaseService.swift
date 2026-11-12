@@ -67,9 +67,22 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         "pax_telemetry",
         "telemetry_samples",
         "traceroute_hops",
+        "node_positions",
     ]
 
+    private struct StoredPosition {
+        let latitude: Double
+        let longitude: Double
+        let altitude: Int?
+        let timestamp: Double
+    }
+
+    /// Identical positions within this window are not stored again.
+    private static let duplicatePositionWindow: TimeInterval = 600
+
     private var db: OpaquePointer?
+    /// Last position written per node; only accessed on `queue`.
+    private var lastStoredPositions: [UInt32: StoredPosition] = [:]
     private let queue: DispatchQueue
     private let clock: @Sendable () -> Date
     private let databasePath: String
@@ -307,6 +320,19 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                 ON traceroute_hops (source_node_id, timestamp);
             CREATE INDEX IF NOT EXISTS idx_trace_dest_ts
                 ON traceroute_hops (dest_node_id, timestamp);
+
+            CREATE TABLE IF NOT EXISTS node_positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                node_id INTEGER NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                altitude INTEGER,
+                ground_speed INTEGER,
+                ground_track INTEGER,
+                timestamp REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_node_positions_node_ts
+                ON node_positions (node_id, timestamp DESC);
             """
         execute(schema, on: db)
 
@@ -995,6 +1021,98 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         }
     }
 
+    // MARK: - Node Positions
+
+    /// Records a node position. Latitude and longitude both `0` ("no fix") are
+    /// ignored, and an identical position of the same node younger than ten
+    /// minutes is not stored again.
+    func insertNodePosition(
+        nodeId: UInt32,
+        latitude: Double,
+        longitude: Double,
+        altitude: Int?,
+        groundSpeed: UInt32,
+        groundTrack: UInt32,
+        timestamp: Date
+    ) {
+        guard latitude != 0 || longitude != 0 else { return }
+        let ts = timestamp.timeIntervalSince1970
+        enqueueWrite { service, db in
+            if let last = service.lastStoredPositions[nodeId],
+               last.latitude == latitude, last.longitude == longitude, last.altitude == altitude,
+               abs(ts - last.timestamp) < Self.duplicatePositionWindow {
+                return
+            }
+            let inserted = service.run(
+                """
+                INSERT INTO node_positions
+                    (node_id, latitude, longitude, altitude, ground_speed, ground_track, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                bindings: [
+                    .integer(Int64(nodeId)), .double(latitude), .double(longitude),
+                    altitude.map { .integer(Int64($0)) } ?? .null,
+                    .integer(Int64(groundSpeed)), .integer(Int64(groundTrack)), .double(ts),
+                ],
+                on: db
+            )
+            if inserted {
+                service.lastStoredPositions[nodeId] = StoredPosition(
+                    latitude: latitude,
+                    longitude: longitude,
+                    altitude: altitude,
+                    timestamp: ts
+                )
+            }
+        }
+    }
+
+    /// Latest stored position per node, ignoring "no fix" rows and rows older
+    /// than `maxAgeDays`. Used to restore positions the radio has forgotten.
+    func latestNodePositions(
+        maxAgeDays: Int = 30
+    ) async -> [UInt32: (latitude: Double, longitude: Double, altitude: Int?)] {
+        let cutoff = clock().addingTimeInterval(-Double(maxAgeDays) * 86_400).timeIntervalSince1970
+        return await withCheckedContinuation { continuation in
+            queue.async { [weak self] in
+                guard let self, let db = self.db else {
+                    continuation.resume(returning: [:])
+                    return
+                }
+                // SQLite returns the bare columns of the row holding MAX(timestamp).
+                let sql = """
+                    SELECT node_id, latitude, longitude, altitude, MAX(timestamp)
+                    FROM node_positions
+                    WHERE NOT (latitude = 0 AND longitude = 0) AND timestamp >= ?
+                    GROUP BY node_id
+                    """
+                var statement: OpaquePointer?
+                guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK,
+                      let statement else {
+                    self.logPrepareError(sql: sql, on: db)
+                    continuation.resume(returning: [:])
+                    return
+                }
+                defer { sqlite3_finalize(statement) }
+                sqlite3_bind_double(statement, 1, cutoff)
+
+                var positions: [UInt32: (latitude: Double, longitude: Double, altitude: Int?)] = [:]
+                while sqlite3_step(statement) == SQLITE_ROW {
+                    let nodeID = UInt32(clamping: sqlite3_column_int64(statement, 0))
+                    let altitude = sqlite3_column_type(statement, 3) == SQLITE_NULL
+                        ? nil
+                        : Int(sqlite3_column_int64(statement, 3))
+                    positions[nodeID] = (
+                        latitude: sqlite3_column_double(statement, 1),
+                        longitude: sqlite3_column_double(statement, 2),
+                        altitude: altitude
+                    )
+                }
+                continuation.resume(returning: positions)
+            }
+        }
+    }
+
     // MARK: - Compatibility Statistics
 
     func getSignalStats(nodeId: UInt32, days: Int) -> SignalStats {
@@ -1439,6 +1557,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                     continuation.resume(throwing: TelemetryDatabaseError.clearFailed(detail))
                     return
                 }
+                self.lastStoredPositions.removeAll()
                 AppLogger.shared.log(
                     "[TelemetryDB] Deleted \(deletedRows) telemetry records",
                     debug: true
