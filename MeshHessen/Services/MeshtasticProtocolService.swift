@@ -682,8 +682,10 @@ final class MeshtasticProtocolService {
             // these echoes to avoid false "PSK required" errors.
             if myNodeId != 0 && packet.from == myNodeId { break }
 
-            // Attempt client-side PKI decryption if the packet is PKI-encrypted
-            if packet.pkiEncrypted && PkiDecryptionService.shared.hasPrivateKey {
+            // Attempt client-side PKI decryption for every encrypted packet addressed to us.
+            // The firmware clears `pki_encrypted` when the radio itself failed to decrypt,
+            // so that flag cannot be used as a gate; the CCM tag check rejects non-PKC packets.
+            if myNodeId != 0, packet.to == myNodeId, PkiDecryptionService.shared.hasPrivateKey {
                 // Get sender's public key: prefer from packet, fallback to NodeKeyService
                 let senderPubKey = !packet.publicKey.isEmpty
                     ? packet.publicKey

@@ -1,9 +1,8 @@
-import Foundation
 import CryptoKit
-import CommonCrypto
+import Foundation
 
 /// Client-side PKI decryption for Meshtastic encrypted packets.
-/// Uses X25519 ECDH + SHA256 + AES-256-CTR matching the Meshtastic firmware implementation.
+/// Uses X25519 ECDH + SHA256 + AES-256-CCM (8-byte tag) matching the Meshtastic firmware implementation.
 ///
 /// Security: The private key is held in RAM only, never persisted to disk,
 /// and zeroed on disconnect via `clearPrivateKey()`.
@@ -45,19 +44,63 @@ final class PkiDecryptionService: @unchecked Sendable {
         lock.withLock { privateKey != nil }
     }
 
-    /// Attempts to decrypt a PKI-encrypted packet.
+    /// Attempts to decrypt a PKI-encrypted (PKC) direct message.
     ///
-    /// Algorithm (matching Meshtastic firmware):
+    /// Algorithm (matching Meshtastic firmware `CryptoEngine::decryptCurve25519`):
     /// 1. SharedSecret = X25519(ourPrivateKey, senderPublicKey)
     /// 2. AesKey = SHA256(SharedSecret)
-    /// 3. Nonce = [packetId 8B LE] + [fromNode 4B LE] + [0x00 × 4]
-    /// 4. Plaintext = AES-256-CTR(AesKey, Nonce, ciphertext)
+    /// 3. On-wire blob = ciphertext ‖ tag (8 bytes) ‖ extraNonce (4 bytes LE)
+    /// 4. Nonce (13 bytes) = [packetId 4B LE] + [extraNonce 4B LE] + [fromNode 4B LE] + [0x00]
+    /// 5. Plaintext = AES-256-CCM open (tag length 8, no associated data)
     ///
-    /// - Returns: Decrypted data, or nil if decryption fails.
+    /// - Parameter ciphertext: The full on-wire blob (ciphertext ‖ tag ‖ extraNonce).
+    /// - Returns: Tag-verified plaintext, or nil if the key is missing, the blob is
+    ///   malformed, or the tag does not verify (wrong key / not a PKC packet).
     func tryDecrypt(ciphertext: Data, senderPublicKey: Data, fromNode: UInt32, packetId: UInt32) -> Data? {
-        guard !ciphertext.isEmpty else { return nil }
-        guard senderPublicKey.count == 32 else {
-            AppLogger.shared.log("[PKI] Invalid sender public key length: \(senderPublicKey.count)", debug: true)
+        let blob = Data(ciphertext)
+        guard blob.count > 12 else { return nil }
+        guard let aesKey = deriveKey(otherPublicKey: senderPublicKey) else { return nil }
+
+        let extraNonce = Data(blob.suffix(4))
+        let nonce = buildNonce(packetId: packetId, fromNode: fromNode, extraNonce: extraNonce)
+        let body = Data(blob.dropLast(4))
+
+        guard let plaintext = AESCCM.open(key: aesKey, nonce: nonce, ciphertextAndTag: body, tagLength: 8) else {
+            // Expected for packets that are not PKC or were encrypted for someone else.
+            AppLogger.shared.log("[PKI] AES-256-CCM tag verification failed", debug: true)
+            return nil
+        }
+        return plaintext
+    }
+
+    /// Produces a PKC blob (ciphertext ‖ 8-byte tag ‖ extraNonce LE) for `plaintext`
+    /// addressed to `recipientPublicKey`, using the currently loaded private key.
+    /// Mirrors the firmware's `encryptCurve25519`; used by round-trip tests only.
+    func encryptForTesting(
+        plaintext: Data,
+        recipientPublicKey: Data,
+        fromNode: UInt32,
+        packetId: UInt32,
+        extraNonce: UInt32
+    ) -> Data? {
+        guard let aesKey = deriveKey(otherPublicKey: recipientPublicKey) else { return nil }
+        var extraNonceBytes = Data(count: 4)
+        extraNonceBytes.withUnsafeMutableBytes { ptr in
+            ptr.storeBytes(of: extraNonce.littleEndian, as: UInt32.self)
+        }
+        let nonce = buildNonce(packetId: packetId, fromNode: fromNode, extraNonce: extraNonceBytes)
+        guard let sealed = AESCCM.seal(key: aesKey, nonce: nonce, plaintext: plaintext, tagLength: 8) else {
+            return nil
+        }
+        return sealed + extraNonceBytes
+    }
+
+    // MARK: - Private
+
+    /// AES key = SHA256(X25519(ourPrivateKey, otherPublicKey)).
+    private func deriveKey(otherPublicKey: Data) -> Data? {
+        guard otherPublicKey.count == 32 else {
+            AppLogger.shared.log("[PKI] Invalid sender public key length: \(otherPublicKey.count)", debug: true)
             return nil
         }
 
@@ -67,95 +110,28 @@ final class PkiDecryptionService: @unchecked Sendable {
             return nil
         }
 
-        // 1. Construct sender's public key
-        guard let senderPubKey = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: senderPublicKey) else {
+        guard let otherPubKey = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: otherPublicKey) else {
             AppLogger.shared.log("[PKI] Invalid sender public key", debug: true)
             return nil
         }
 
-        // 2. X25519 key agreement → shared secret
-        guard let sharedSecret = try? privKey.sharedSecretFromKeyAgreement(with: senderPubKey) else {
+        guard let sharedSecret = try? privKey.sharedSecretFromKeyAgreement(with: otherPubKey) else {
             AppLogger.shared.log("[PKI] Key agreement failed", debug: true)
             return nil
         }
 
-        // 3. SHA256(sharedSecret) → AES key
         let sharedSecretData = sharedSecret.withUnsafeBytes { Data($0) }
-        let aesKey = Data(SHA256.hash(data: sharedSecretData))
-
-        // 4. Build nonce: [packetId 8B LE] + [fromNode 4B LE] + [0x00 × 4]
-        var nonce = Data(count: 16)
-        nonce.withUnsafeMutableBytes { ptr in
-            ptr.storeBytes(of: UInt64(packetId).littleEndian, as: UInt64.self)
-            ptr.storeBytes(of: fromNode.littleEndian, toByteOffset: 8, as: UInt32.self)
-            // Bytes 12-15 are already zero
-        }
-
-        // 5. AES-256-CTR decrypt
-        guard let plaintext = aesCTRDecrypt(key: aesKey, nonce: nonce, ciphertext: ciphertext) else {
-            AppLogger.shared.log("[PKI] AES-256-CTR decryption failed", debug: true)
-            return nil
-        }
-
-        return plaintext
+        return Data(SHA256.hash(data: sharedSecretData))
     }
 
-    // MARK: - AES-256-CTR
-
-    /// AES-256-CTR decryption using CommonCrypto.
-    private func aesCTRDecrypt(key: Data, nonce: Data, ciphertext: Data) -> Data? {
-        guard key.count == 32, nonce.count == 16 else { return nil }
-
-        var cryptor: CCCryptorRef?
-        let status = key.withUnsafeBytes { keyPtr in
-            nonce.withUnsafeBytes { noncePtr in
-                CCCryptorCreateWithMode(
-                    CCOperation(kCCDecrypt),
-                    CCMode(kCCModeCTR),
-                    CCAlgorithm(kCCAlgorithmAES),
-                    CCPadding(ccNoPadding),
-                    noncePtr.baseAddress,
-                    keyPtr.baseAddress,
-                    key.count,
-                    nil, 0, 0,
-                    CCModeOptions(kCCModeOptionCTR_BE),
-                    &cryptor
-                )
-            }
+    /// 13-byte CCM nonce: [packetId 4B LE][extraNonce 4B, as on the wire][fromNode 4B LE][0x00].
+    private func buildNonce(packetId: UInt32, fromNode: UInt32, extraNonce: Data) -> Data {
+        var nonce = Data(count: 13)
+        nonce.withUnsafeMutableBytes { ptr in
+            ptr.storeBytes(of: packetId.littleEndian, as: UInt32.self)
+            ptr.storeBytes(of: fromNode.littleEndian, toByteOffset: 8, as: UInt32.self)
         }
-
-        guard status == kCCSuccess, let cryptor else { return nil }
-        defer { CCCryptorRelease(cryptor) }
-
-        let outputSize = ciphertext.count
-        var output = Data(count: outputSize)
-        var dataOutMoved = 0
-
-        let updateStatus = output.withUnsafeMutableBytes { outPtr in
-            ciphertext.withUnsafeBytes { inPtr in
-                CCCryptorUpdate(
-                    cryptor,
-                    inPtr.baseAddress, ciphertext.count,
-                    outPtr.baseAddress, outputSize,
-                    &dataOutMoved
-                )
-            }
-        }
-
-        guard updateStatus == kCCSuccess else { return nil }
-        output.count = dataOutMoved
-
-        // Finalize (CTR mode: no additional output expected)
-        var finalMoved = 0
-        let finalBufSize = 16
-        var finalBuf = Data(count: finalBufSize)
-        let finalStatus = finalBuf.withUnsafeMutableBytes { ptr in
-            CCCryptorFinal(cryptor, ptr.baseAddress, finalBufSize, &finalMoved)
-        }
-        if finalStatus == kCCSuccess && finalMoved > 0 {
-            output.append(finalBuf.prefix(finalMoved))
-        }
-
-        return output
+        nonce.replaceSubrange(4..<8, with: extraNonce)
+        return nonce
     }
 }
