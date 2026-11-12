@@ -109,16 +109,25 @@ struct AllChannelsChatView: View {
                     }
 
                     TextField("Message…", text: $messageText, axis: .vertical)
-                        .lineLimit(1...4)
+                        .lineLimit(1...6)
                         .focused($inputFocused)
                         .onChange(of: messageText) { _, value in
                             let limited = MessageItem.truncatingToPayloadLimit(value)
                             if limited != value { messageText = limited }
                         }
+                        .onKeyPress(.return, phases: .down) { press in
+                            if press.modifiers.contains(.shift) {
+                                messageText += "\n"
+                                return .handled
+                            }
+                            if canSend { send() }
+                            return .handled
+                        }
 
                     Button("Send", systemImage: "paperplane.fill", action: send)
                         .buttonStyle(.borderedProminent)
-                        .disabled(trimmedMessage.isEmpty || isSending || !appState.protocolReady)
+                        .disabled(!canSend)
+                        .keyboardShortcut(.return, modifiers: .command)
                 }
 
                 Text("\(MessageItem.payloadByteCount(messageText))/\(MessageItem.maximumPayloadBytes) Bytes")
@@ -177,6 +186,10 @@ struct AllChannelsChatView: View {
 
     private var trimmedMessage: String {
         messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSend: Bool {
+        !trimmedMessage.isEmpty && !isSending && appState.protocolReady
     }
 
     private func channelDisplayName(for message: MessageItem) -> String {

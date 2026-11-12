@@ -94,6 +94,12 @@ private struct DMConversationView: View {
     @State private var replyingTo: MessageItem?
     @FocusState private var inputFocused: Bool
 
+    private var canSend: Bool {
+        !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && MessageItem.payloadByteCount(messageText) <= MessageItem.maximumPayloadBytes
+            && !isSending
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -191,7 +197,7 @@ private struct DMConversationView: View {
 
                     TextField("Message to \(conversation.nodeName)…", text: $messageText, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
-                        .lineLimit(1...4)
+                        .lineLimit(1...6)
                         .frame(maxWidth: .infinity)
                         .focused($inputFocused)
                         .onChange(of: messageText) { _, newValue in
@@ -200,16 +206,20 @@ private struct DMConversationView: View {
                                 messageText = limited
                             }
                         }
+                        .onKeyPress(.return, phases: .down) { press in
+                            if press.modifiers.contains(.shift) {
+                                messageText += "\n"
+                                return .handled
+                            }
+                            if canSend { sendMessage() }
+                            return .handled
+                        }
 
                     Button(action: sendMessage) {
                         Image(systemName: "paperplane.fill")
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(
-                        messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || MessageItem.payloadByteCount(messageText) > MessageItem.maximumPayloadBytes
-                            || isSending
-                    )
+                    .disabled(!canSend)
                     .keyboardShortcut(.return, modifiers: .command)
                 }
 
