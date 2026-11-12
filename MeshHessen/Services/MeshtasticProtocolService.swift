@@ -3637,6 +3637,11 @@ final class MeshtasticProtocolService {
         packet.priority = .reliable
 
         let isRemote = fromNodeID != toNodeID
+        if isRemote {
+            // Windows parity: do not rely on the firmware default for remote admin.
+            packet.hopLimit = 7
+            packet.hopStart = 7
+        }
         if isRemote, let targetPublicKey, targetPublicKey.count == 32 {
             packet.channel = 0
             packet.publicKey = targetPublicKey

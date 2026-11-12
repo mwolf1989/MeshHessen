@@ -91,6 +91,8 @@ struct AdminConfigurationParityTests {
         #expect(packet.channel == 0)
         #expect(packet.wantAck)
         #expect(packet.priority == .reliable)
+        #expect(packet.hopLimit == 7)
+        #expect(packet.hopStart == 7)
     }
 
     @Test("Local admin remains unencrypted even when a target key is supplied")
@@ -110,6 +112,8 @@ struct AdminConfigurationParityTests {
         #expect(packet.channel == 0)
         #expect(packet.wantAck)
         #expect(packet.priority == .reliable)
+        #expect(packet.hopLimit == 0)
+        #expect(packet.hopStart == 0)
     }
 
     @Test("Remote admin without a valid key uses the configured admin channel or primary fallback")
@@ -138,6 +142,8 @@ struct AdminConfigurationParityTests {
         #expect(adminChannelPacket.publicKey.isEmpty)
         #expect(!primaryFallbackPacket.pkiEncrypted)
         #expect(primaryFallbackPacket.channel == 0)
+        #expect(adminChannelPacket.hopLimit == 7)
+        #expect(primaryFallbackPacket.hopStart == 7)
     }
 
     @Test("Routing NACKs correlate only with their pending admin packet ID")
