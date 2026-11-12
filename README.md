@@ -166,8 +166,11 @@ MeshHessen/
 ### Protobuf neu generieren
 
 ```bash
-protoc --swift_out=MeshHessen/Generated MeshHessen/Proto/*.proto
+protoc --proto_path=MeshHessen/Proto --swift_out=MeshHessen/Generated MeshHessen/Proto/meshtastic/*.proto
+mv MeshHessen/Generated/meshtastic/*.pb.swift MeshHessen/Generated/ && rmdir MeshHessen/Generated/meshtastic
 ```
+
+Details zur Proto-Version und zum lokalen Patch: `MeshHessen/Proto/README.md`.
 
 ## Datenspeicherung
 
@@ -375,8 +378,11 @@ MeshHessen/
 ### Regenerate Protobuf
 
 ```bash
-protoc --swift_out=MeshHessen/Generated MeshHessen/Proto/*.proto
+protoc --proto_path=MeshHessen/Proto --swift_out=MeshHessen/Generated MeshHessen/Proto/meshtastic/*.proto
+mv MeshHessen/Generated/meshtastic/*.pb.swift MeshHessen/Generated/ && rmdir MeshHessen/Generated/meshtastic
 ```
+
+Proto version and the local patch are documented in `MeshHessen/Proto/README.md`.
 
 ## Data Storage
 

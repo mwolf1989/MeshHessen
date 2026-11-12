@@ -8,7 +8,11 @@
 // For information on using the generated types, please see the documentation:
 //   https://github.com/apple/swift-protobuf/
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 import SwiftProtobuf
 
 // If the compiler emits an error on this type, it is because this file
@@ -16,12 +20,12 @@ import SwiftProtobuf
 // incompatible with the version of SwiftProtobuf to which you are linking.
 // Please ensure that you are building against the same version of the API
 // that was used to generate this file.
-fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAPIVersionCheck {
+fileprivate nonisolated struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAPIVersionCheck {
   struct _2: SwiftProtobuf.ProtobufAPIVersion_2 {}
   typealias Version = _2
 }
 
-enum Meshtastic_CompassMode: SwiftProtobuf.Enum, Swift.CaseIterable {
+nonisolated enum Meshtastic_CompassMode: SwiftProtobuf.Enum, Swift.CaseIterable {
   typealias RawValue = Int
 
   ///
@@ -68,7 +72,7 @@ enum Meshtastic_CompassMode: SwiftProtobuf.Enum, Swift.CaseIterable {
 
 }
 
-enum Meshtastic_Theme: SwiftProtobuf.Enum, Swift.CaseIterable {
+nonisolated enum Meshtastic_Theme: SwiftProtobuf.Enum, Swift.CaseIterable {
   typealias RawValue = Int
 
   ///
@@ -117,7 +121,7 @@ enum Meshtastic_Theme: SwiftProtobuf.Enum, Swift.CaseIterable {
 
 ///
 /// Localization
-enum Meshtastic_Language: SwiftProtobuf.Enum, Swift.CaseIterable {
+nonisolated enum Meshtastic_Language: SwiftProtobuf.Enum, Swift.CaseIterable {
   typealias RawValue = Int
 
   ///
@@ -201,6 +205,14 @@ enum Meshtastic_Language: SwiftProtobuf.Enum, Swift.CaseIterable {
   case danish // = 19
 
   ///
+  /// Hungarian
+  case hungarian // = 20
+
+  ///
+  /// Azerbaijani
+  case azerbaijani // = 21
+
+  ///
   /// Simplified Chinese (experimental)
   case simplifiedChinese // = 30
 
@@ -235,6 +247,8 @@ enum Meshtastic_Language: SwiftProtobuf.Enum, Swift.CaseIterable {
     case 17: self = .bulgarian
     case 18: self = .czech
     case 19: self = .danish
+    case 20: self = .hungarian
+    case 21: self = .azerbaijani
     case 30: self = .simplifiedChinese
     case 31: self = .traditionalChinese
     default: self = .UNRECOGNIZED(rawValue)
@@ -263,6 +277,8 @@ enum Meshtastic_Language: SwiftProtobuf.Enum, Swift.CaseIterable {
     case .bulgarian: return 17
     case .czech: return 18
     case .danish: return 19
+    case .hungarian: return 20
+    case .azerbaijani: return 21
     case .simplifiedChinese: return 30
     case .traditionalChinese: return 31
     case .UNRECOGNIZED(let i): return i
@@ -291,13 +307,15 @@ enum Meshtastic_Language: SwiftProtobuf.Enum, Swift.CaseIterable {
     .bulgarian,
     .czech,
     .danish,
+    .hungarian,
+    .azerbaijani,
     .simplifiedChinese,
     .traditionalChinese,
   ]
 
 }
 
-struct Meshtastic_DeviceUIConfig: @unchecked Sendable {
+nonisolated struct Meshtastic_DeviceUIConfig: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -445,7 +463,7 @@ struct Meshtastic_DeviceUIConfig: @unchecked Sendable {
 
   ///
   /// How the GPS coordinates are displayed on the OLED screen.
-  enum GpsCoordinateFormat: SwiftProtobuf.Enum, Swift.CaseIterable {
+  nonisolated enum GpsCoordinateFormat: SwiftProtobuf.Enum, Swift.CaseIterable {
     typealias RawValue = Int
 
     ///
@@ -533,7 +551,7 @@ struct Meshtastic_DeviceUIConfig: @unchecked Sendable {
   fileprivate var _storage = _StorageClass.defaultInstance
 }
 
-struct Meshtastic_NodeFilter: Sendable {
+nonisolated struct Meshtastic_NodeFilter: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -571,7 +589,7 @@ struct Meshtastic_NodeFilter: Sendable {
   init() {}
 }
 
-struct Meshtastic_NodeHighlight: Sendable {
+nonisolated struct Meshtastic_NodeHighlight: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -601,7 +619,7 @@ struct Meshtastic_NodeHighlight: Sendable {
   init() {}
 }
 
-struct Meshtastic_GeoPoint: Sendable {
+nonisolated struct Meshtastic_GeoPoint: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -623,7 +641,7 @@ struct Meshtastic_GeoPoint: Sendable {
   init() {}
 }
 
-struct Meshtastic_Map: Sendable {
+nonisolated struct Meshtastic_Map: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -656,21 +674,21 @@ struct Meshtastic_Map: Sendable {
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
-fileprivate let _protobuf_package = "meshtastic"
+fileprivate nonisolated let _protobuf_package = "meshtastic"
 
-extension Meshtastic_CompassMode: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_CompassMode: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DYNAMIC\0\u{1}FIXED_RING\0\u{1}FREEZE_HEADING\0")
 }
 
-extension Meshtastic_Theme: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Theme: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DARK\0\u{1}LIGHT\0\u{1}RED\0")
 }
 
-extension Meshtastic_Language: SwiftProtobuf._ProtoNameProviding {
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0ENGLISH\0\u{1}FRENCH\0\u{1}GERMAN\0\u{1}ITALIAN\0\u{1}PORTUGUESE\0\u{1}SPANISH\0\u{1}SWEDISH\0\u{1}FINNISH\0\u{1}POLISH\0\u{1}TURKISH\0\u{1}SERBIAN\0\u{1}RUSSIAN\0\u{1}DUTCH\0\u{1}GREEK\0\u{1}NORWEGIAN\0\u{1}SLOVENIAN\0\u{1}UKRAINIAN\0\u{1}BULGARIAN\0\u{1}CZECH\0\u{1}DANISH\0\u{2}\u{b}SIMPLIFIED_CHINESE\0\u{1}TRADITIONAL_CHINESE\0")
+nonisolated extension Meshtastic_Language: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0ENGLISH\0\u{1}FRENCH\0\u{1}GERMAN\0\u{1}ITALIAN\0\u{1}PORTUGUESE\0\u{1}SPANISH\0\u{1}SWEDISH\0\u{1}FINNISH\0\u{1}POLISH\0\u{1}TURKISH\0\u{1}SERBIAN\0\u{1}RUSSIAN\0\u{1}DUTCH\0\u{1}GREEK\0\u{1}NORWEGIAN\0\u{1}SLOVENIAN\0\u{1}UKRAINIAN\0\u{1}BULGARIAN\0\u{1}CZECH\0\u{1}DANISH\0\u{1}HUNGARIAN\0\u{1}AZERBAIJANI\0\u{2}\u{9}SIMPLIFIED_CHINESE\0\u{1}TRADITIONAL_CHINESE\0")
 }
 
-extension Meshtastic_DeviceUIConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_DeviceUIConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".DeviceUIConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}version\0\u{3}screen_brightness\0\u{3}screen_timeout\0\u{3}screen_lock\0\u{3}settings_lock\0\u{3}pin_code\0\u{1}theme\0\u{3}alert_enabled\0\u{3}banner_enabled\0\u{3}ring_tone_id\0\u{1}language\0\u{3}node_filter\0\u{3}node_highlight\0\u{3}calibration_data\0\u{3}map_data\0\u{3}compass_mode\0\u{3}screen_rgb_color\0\u{3}is_clockface_analog\0\u{3}gps_format\0")
 
@@ -866,11 +884,11 @@ extension Meshtastic_DeviceUIConfig: SwiftProtobuf.Message, SwiftProtobuf._Messa
   }
 }
 
-extension Meshtastic_DeviceUIConfig.GpsCoordinateFormat: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_DeviceUIConfig.GpsCoordinateFormat: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DEC\0\u{1}DMS\0\u{1}UTM\0\u{1}MGRS\0\u{1}OLC\0\u{1}OSGR\0\u{1}MLS\0")
 }
 
-extension Meshtastic_NodeFilter: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_NodeFilter: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".NodeFilter"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}unknown_switch\0\u{3}offline_switch\0\u{3}public_key_switch\0\u{3}hops_away\0\u{3}position_switch\0\u{3}node_name\0\u{1}channel\0")
 
@@ -930,7 +948,7 @@ extension Meshtastic_NodeFilter: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
   }
 }
 
-extension Meshtastic_NodeHighlight: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_NodeHighlight: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".NodeHighlight"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}chat_switch\0\u{3}position_switch\0\u{3}telemetry_switch\0\u{3}iaq_switch\0\u{3}node_name\0")
 
@@ -980,7 +998,7 @@ extension Meshtastic_NodeHighlight: SwiftProtobuf.Message, SwiftProtobuf._Messag
   }
 }
 
-extension Meshtastic_GeoPoint: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_GeoPoint: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GeoPoint"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}zoom\0\u{1}latitude\0\u{1}longitude\0")
 
@@ -1020,7 +1038,7 @@ extension Meshtastic_GeoPoint: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
   }
 }
 
-extension Meshtastic_Map: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Map: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Map"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}home\0\u{1}style\0\u{3}follow_gps\0")
 

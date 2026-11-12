@@ -8,7 +8,11 @@
 // For information on using the generated types, please see the documentation:
 //   https://github.com/apple/swift-protobuf/
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 import SwiftProtobuf
 
 // If the compiler emits an error on this type, it is because this file
@@ -16,12 +20,12 @@ import SwiftProtobuf
 // incompatible with the version of SwiftProtobuf to which you are linking.
 // Please ensure that you are building against the same version of the API
 // that was used to generate this file.
-fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAPIVersionCheck {
+fileprivate nonisolated struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAPIVersionCheck {
   struct _2: SwiftProtobuf.ProtobufAPIVersion_2 {}
   typealias Version = _2
 }
 
-struct Meshtastic_XModem: Sendable {
+nonisolated struct Meshtastic_XModem: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -36,7 +40,7 @@ struct Meshtastic_XModem: Sendable {
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  enum Control: SwiftProtobuf.Enum, Swift.CaseIterable {
+  nonisolated enum Control: SwiftProtobuf.Enum, Swift.CaseIterable {
     typealias RawValue = Int
     case nul // = 0
     case soh // = 1
@@ -99,9 +103,9 @@ struct Meshtastic_XModem: Sendable {
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
-fileprivate let _protobuf_package = "meshtastic"
+fileprivate nonisolated let _protobuf_package = "meshtastic"
 
-extension Meshtastic_XModem: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_XModem: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".XModem"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}control\0\u{1}seq\0\u{1}crc16\0\u{1}buffer\0")
 
@@ -146,6 +150,6 @@ extension Meshtastic_XModem: SwiftProtobuf.Message, SwiftProtobuf._MessageImplem
   }
 }
 
-extension Meshtastic_XModem.Control: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_XModem.Control: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0NUL\0\u{1}SOH\0\u{1}STX\0\u{2}\u{2}EOT\0\u{2}\u{2}ACK\0\u{2}\u{f}NAK\0\u{2}\u{3}CAN\0\u{2}\u{2}CTRLZ\0")
 }

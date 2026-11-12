@@ -8,7 +8,11 @@
 // For information on using the generated types, please see the documentation:
 //   https://github.com/apple/swift-protobuf/
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 import SwiftProtobuf
 
 // If the compiler emits an error on this type, it is because this file
@@ -16,12 +20,12 @@ import SwiftProtobuf
 // incompatible with the version of SwiftProtobuf to which you are linking.
 // Please ensure that you are building against the same version of the API
 // that was used to generate this file.
-fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAPIVersionCheck {
+fileprivate nonisolated struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAPIVersionCheck {
   struct _2: SwiftProtobuf.ProtobufAPIVersion_2 {}
   typealias Version = _2
 }
 
-struct Meshtastic_Config: Sendable {
+nonisolated struct Meshtastic_Config: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -114,7 +118,7 @@ struct Meshtastic_Config: Sendable {
 
   ///
   /// Payload Variant
-  enum OneOf_PayloadVariant: Equatable, Sendable {
+  nonisolated enum OneOf_PayloadVariant: Equatable, Sendable {
     case device(Meshtastic_Config.DeviceConfig)
     case position(Meshtastic_Config.PositionConfig)
     case power(Meshtastic_Config.PowerConfig)
@@ -130,7 +134,7 @@ struct Meshtastic_Config: Sendable {
 
   ///
   /// Configuration
-  struct DeviceConfig: Sendable {
+  nonisolated struct DeviceConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -162,7 +166,7 @@ struct Meshtastic_Config: Sendable {
 
     ///
     /// Send our nodeinfo this often
-    /// Defaults to 900 Seconds (15 minutes)
+    /// Defaults to 10800 seconds (3 hours), minimum 3600 (1 hour)
     var nodeInfoBroadcastSecs: UInt32 = 0
 
     ///
@@ -198,11 +202,11 @@ struct Meshtastic_Config: Sendable {
 
     ///
     /// Defines the device's role on the Mesh network
-    enum Role: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum Role: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
-      /// Description: App connected or stand alone messaging device.
+      /// Description: App connected or standalone messaging device.
       /// Technical Details: Default Role
       case client // = 0
 
@@ -259,7 +263,7 @@ struct Meshtastic_Config: Sendable {
       case clientHidden // = 8
 
       ///
-      /// Description: Broadcasts location as message to default channel regularly for to assist with device recovery.
+      /// Description: Broadcasts location as message to default channel regularly to assist with device recovery.
       /// Technical Details: Used to automatically send a text message to the mesh
       ///    with the current position of the device on a frequent interval:
       ///    "I'm lost! Position: lat / long"
@@ -351,7 +355,7 @@ struct Meshtastic_Config: Sendable {
 
     ///
     /// Defines the device's behavior for how messages are rebroadcast
-    enum RebroadcastMode: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum RebroadcastMode: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
@@ -366,12 +370,12 @@ struct Meshtastic_Config: Sendable {
 
       ///
       /// Ignores observed messages from foreign meshes that are open or those which it cannot decrypt.
-      /// Only rebroadcasts message on the nodes local primary / secondary channels.
+      /// Only rebroadcasts messages on the node's local primary / secondary channels.
       case localOnly // = 2
 
       ///
       /// Ignores observed messages from foreign meshes like LOCAL_ONLY,
-      /// but takes it step further by also ignoring messages from nodenums not in the node's known list (NodeDB)
+      /// but takes it a step further by also ignoring messages from nodenums not in the node's known list (NodeDB)
       case knownOnly // = 3
 
       ///
@@ -426,7 +430,7 @@ struct Meshtastic_Config: Sendable {
 
     ///
     /// Defines buzzer behavior for audio feedback
-    enum BuzzerMode: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum BuzzerMode: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
@@ -499,14 +503,14 @@ struct Meshtastic_Config: Sendable {
 
   ///
   /// Position Config
-  struct PositionConfig: Sendable {
+  nonisolated struct PositionConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
 
     ///
     /// We should send our position this often (but only if it has changed significantly)
-    /// Defaults to 15 minutes
+    /// Defaults to 1 hour (12 hours on routers)
     var positionBroadcastSecs: UInt32 = 0
 
     ///
@@ -527,7 +531,7 @@ struct Meshtastic_Config: Sendable {
 
     ///
     /// How often should we try to get GPS position (in seconds)
-    /// or zero for the default of once every 30 seconds
+    /// or zero for the default of once every 2 minutes (24 hours on routers)
     /// or a very large value (maxint) to update only once at boot.
     var gpsUpdateInterval: UInt32 = 0
 
@@ -575,7 +579,7 @@ struct Meshtastic_Config: Sendable {
     /// are always included (also time if GPS-synced)
     /// NOTE: the more fields are included, the larger the message will be -
     ///   leading to longer airtime and a higher risk of packet loss
-    enum PositionFlags: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum PositionFlags: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
@@ -682,7 +686,7 @@ struct Meshtastic_Config: Sendable {
 
     }
 
-    enum GpsMode: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum GpsMode: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
@@ -735,13 +739,13 @@ struct Meshtastic_Config: Sendable {
   ///
   /// Power Config\
   /// See [Power Config](/docs/settings/config/power) for additional power config details.
-  struct PowerConfig: Sendable {
+  nonisolated struct PowerConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
 
     ///
-    /// Description: Will sleep everything as much as possible, for the tracker and sensor role this will also include the lora radio.
+    /// Description: Will sleep everything as much as possible, for the Tracker and Sensor roles this also includes the LoRa radio.
     /// Don't use this setting if you want to use your device with the phone apps or are using a device without a user button.
     /// Technical Details: Works for ESP32 devices and NRF52 devices in the Sensor or Tracker roles
     var isPowerSaving: Bool = false
@@ -795,7 +799,7 @@ struct Meshtastic_Config: Sendable {
 
   ///
   /// Network Config
-  struct NetworkConfig: Sendable {
+  nonisolated struct NetworkConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -850,7 +854,7 @@ struct Meshtastic_Config: Sendable {
 
     var unknownFields = SwiftProtobuf.UnknownStorage()
 
-    enum AddressMode: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum AddressMode: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
@@ -892,7 +896,7 @@ struct Meshtastic_Config: Sendable {
 
     ///
     /// Available flags auxiliary network protocols
-    enum ProtocolFlags: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum ProtocolFlags: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
@@ -932,7 +936,7 @@ struct Meshtastic_Config: Sendable {
 
     }
 
-    struct IpV4Config: Sendable {
+    nonisolated struct IpV4Config: Sendable {
       // SwiftProtobuf.Message conformance is added in an extension below. See the
       // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
       // methods supported on all messages.
@@ -965,18 +969,17 @@ struct Meshtastic_Config: Sendable {
 
   ///
   /// Display Config
-  struct DisplayConfig: Sendable {
+  nonisolated struct DisplayConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
 
     ///
     /// Number of seconds the screen stays on after pressing the user button or receiving a message
-    /// 0 for default of one minute MAXUINT for always on
+    /// 0 for default of ten minutes, MAXUINT for always on
     var screenOnSecs: UInt32 = 0
 
     ///
-    /// Deprecated in 2.7.4: Unused
     /// How the GPS coordinates are formatted on the OLED screen.
     ///
     /// NOTE: This field was marked as deprecated in the .proto file.
@@ -1039,8 +1042,9 @@ struct Meshtastic_Config: Sendable {
     var unknownFields = SwiftProtobuf.UnknownStorage()
 
     ///
-    /// Deprecated in 2.7.4: Unused
-    enum DeprecatedGpsCoordinateFormat: SwiftProtobuf.Enum, Swift.CaseIterable {
+    /// Unused. Kept so the deprecated gps_format field still has a type; when
+    /// firmware stopped reading that field is recorded on the field itself.
+    nonisolated enum DeprecatedGpsCoordinateFormat: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
       case unused // = 0
       case UNRECOGNIZED(Int)
@@ -1072,7 +1076,7 @@ struct Meshtastic_Config: Sendable {
 
     ///
     /// Unit display preference
-    enum DisplayUnits: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum DisplayUnits: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
@@ -1114,7 +1118,7 @@ struct Meshtastic_Config: Sendable {
 
     ///
     /// Override OLED outo detect with this if it fails.
-    enum OledType: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum OledType: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
@@ -1136,6 +1140,10 @@ struct Meshtastic_Config: Sendable {
       ///
       /// Can not be auto detected but set by proto. Used for 128x128 screens
       case oledSh1107128128 // = 4
+
+      ///
+      /// Can not be auto detected but set by proto. Used for 64x128 rotated screens
+      case oledSh1107Rotated // = 5
       case UNRECOGNIZED(Int)
 
       init() {
@@ -1149,6 +1157,7 @@ struct Meshtastic_Config: Sendable {
         case 2: self = .oledSh1106
         case 3: self = .oledSh1107
         case 4: self = .oledSh1107128128
+        case 5: self = .oledSh1107Rotated
         default: self = .UNRECOGNIZED(rawValue)
         }
       }
@@ -1160,6 +1169,7 @@ struct Meshtastic_Config: Sendable {
         case .oledSh1106: return 2
         case .oledSh1107: return 3
         case .oledSh1107128128: return 4
+        case .oledSh1107Rotated: return 5
         case .UNRECOGNIZED(let i): return i
         }
       }
@@ -1171,11 +1181,12 @@ struct Meshtastic_Config: Sendable {
         .oledSh1106,
         .oledSh1107,
         .oledSh1107128128,
+        .oledSh1107Rotated,
       ]
 
     }
 
-    enum DisplayMode: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum DisplayMode: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
@@ -1191,7 +1202,7 @@ struct Meshtastic_Config: Sendable {
       case inverted // = 2
 
       ///
-      /// TFT Full Color Displays (not implemented yet)
+      /// TFT Full Color Displays, which select the MUI
       case color // = 3
       case UNRECOGNIZED(Int)
 
@@ -1229,7 +1240,7 @@ struct Meshtastic_Config: Sendable {
 
     }
 
-    enum CompassOrientation: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum CompassOrientation: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
@@ -1316,14 +1327,16 @@ struct Meshtastic_Config: Sendable {
 
   ///
   /// Lora Config
-  struct LoRaConfig: @unchecked Sendable {
+  nonisolated struct LoRaConfig: @unchecked Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
 
     ///
-    /// When enabled, the `modem_preset` fields will be adhered to, else the `bandwidth`/`spread_factor`/`coding_rate`
-    /// will be taked from their respective manually defined fields
+    /// When enabled, the `modem_preset` sets the bandwidth and spread factor, and the
+    /// `bandwidth`/`spread_factor` fields are ignored. `coding_rate` is the exception:
+    /// see that field. When disabled, all three are taken from their respective
+    /// manually defined fields.
     var usePreset: Bool {
       get {_storage._usePreset}
       set {_uniqueStorage()._usePreset = newValue}
@@ -1334,6 +1347,8 @@ struct Meshtastic_Config: Sendable {
     /// As a heuristic: If bandwidth is specified, do not use modem_config.
     /// Because protobufs take ZERO space when the value is zero this works out nicely.
     /// This value is replaced by bandwidth/spread_factor/coding_rate.
+    /// The one exception is `coding_rate`, which can raise the preset's coding rate
+    /// without moving off the preset; see that field.
     /// If you'd like to experiment with other options add them to MeshRadio.cpp in the device code.
     var modemPreset: Meshtastic_Config.LoRaConfig.ModemPreset {
       get {_storage._modemPreset}
@@ -1341,17 +1356,19 @@ struct Meshtastic_Config: Sendable {
     }
 
     ///
-    /// Bandwidth in MHz
+    /// Bandwidth in kHz
     /// Certain bandwidth numbers are 'special' and will be converted to the
-    /// appropriate floating point value: 31 -> 31.25MHz
+    /// appropriate floating point value: 31 -> 31.25kHz
     var bandwidth: UInt32 {
       get {_storage._bandwidth}
       set {_uniqueStorage()._bandwidth = newValue}
     }
 
     ///
-    /// A number from 7 to 12.
+    /// A number from 5 to 12; firmware replaces a value outside that range with 11.
     /// Indicates number of chirps per symbol as 1<<spread_factor.
+    /// RF95 radios additionally reject 5 and 6; that exclusion is per hardware
+    /// and so is not expressible as a bound here.
     var spreadFactor: UInt32 {
       get {_storage._spreadFactor}
       set {_uniqueStorage()._spreadFactor = newValue}
@@ -1360,6 +1377,19 @@ struct Meshtastic_Config: Sendable {
     ///
     /// The denominator of the coding rate.
     /// ie for 4/5, the value is 5. 4/8 the value is 8.
+    ///
+    /// With `use_preset` disabled this is the coding rate, 4 through 8; firmware replaces a value outside that range with 5.
+    ///
+    /// With `use_preset` enabled, since 2.7.18 this raises the preset's coding rate
+    /// when it is 5 through 8 AND higher than the preset's. A lower value, a value
+    /// out of range, and 0 all leave the preset's coding rate in place, so 0 is how
+    /// a client says "use the preset's". Bandwidth and spread factor still come from
+    /// the preset, and the coding rate travels in the explicit LoRa header, so nodes
+    /// on the same preset still hear each other either way.
+    ///
+    /// No bound is stated here because the valid set differs between the two cases:
+    /// 5 through 8 with `use_preset` off, and 0 plus anything from above the preset's
+    /// own coding rate up to 8 with it on.
     var codingRate: UInt32 {
       get {_storage._codingRate}
       set {_uniqueStorage()._codingRate = newValue}
@@ -1384,7 +1414,7 @@ struct Meshtastic_Config: Sendable {
     ///
     /// Maximum number of hops. This can't be greater than 7.
     /// Default of 3
-    /// Attempting to set a value > 7 results in the default
+    /// Values above 7 are treated as 7
     var hopLimit: UInt32 {
       get {_storage._hopLimit}
       set {_uniqueStorage()._hopLimit = newValue}
@@ -1478,9 +1508,23 @@ struct Meshtastic_Config: Sendable {
       set {_uniqueStorage()._configOkToMqtt = newValue}
     }
 
+    ///
+    /// Set where LORA FEM is enabled, disabled, or not present
+    var femLnaMode: Meshtastic_Config.LoRaConfig.FEM_LNA_Mode {
+      get {_storage._femLnaMode}
+      set {_uniqueStorage()._femLnaMode = newValue}
+    }
+
+    ///
+    /// Don't use radiolib to initialize the radio, instead listen for a serialHal connection
+    var serialHalOnly: Bool {
+      get {_storage._serialHalOnly}
+      set {_uniqueStorage()._serialHalOnly = newValue}
+    }
+
     var unknownFields = SwiftProtobuf.UnknownStorage()
 
-    enum RegionCode: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum RegionCode: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
@@ -1545,6 +1589,8 @@ struct Meshtastic_Config: Sendable {
 
       ///
       /// Ukraine 868mhz
+      ///
+      /// NOTE: This enum value was marked as deprecated in the .proto file
       case ua868 // = 15
 
       ///
@@ -1590,6 +1636,52 @@ struct Meshtastic_Config: Sendable {
       ///
       /// Brazil 902MHz
       case br902 // = 26
+
+      ///
+      /// ITU Region 1 Amateur Radio 2m band (144-146 MHz)
+      case itu12M // = 27
+
+      ///
+      /// ITU Region 2 Amateur Radio 2m band (144-148 MHz)
+      case itu22M // = 28
+
+      ///
+      /// EU 866MHz band (Band no. 47b of 2006/771/EC and subsequent amendments) for Non-specific short-range devices (SRD)
+      case eu866 // = 29
+
+      ///
+      /// EU 874MHz and 917MHz bands (Band no. 1 and 4 of 2022/172/EC and subsequent amendments) for Non-specific short-range devices (SRD)
+      case eu874 // = 30
+      case eu917 // = 31
+
+      ///
+      /// EU 868MHz band, with narrow presets
+      case euN868 // = 32
+
+      ///
+      /// ITU Region 3 Amateur Radio 2m band (144-148 MHz)
+      case itu32M // = 33
+
+      ///
+      /// ITU Region 1 Amateur Radio 70cm band (430-440 MHz)
+      case itu170Cm // = 34
+
+      ///
+      /// ITU Region 2 Amateur Radio 70cm band (420-450 MHz)
+      /// Note: Some countries do not allocate 420-430 MHz or 440-450 MHz.
+      /// Check local law!
+      case itu270Cm // = 35
+
+      ///
+      /// ITU Region 3 Amateur Radio 70cm band (430-450 MHz)
+      /// Note: Some countries do not allocate 440-450 MHz. Check local law!
+      case itu370Cm // = 36
+
+      ///
+      /// ITU Region 2 Amateur Radio 1.25m '125cm' band (220-225 MHz)
+      /// Note: Some countries do not allocate 220-222 MHz (Ex: USA/Canada).
+      /// Check local law!
+      case itu2125Cm // = 37
       case UNRECOGNIZED(Int)
 
       init() {
@@ -1625,6 +1717,17 @@ struct Meshtastic_Config: Sendable {
         case 24: self = .kz863
         case 25: self = .np865
         case 26: self = .br902
+        case 27: self = .itu12M
+        case 28: self = .itu22M
+        case 29: self = .eu866
+        case 30: self = .eu874
+        case 31: self = .eu917
+        case 32: self = .euN868
+        case 33: self = .itu32M
+        case 34: self = .itu170Cm
+        case 35: self = .itu270Cm
+        case 36: self = .itu370Cm
+        case 37: self = .itu2125Cm
         default: self = .UNRECOGNIZED(rawValue)
         }
       }
@@ -1658,6 +1761,17 @@ struct Meshtastic_Config: Sendable {
         case .kz863: return 24
         case .np865: return 25
         case .br902: return 26
+        case .itu12M: return 27
+        case .itu22M: return 28
+        case .eu866: return 29
+        case .eu874: return 30
+        case .eu917: return 31
+        case .euN868: return 32
+        case .itu32M: return 33
+        case .itu170Cm: return 34
+        case .itu270Cm: return 35
+        case .itu370Cm: return 36
+        case .itu2125Cm: return 37
         case .UNRECOGNIZED(let i): return i
         }
       }
@@ -1691,6 +1805,17 @@ struct Meshtastic_Config: Sendable {
         .kz863,
         .np865,
         .br902,
+        .itu12M,
+        .itu22M,
+        .eu866,
+        .eu874,
+        .eu917,
+        .euN868,
+        .itu32M,
+        .itu170Cm,
+        .itu270Cm,
+        .itu370Cm,
+        .itu2125Cm,
       ]
 
     }
@@ -1698,7 +1823,7 @@ struct Meshtastic_Config: Sendable {
     ///
     /// Standard predefined channel settings
     /// Note: these mappings must match ModemPreset Choice in the device code.
-    enum ModemPreset: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum ModemPreset: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
@@ -1741,14 +1866,63 @@ struct Meshtastic_Config: Sendable {
 
       ///
       /// Short Range - Turbo
-      /// This is the fastest preset and the only one with 500kHz bandwidth.
+      /// This is the fastest preset, and one of three with 500kHz bandwidth.
       /// It is not legal to use in all regions due to this wider bandwidth.
       case shortTurbo // = 8
 
       ///
       /// Long Range - Turbo
-      /// This preset performs similarly to LongFast, but with 500Khz bandwidth.
+      /// This preset performs similarly to LongFast, but with 500kHz bandwidth.
       case longTurbo // = 9
+
+      ///
+      /// Lite Fast
+      /// Medium range preset optimized for EU 866MHz SRD band with 125kHz bandwidth.
+      /// Comparable link budget to MEDIUM_FAST but compliant with Band no. 47b of 2006/771/EC.
+      case liteFast // = 10
+
+      ///
+      /// Lite Slow
+      /// Medium-to-moderate range preset optimized for EU 866MHz SRD band with 125kHz bandwidth.
+      /// Comparable link budget to LONG_FAST but compliant with Band no. 47b of 2006/771/EC.
+      case liteSlow // = 11
+
+      ///
+      /// Narrow Fast
+      /// Medium-to-moderate range preset optimized for EU 868MHz band with 62.5kHz bandwidth.
+      /// Comparable link budget to SHORT_SLOW, but with half the data rate.
+      /// Intended to avoid interference with other devices.
+      case narrowFast // = 12
+
+      ///
+      /// Narrow Slow
+      /// Moderate range preset optimized for EU 868MHz band with 62.5kHz bandwidth.
+      /// Comparable link budget and data rate to LONG_FAST.
+      case narrowSlow // = 13
+
+      ///
+      /// Tiny Fast
+      /// Preset optimized for compliance with Amateur Radio restrictions with 20kHz bandwidth.
+      /// Many regions limit data transmission bandwidth in lower amateur bands (2 Meter).
+      /// Note: TCXO with tight tolerances (±5 ppm or better) is *absolutely required* at these narrow bandwidths.
+      /// Only compatible with SX127x and SX126x chipsets.
+      /// Comparable link budget and data rate to LONG_FAST.
+      case tinyFast // = 14
+
+      ///
+      /// Tiny Slow
+      /// Preset optimized for compliance with Amateur Radio restrictions with 20kHz bandwidth.
+      /// Many regions limit data transmission bandwidth in lower amateur bands (2 Meter).
+      /// Note: TCXO with tight tolerances (±5 ppm or better) is *absolutely required* at these narrow bandwidths.
+      /// Only compatible with SX127x and SX126x chipsets.
+      /// Comparable link budget and data rate to LONG_MODERATE.
+      case tinySlow // = 15
+
+      ///
+      /// Medium Range - Turbo
+      /// This preset performs similarly to MEDIUM_FAST, but with 500kHz bandwidth.
+      /// It is not legal to use in all regions due to this wider bandwidth.
+      case mediumTurbo // = 16
       case UNRECOGNIZED(Int)
 
       init() {
@@ -1767,6 +1941,13 @@ struct Meshtastic_Config: Sendable {
         case 7: self = .longModerate
         case 8: self = .shortTurbo
         case 9: self = .longTurbo
+        case 10: self = .liteFast
+        case 11: self = .liteSlow
+        case 12: self = .narrowFast
+        case 13: self = .narrowSlow
+        case 14: self = .tinyFast
+        case 15: self = .tinySlow
+        case 16: self = .mediumTurbo
         default: self = .UNRECOGNIZED(rawValue)
         }
       }
@@ -1783,6 +1964,13 @@ struct Meshtastic_Config: Sendable {
         case .longModerate: return 7
         case .shortTurbo: return 8
         case .longTurbo: return 9
+        case .liteFast: return 10
+        case .liteSlow: return 11
+        case .narrowFast: return 12
+        case .narrowSlow: return 13
+        case .tinyFast: return 14
+        case .tinySlow: return 15
+        case .mediumTurbo: return 16
         case .UNRECOGNIZED(let i): return i
         }
       }
@@ -1799,6 +1987,60 @@ struct Meshtastic_Config: Sendable {
         .longModerate,
         .shortTurbo,
         .longTurbo,
+        .liteFast,
+        .liteSlow,
+        .narrowFast,
+        .narrowSlow,
+        .tinyFast,
+        .tinySlow,
+        .mediumTurbo,
+      ]
+
+    }
+
+    nonisolated enum FEM_LNA_Mode: SwiftProtobuf.Enum, Swift.CaseIterable {
+      typealias RawValue = Int
+
+      ///
+      /// FEM_LNA is present but disabled
+      case disabled // = 0
+
+      ///
+      /// FEM_LNA is present and enabled
+      case enabled // = 1
+
+      ///
+      /// FEM_LNA is not present on the device
+      case notPresent // = 2
+      case UNRECOGNIZED(Int)
+
+      init() {
+        self = .disabled
+      }
+
+      init?(rawValue: Int) {
+        switch rawValue {
+        case 0: self = .disabled
+        case 1: self = .enabled
+        case 2: self = .notPresent
+        default: self = .UNRECOGNIZED(rawValue)
+        }
+      }
+
+      var rawValue: Int {
+        switch self {
+        case .disabled: return 0
+        case .enabled: return 1
+        case .notPresent: return 2
+        case .UNRECOGNIZED(let i): return i
+        }
+      }
+
+      // The compiler won't synthesize support with the UNRECOGNIZED case.
+      static let allCases: [Meshtastic_Config.LoRaConfig.FEM_LNA_Mode] = [
+        .disabled,
+        .enabled,
+        .notPresent,
       ]
 
     }
@@ -1808,7 +2050,7 @@ struct Meshtastic_Config: Sendable {
     fileprivate var _storage = _StorageClass.defaultInstance
   }
 
-  struct BluetoothConfig: Sendable {
+  nonisolated struct BluetoothConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1827,7 +2069,7 @@ struct Meshtastic_Config: Sendable {
 
     var unknownFields = SwiftProtobuf.UnknownStorage()
 
-    enum PairingMode: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum PairingMode: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
@@ -1877,7 +2119,7 @@ struct Meshtastic_Config: Sendable {
     init() {}
   }
 
-  struct SecurityConfig: Sendable {
+  nonisolated struct SecurityConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1902,7 +2144,7 @@ struct Meshtastic_Config: Sendable {
     var isManaged: Bool = false
 
     ///
-    /// Serial Console over the Stream API."
+    /// Serial Console over the Stream API.
     var serialEnabled: Bool = false
 
     ///
@@ -1914,14 +2156,70 @@ struct Meshtastic_Config: Sendable {
     /// Allow incoming device control over the insecure legacy admin channel.
     var adminChannelEnabled: Bool = false
 
+    ///
+    /// Determines the packet signature policy applied to remotely received mesh packets.
+    var packetSignaturePolicy: Meshtastic_Config.SecurityConfig.PacketSignaturePolicy = .compatible
+
     var unknownFields = SwiftProtobuf.UnknownStorage()
+
+    ///
+    /// Controls how the device authenticates remotely received mesh packets.
+    nonisolated enum PacketSignaturePolicy: SwiftProtobuf.Enum, Swift.CaseIterable {
+      typealias RawValue = Int
+
+      ///
+      /// Accept unsigned packets for maximum compatibility while still rejecting malformed or invalid signatures.
+      /// This is the default to avoid legacy nodes dropping signed packets during rebroadcast.
+      case compatible // = 0
+
+      ///
+      /// Prefer authenticated packets while retaining compatibility with unsigned packets from nodes not known to sign.
+      /// Rejects unsigned, signable broadcasts from nodes that have previously signed.
+      case balanced // = 1
+
+      ///
+      /// Accept only packets authenticated by a verified XEdDSA signature or successful PKI decryption.
+      /// Unsigned, malformed, invalid, or unverifiable packets are ignored.
+      case strict // = 2
+      case UNRECOGNIZED(Int)
+
+      init() {
+        self = .compatible
+      }
+
+      init?(rawValue: Int) {
+        switch rawValue {
+        case 0: self = .compatible
+        case 1: self = .balanced
+        case 2: self = .strict
+        default: self = .UNRECOGNIZED(rawValue)
+        }
+      }
+
+      var rawValue: Int {
+        switch self {
+        case .compatible: return 0
+        case .balanced: return 1
+        case .strict: return 2
+        case .UNRECOGNIZED(let i): return i
+        }
+      }
+
+      // The compiler won't synthesize support with the UNRECOGNIZED case.
+      static let allCases: [Meshtastic_Config.SecurityConfig.PacketSignaturePolicy] = [
+        .compatible,
+        .balanced,
+        .strict,
+      ]
+
+    }
 
     init() {}
   }
 
   ///
   /// Blank config request, strictly for getting the session key
-  struct SessionkeyConfig: Sendable {
+  nonisolated struct SessionkeyConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1936,9 +2234,9 @@ struct Meshtastic_Config: Sendable {
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
-fileprivate let _protobuf_package = "meshtastic"
+fileprivate nonisolated let _protobuf_package = "meshtastic"
 
-extension Meshtastic_Config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Config"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}device\0\u{1}position\0\u{1}power\0\u{1}network\0\u{1}display\0\u{1}lora\0\u{1}bluetooth\0\u{1}security\0\u{1}sessionkey\0\u{3}device_ui\0")
 
@@ -2141,7 +2439,7 @@ extension Meshtastic_Config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplem
   }
 }
 
-extension Meshtastic_Config.DeviceConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.DeviceConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_Config.protoMessageName + ".DeviceConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}role\0\u{3}serial_enabled\0\u{4}\u{2}button_gpio\0\u{3}buzzer_gpio\0\u{3}rebroadcast_mode\0\u{3}node_info_broadcast_secs\0\u{3}double_tap_as_button_press\0\u{3}is_managed\0\u{3}disable_triple_click\0\u{1}tzdef\0\u{3}led_heartbeat_disabled\0\u{3}buzzer_mode\0")
 
@@ -2226,19 +2524,19 @@ extension Meshtastic_Config.DeviceConfig: SwiftProtobuf.Message, SwiftProtobuf._
   }
 }
 
-extension Meshtastic_Config.DeviceConfig.Role: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.DeviceConfig.Role: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CLIENT\0\u{1}CLIENT_MUTE\0\u{1}ROUTER\0\u{1}ROUTER_CLIENT\0\u{1}REPEATER\0\u{1}TRACKER\0\u{1}SENSOR\0\u{1}TAK\0\u{1}CLIENT_HIDDEN\0\u{1}LOST_AND_FOUND\0\u{1}TAK_TRACKER\0\u{1}ROUTER_LATE\0\u{1}CLIENT_BASE\0")
 }
 
-extension Meshtastic_Config.DeviceConfig.RebroadcastMode: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.DeviceConfig.RebroadcastMode: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0ALL\0\u{1}ALL_SKIP_DECODING\0\u{1}LOCAL_ONLY\0\u{1}KNOWN_ONLY\0\u{1}NONE\0\u{1}CORE_PORTNUMS_ONLY\0")
 }
 
-extension Meshtastic_Config.DeviceConfig.BuzzerMode: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.DeviceConfig.BuzzerMode: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0ALL_ENABLED\0\u{1}DISABLED\0\u{1}NOTIFICATIONS_ONLY\0\u{1}SYSTEM_ONLY\0\u{1}DIRECT_MSG_ONLY\0")
 }
 
-extension Meshtastic_Config.PositionConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.PositionConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_Config.protoMessageName + ".PositionConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}position_broadcast_secs\0\u{3}position_broadcast_smart_enabled\0\u{3}fixed_position\0\u{3}gps_enabled\0\u{3}gps_update_interval\0\u{3}gps_attempt_time\0\u{3}position_flags\0\u{3}rx_gpio\0\u{3}tx_gpio\0\u{3}broadcast_smart_minimum_distance\0\u{3}broadcast_smart_minimum_interval_secs\0\u{3}gps_en_gpio\0\u{3}gps_mode\0")
 
@@ -2328,15 +2626,15 @@ extension Meshtastic_Config.PositionConfig: SwiftProtobuf.Message, SwiftProtobuf
   }
 }
 
-extension Meshtastic_Config.PositionConfig.PositionFlags: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.PositionConfig.PositionFlags: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0UNSET\0\u{1}ALTITUDE\0\u{1}ALTITUDE_MSL\0\u{2}\u{2}GEOIDAL_SEPARATION\0\u{2}\u{4}DOP\0\u{2}\u{8}HVDOP\0\u{2}\u{10}SATINVIEW\0\u{2} SEQ_NO\0\u{2}@\u{1}TIMESTAMP\0\u{2}@\u{2}HEADING\0\u{2}@\u{4}SPEED\0")
 }
 
-extension Meshtastic_Config.PositionConfig.GpsMode: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.PositionConfig.GpsMode: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DISABLED\0\u{1}ENABLED\0\u{1}NOT_PRESENT\0")
 }
 
-extension Meshtastic_Config.PowerConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.PowerConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_Config.protoMessageName + ".PowerConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}is_power_saving\0\u{3}on_battery_shutdown_after_secs\0\u{3}adc_multiplier_override\0\u{3}wait_bluetooth_secs\0\u{4}\u{2}sds_secs\0\u{3}ls_secs\0\u{3}min_wake_secs\0\u{3}device_battery_ina_address\0\u{4}\u{17}powermon_enables\0")
 
@@ -2406,7 +2704,7 @@ extension Meshtastic_Config.PowerConfig: SwiftProtobuf.Message, SwiftProtobuf._M
   }
 }
 
-extension Meshtastic_Config.NetworkConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.NetworkConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_Config.protoMessageName + ".NetworkConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}wifi_enabled\0\u{4}\u{2}wifi_ssid\0\u{3}wifi_psk\0\u{3}ntp_server\0\u{3}eth_enabled\0\u{3}address_mode\0\u{3}ipv4_config\0\u{3}rsyslog_server\0\u{3}enabled_protocols\0\u{3}ipv6_enabled\0")
 
@@ -2485,15 +2783,15 @@ extension Meshtastic_Config.NetworkConfig: SwiftProtobuf.Message, SwiftProtobuf.
   }
 }
 
-extension Meshtastic_Config.NetworkConfig.AddressMode: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.NetworkConfig.AddressMode: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DHCP\0\u{1}STATIC\0")
 }
 
-extension Meshtastic_Config.NetworkConfig.ProtocolFlags: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.NetworkConfig.ProtocolFlags: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0NO_BROADCAST\0\u{1}UDP_BROADCAST\0")
 }
 
-extension Meshtastic_Config.NetworkConfig.IpV4Config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.NetworkConfig.IpV4Config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_Config.NetworkConfig.protoMessageName + ".IpV4Config"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}ip\0\u{1}gateway\0\u{1}subnet\0\u{1}dns\0")
 
@@ -2538,7 +2836,7 @@ extension Meshtastic_Config.NetworkConfig.IpV4Config: SwiftProtobuf.Message, Swi
   }
 }
 
-extension Meshtastic_Config.DisplayConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.DisplayConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_Config.protoMessageName + ".DisplayConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}screen_on_secs\0\u{3}gps_format\0\u{3}auto_screen_carousel_secs\0\u{3}compass_north_top\0\u{3}flip_screen\0\u{1}units\0\u{1}oled\0\u{1}displaymode\0\u{3}heading_bold\0\u{3}wake_on_tap_or_motion\0\u{3}compass_orientation\0\u{3}use_12h_clock\0\u{3}use_long_node_name\0\u{3}enable_message_bubbles\0")
 
@@ -2633,29 +2931,29 @@ extension Meshtastic_Config.DisplayConfig: SwiftProtobuf.Message, SwiftProtobuf.
   }
 }
 
-extension Meshtastic_Config.DisplayConfig.DeprecatedGpsCoordinateFormat: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.DisplayConfig.DeprecatedGpsCoordinateFormat: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0UNUSED\0")
 }
 
-extension Meshtastic_Config.DisplayConfig.DisplayUnits: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.DisplayConfig.DisplayUnits: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0METRIC\0\u{1}IMPERIAL\0")
 }
 
-extension Meshtastic_Config.DisplayConfig.OledType: SwiftProtobuf._ProtoNameProviding {
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0OLED_AUTO\0\u{1}OLED_SSD1306\0\u{1}OLED_SH1106\0\u{1}OLED_SH1107\0\u{1}OLED_SH1107_128_128\0")
+nonisolated extension Meshtastic_Config.DisplayConfig.OledType: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0OLED_AUTO\0\u{1}OLED_SSD1306\0\u{1}OLED_SH1106\0\u{1}OLED_SH1107\0\u{1}OLED_SH1107_128_128\0\u{1}OLED_SH1107_ROTATED\0")
 }
 
-extension Meshtastic_Config.DisplayConfig.DisplayMode: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.DisplayConfig.DisplayMode: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DEFAULT\0\u{1}TWOCOLOR\0\u{1}INVERTED\0\u{1}COLOR\0")
 }
 
-extension Meshtastic_Config.DisplayConfig.CompassOrientation: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.DisplayConfig.CompassOrientation: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DEGREES_0\0\u{1}DEGREES_90\0\u{1}DEGREES_180\0\u{1}DEGREES_270\0\u{1}DEGREES_0_INVERTED\0\u{1}DEGREES_90_INVERTED\0\u{1}DEGREES_180_INVERTED\0\u{1}DEGREES_270_INVERTED\0")
 }
 
-extension Meshtastic_Config.LoRaConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.LoRaConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_Config.protoMessageName + ".LoRaConfig"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}use_preset\0\u{3}modem_preset\0\u{1}bandwidth\0\u{3}spread_factor\0\u{3}coding_rate\0\u{3}frequency_offset\0\u{1}region\0\u{3}hop_limit\0\u{3}tx_enabled\0\u{3}tx_power\0\u{3}channel_num\0\u{3}override_duty_cycle\0\u{3}sx126x_rx_boosted_gain\0\u{3}override_frequency\0\u{3}pa_fan_disabled\0\u{4}X\u{1}ignore_incoming\0\u{3}ignore_mqtt\0\u{3}config_ok_to_mqtt\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}use_preset\0\u{3}modem_preset\0\u{1}bandwidth\0\u{3}spread_factor\0\u{3}coding_rate\0\u{3}frequency_offset\0\u{1}region\0\u{3}hop_limit\0\u{3}tx_enabled\0\u{3}tx_power\0\u{3}channel_num\0\u{3}override_duty_cycle\0\u{3}sx126x_rx_boosted_gain\0\u{3}override_frequency\0\u{3}pa_fan_disabled\0\u{4}X\u{1}ignore_incoming\0\u{3}ignore_mqtt\0\u{3}config_ok_to_mqtt\0\u{3}fem_lna_mode\0\u{3}serial_hal_only\0")
 
   fileprivate class _StorageClass {
     var _usePreset: Bool = false
@@ -2676,6 +2974,8 @@ extension Meshtastic_Config.LoRaConfig: SwiftProtobuf.Message, SwiftProtobuf._Me
     var _ignoreIncoming: [UInt32] = []
     var _ignoreMqtt: Bool = false
     var _configOkToMqtt: Bool = false
+    var _femLnaMode: Meshtastic_Config.LoRaConfig.FEM_LNA_Mode = .disabled
+    var _serialHalOnly: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -2704,6 +3004,8 @@ extension Meshtastic_Config.LoRaConfig: SwiftProtobuf.Message, SwiftProtobuf._Me
       _ignoreIncoming = source._ignoreIncoming
       _ignoreMqtt = source._ignoreMqtt
       _configOkToMqtt = source._configOkToMqtt
+      _femLnaMode = source._femLnaMode
+      _serialHalOnly = source._serialHalOnly
     }
   }
 
@@ -2740,6 +3042,8 @@ extension Meshtastic_Config.LoRaConfig: SwiftProtobuf.Message, SwiftProtobuf._Me
         case 103: try { try decoder.decodeRepeatedUInt32Field(value: &_storage._ignoreIncoming) }()
         case 104: try { try decoder.decodeSingularBoolField(value: &_storage._ignoreMqtt) }()
         case 105: try { try decoder.decodeSingularBoolField(value: &_storage._configOkToMqtt) }()
+        case 106: try { try decoder.decodeSingularEnumField(value: &_storage._femLnaMode) }()
+        case 107: try { try decoder.decodeSingularBoolField(value: &_storage._serialHalOnly) }()
         default: break
         }
       }
@@ -2802,6 +3106,12 @@ extension Meshtastic_Config.LoRaConfig: SwiftProtobuf.Message, SwiftProtobuf._Me
       if _storage._configOkToMqtt != false {
         try visitor.visitSingularBoolField(value: _storage._configOkToMqtt, fieldNumber: 105)
       }
+      if _storage._femLnaMode != .disabled {
+        try visitor.visitSingularEnumField(value: _storage._femLnaMode, fieldNumber: 106)
+      }
+      if _storage._serialHalOnly != false {
+        try visitor.visitSingularBoolField(value: _storage._serialHalOnly, fieldNumber: 107)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -2829,6 +3139,8 @@ extension Meshtastic_Config.LoRaConfig: SwiftProtobuf.Message, SwiftProtobuf._Me
         if _storage._ignoreIncoming != rhs_storage._ignoreIncoming {return false}
         if _storage._ignoreMqtt != rhs_storage._ignoreMqtt {return false}
         if _storage._configOkToMqtt != rhs_storage._configOkToMqtt {return false}
+        if _storage._femLnaMode != rhs_storage._femLnaMode {return false}
+        if _storage._serialHalOnly != rhs_storage._serialHalOnly {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -2838,15 +3150,19 @@ extension Meshtastic_Config.LoRaConfig: SwiftProtobuf.Message, SwiftProtobuf._Me
   }
 }
 
-extension Meshtastic_Config.LoRaConfig.RegionCode: SwiftProtobuf._ProtoNameProviding {
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0UNSET\0\u{1}US\0\u{1}EU_433\0\u{1}EU_868\0\u{1}CN\0\u{1}JP\0\u{1}ANZ\0\u{1}KR\0\u{1}TW\0\u{1}RU\0\u{1}IN\0\u{1}NZ_865\0\u{1}TH\0\u{1}LORA_24\0\u{1}UA_433\0\u{1}UA_868\0\u{1}MY_433\0\u{1}MY_919\0\u{1}SG_923\0\u{1}PH_433\0\u{1}PH_868\0\u{1}PH_915\0\u{1}ANZ_433\0\u{1}KZ_433\0\u{1}KZ_863\0\u{1}NP_865\0\u{1}BR_902\0")
+nonisolated extension Meshtastic_Config.LoRaConfig.RegionCode: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0UNSET\0\u{1}US\0\u{1}EU_433\0\u{1}EU_868\0\u{1}CN\0\u{1}JP\0\u{1}ANZ\0\u{1}KR\0\u{1}TW\0\u{1}RU\0\u{1}IN\0\u{1}NZ_865\0\u{1}TH\0\u{1}LORA_24\0\u{1}UA_433\0\u{1}UA_868\0\u{1}MY_433\0\u{1}MY_919\0\u{1}SG_923\0\u{1}PH_433\0\u{1}PH_868\0\u{1}PH_915\0\u{1}ANZ_433\0\u{1}KZ_433\0\u{1}KZ_863\0\u{1}NP_865\0\u{1}BR_902\0\u{1}ITU1_2M\0\u{1}ITU2_2M\0\u{1}EU_866\0\u{1}EU_874\0\u{1}EU_917\0\u{1}EU_N_868\0\u{1}ITU3_2M\0\u{1}ITU1_70CM\0\u{1}ITU2_70CM\0\u{1}ITU3_70CM\0\u{1}ITU2_125CM\0")
 }
 
-extension Meshtastic_Config.LoRaConfig.ModemPreset: SwiftProtobuf._ProtoNameProviding {
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0LONG_FAST\0\u{1}LONG_SLOW\0\u{1}VERY_LONG_SLOW\0\u{1}MEDIUM_SLOW\0\u{1}MEDIUM_FAST\0\u{1}SHORT_SLOW\0\u{1}SHORT_FAST\0\u{1}LONG_MODERATE\0\u{1}SHORT_TURBO\0\u{1}LONG_TURBO\0")
+nonisolated extension Meshtastic_Config.LoRaConfig.ModemPreset: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0LONG_FAST\0\u{1}LONG_SLOW\0\u{1}VERY_LONG_SLOW\0\u{1}MEDIUM_SLOW\0\u{1}MEDIUM_FAST\0\u{1}SHORT_SLOW\0\u{1}SHORT_FAST\0\u{1}LONG_MODERATE\0\u{1}SHORT_TURBO\0\u{1}LONG_TURBO\0\u{1}LITE_FAST\0\u{1}LITE_SLOW\0\u{1}NARROW_FAST\0\u{1}NARROW_SLOW\0\u{1}TINY_FAST\0\u{1}TINY_SLOW\0\u{1}MEDIUM_TURBO\0")
 }
 
-extension Meshtastic_Config.BluetoothConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.LoRaConfig.FEM_LNA_Mode: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DISABLED\0\u{1}ENABLED\0\u{1}NOT_PRESENT\0")
+}
+
+nonisolated extension Meshtastic_Config.BluetoothConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_Config.protoMessageName + ".BluetoothConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{1}mode\0\u{3}fixed_pin\0")
 
@@ -2886,13 +3202,13 @@ extension Meshtastic_Config.BluetoothConfig: SwiftProtobuf.Message, SwiftProtobu
   }
 }
 
-extension Meshtastic_Config.BluetoothConfig.PairingMode: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.BluetoothConfig.PairingMode: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0RANDOM_PIN\0\u{1}FIXED_PIN\0\u{1}NO_PIN\0")
 }
 
-extension Meshtastic_Config.SecurityConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.SecurityConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_Config.protoMessageName + ".SecurityConfig"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}public_key\0\u{3}private_key\0\u{3}admin_key\0\u{3}is_managed\0\u{3}serial_enabled\0\u{3}debug_log_api_enabled\0\u{4}\u{2}admin_channel_enabled\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}public_key\0\u{3}private_key\0\u{3}admin_key\0\u{3}is_managed\0\u{3}serial_enabled\0\u{3}debug_log_api_enabled\0\u{4}\u{2}admin_channel_enabled\0\u{3}packet_signature_policy\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2907,6 +3223,7 @@ extension Meshtastic_Config.SecurityConfig: SwiftProtobuf.Message, SwiftProtobuf
       case 5: try { try decoder.decodeSingularBoolField(value: &self.serialEnabled) }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.debugLogApiEnabled) }()
       case 8: try { try decoder.decodeSingularBoolField(value: &self.adminChannelEnabled) }()
+      case 9: try { try decoder.decodeSingularEnumField(value: &self.packetSignaturePolicy) }()
       default: break
       }
     }
@@ -2934,6 +3251,9 @@ extension Meshtastic_Config.SecurityConfig: SwiftProtobuf.Message, SwiftProtobuf
     if self.adminChannelEnabled != false {
       try visitor.visitSingularBoolField(value: self.adminChannelEnabled, fieldNumber: 8)
     }
+    if self.packetSignaturePolicy != .compatible {
+      try visitor.visitSingularEnumField(value: self.packetSignaturePolicy, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2945,12 +3265,17 @@ extension Meshtastic_Config.SecurityConfig: SwiftProtobuf.Message, SwiftProtobuf
     if lhs.serialEnabled != rhs.serialEnabled {return false}
     if lhs.debugLogApiEnabled != rhs.debugLogApiEnabled {return false}
     if lhs.adminChannelEnabled != rhs.adminChannelEnabled {return false}
+    if lhs.packetSignaturePolicy != rhs.packetSignaturePolicy {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
-extension Meshtastic_Config.SessionkeyConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Config.SecurityConfig.PacketSignaturePolicy: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0PACKET_SIGNATURE_POLICY_COMPATIBLE\0\u{1}PACKET_SIGNATURE_POLICY_BALANCED\0\u{1}PACKET_SIGNATURE_POLICY_STRICT\0")
+}
+
+nonisolated extension Meshtastic_Config.SessionkeyConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_Config.protoMessageName + ".SessionkeyConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
