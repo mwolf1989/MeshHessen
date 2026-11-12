@@ -15403,6 +15403,17 @@
         }
       }
     },
+    "The Meshtastic Bluetooth service was not found on this device. If the node's firmware was updated, remove it under System Settings → Bluetooth (Forget This Device) and connect again." : {
+      "comment" : "Error shown when a Bluetooth device does not expose the Meshtastic GATT service (typically a stale pairing after a firmware update).",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Meshtastic-Bluetooth-Dienst wurde auf diesem Gerät nicht gefunden. Wurde die Firmware des Nodes aktualisiert, bitte den Node unter Systemeinstellungen → Bluetooth entfernen (Dieses Gerät ignorieren) und erneut verbinden."
+          }
+        }
+      }
+    },
     "The Meshtastic frame is malformed." : {
 
     },

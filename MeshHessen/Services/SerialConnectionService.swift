@@ -11,8 +11,6 @@ final class SerialConnectionService: NSObject, ConnectionService {
 
     private var port: ORSSerialPort?
     private var connectContinuation: CheckedContinuation<Void, Error>?
-    private var watchdogTimer: Timer?
-    private var lastReceiveTime = Date()
 
     // MARK: - Public
 
@@ -47,8 +45,6 @@ final class SerialConnectionService: NSObject, ConnectionService {
     }
 
     func disconnect() {
-        watchdogTimer?.invalidate()
-        watchdogTimer = nil
         port?.close()
         port = nil
         isConnected = false
@@ -84,25 +80,13 @@ final class SerialConnectionService: NSObject, ConnectionService {
         }
         return error
     }
-
-    private func startWatchdog() {
-        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-            guard let self, self.isConnected else { return }
-            if Date().timeIntervalSince(self.lastReceiveTime) > 30 {
-                AppLogger.shared.log("[Serial] Watchdog timeout — disconnecting")
-                self.disconnect()
-            }
-        }
-    }
 }
 
 // MARK: - ORSSerialPortDelegate
 extension SerialConnectionService: ORSSerialPortDelegate {
     func serialPortWasOpened(_ serialPort: ORSSerialPort) {
         isConnected = true
-        lastReceiveTime = Date()
         onConnectionStateChanged?(true)
-        startWatchdog()
         connectContinuation?.resume()
         connectContinuation = nil
     }
@@ -123,7 +107,6 @@ extension SerialConnectionService: ORSSerialPortDelegate {
     }
 
     func serialPort(_ serialPort: ORSSerialPort, didReceive data: Data) {
-        lastReceiveTime = Date()
         onDataReceived?(data)
     }
 }

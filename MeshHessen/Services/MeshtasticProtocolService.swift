@@ -76,6 +76,11 @@ final class MeshtasticProtocolService {
     var onFromRadioPayloadReceived: ((Data) -> Void)?
     var onMqttProxyMessageReceived: ((Meshtastic_MqttClientProxyMessage) -> Void)?
     var onMqttConfigurationReceived: ((Meshtastic_ModuleConfig.MQTTConfig) -> Void)?
+    /// Called once per silence period when the link watchdog declares the device link dead.
+    var onLinkStale: (@MainActor () -> Void)?
+    /// Firmware-originated notices (`FromRadio.clientNotification`), e.g. rejected
+    /// sends, duty-cycle limits or key-verification prompts.
+    var onClientNotification: ((Meshtastic_ClientNotification) -> Void)?
 
     /// Waypoints and direct contacts are observable protocol state so map views can
     /// consume them without performing I/O themselves.
@@ -83,6 +88,12 @@ final class MeshtasticProtocolService {
     private(set) var directNeighborContacts: [DirectNeighborContact] = []
 
     var currentNodeId: UInt32 { myNodeId }
+
+    /// Last `DeviceMetadata` of the local device in this session (nil until received).
+    var deviceMetadata: Meshtastic_DeviceMetadata? { lastDeviceMetadata }
+
+    /// Read-only view of the link watchdog (diagnostics and tests).
+    var linkWatchdogState: LinkWatchdog { linkWatchdog }
 
     // MARK: - Protocol state (non-isolated mutable, protected by dataLock)
     private let dataLock = NSLock()
@@ -113,6 +124,11 @@ final class MeshtasticProtocolService {
     private static let maxPendingPositions = 500
     private static let pendingPositionLifetime: TimeInterval = 6 * 3_600
     private var pendingPositions: [UInt32: PendingPosition] = [:]
+
+    // Device identity details that may arrive before the own NodeInfo; re-applied
+    // whenever `appState.myNodeInfo` is (re)created.
+    private var lastDeviceMetadata: Meshtastic_DeviceMetadata?
+    private var lastPioEnv = ""
 
     // Device config storage (populated by admin getConfigResponse / getModuleConfigResponse)
     enum ConfigCategory: String {
@@ -191,8 +207,9 @@ final class MeshtasticProtocolService {
         }
     }
 
-    // TCP heartbeat keepalive
+    // Heartbeat keepalive + link liveness (all transports)
     private var heartbeatTask: Task<Void, Never>?
+    @ObservationIgnored private var linkWatchdog = LinkWatchdog()
 
     // Text-mode recovery
     private var lastValidPacketTime = Date()
@@ -233,6 +250,7 @@ final class MeshtasticProtocolService {
         isCollectingChannelSnapshot = true
         rawChannels.removeAll()
         rawOwner = nil
+        clearDeviceInfoCache()
         receiveBuffer = Data()
         myNodeId = 0
         consecutiveTextChunks = 0
@@ -326,8 +344,9 @@ final class MeshtasticProtocolService {
         isInitializing = false
         Task { await self.backfillStoredPositions() }
 
-        // 10. Start TCP heartbeat to prevent idle disconnects
-        if gotBasicInfo && connectionService?.type != .bluetooth {
+        // 10. Start the heartbeat: keeps the firmware's client API open and
+        //     lets the link watchdog detect a silently dead link.
+        if gotBasicInfo {
             startHeartbeat()
         }
 
@@ -461,7 +480,7 @@ final class MeshtasticProtocolService {
             if forwardToVirtualNode {
                 onFromRadioPayloadReceived?(data)
             }
-            handleFromRadio(fromRadio)
+            handleFromRadio(fromRadio, fromDevice: forwardToVirtualNode)
         } catch {
             AppLogger.shared.log("[Protocol] Parse error: \(error.localizedDescription) (bytes: \(data.count))", debug: true)
         }
@@ -557,7 +576,15 @@ final class MeshtasticProtocolService {
 
     // MARK: - FromRadio Dispatch
 
-    private func handleFromRadio(_ fromRadio: Meshtastic_FromRadio) {
+    /// `fromDevice` is false for frames synthesised locally for Virtual Node
+    /// clients; those must not count as proof that the physical link is alive.
+    private func handleFromRadio(_ fromRadio: Meshtastic_FromRadio, fromDevice: Bool = true) {
+        if fromDevice {
+            var isQueueStatus = false
+            if case .queueStatus = fromRadio.payloadVariant { isQueueStatus = true }
+            linkWatchdog.onFrameReceived(isQueueStatus: isQueueStatus, now: Date())
+        }
+
         let variant: String
         switch fromRadio.payloadVariant {
         case .packet: variant = "packet"
@@ -589,6 +616,10 @@ final class MeshtasticProtocolService {
             handleMeshPacket(packet)
         case .myInfo(let info):
             myNodeId = info.myNodeNum
+            lastPioEnv = info.pioEnv
+            if !info.pioEnv.isEmpty, appState?.myNodeInfo?.nodeId == myNodeId {
+                appState?.myNodeInfo?.pioEnv = info.pioEnv
+            }
             if isCollectingChannelSnapshot {
                 tempChannels.adoptTargetNodeID(myNodeId)
             }
@@ -608,6 +639,9 @@ final class MeshtasticProtocolService {
             handleDeviceMetadata(meta)
         case .mqttClientProxyMessage(let message):
             onMqttProxyMessageReceived?(message)
+        case .clientNotification(let note):
+            AppLogger.shared.log("[Protocol] ClientNotification: \(note.message)")
+            onClientNotification?(note)
         default:
             break
         }
@@ -1229,13 +1263,16 @@ final class MeshtasticProtocolService {
             }
             let existingFW = appState?.myNodeInfo?.firmwareVersion ?? ""
             let hwModel = user.hwModel != .unset ? hardwareModelName(user.hwModel) : (appState?.myNodeInfo?.hardwareModel ?? "Unknown")
-            appState?.myNodeInfo = MyNodeInfo(
+            var myInfo = MyNodeInfo(
                 nodeId: packet.from,
                 shortName: user.shortName,
                 longName: user.longName,
                 hardwareModel: hwModel,
                 firmwareVersion: existingFW
             )
+            if user.hwModel != .unset { myInfo.hardwareModelRaw = user.hwModel.rawValue }
+            applyCachedDeviceInfo(to: &myInfo)
+            appState?.myNodeInfo = myInfo
         }
 
         let nodeId = packet.from
@@ -1284,13 +1321,16 @@ final class MeshtasticProtocolService {
             rawOwner = user
             let existingFW = appState?.myNodeInfo?.firmwareVersion ?? ""
             let hwModel = user.hwModel != .unset ? hardwareModelName(user.hwModel) : (appState?.myNodeInfo?.hardwareModel ?? "Unknown")
-            appState?.myNodeInfo = MyNodeInfo(
+            var myInfo = MyNodeInfo(
                 nodeId: info.num,
                 shortName: user.shortName,
                 longName: user.longName,
                 hardwareModel: hwModel,
                 firmwareVersion: existingFW
             )
+            if user.hwModel != .unset { myInfo.hardwareModelRaw = user.hwModel.rawValue }
+            applyCachedDeviceInfo(to: &myInfo)
+            appState?.myNodeInfo = myInfo
         }
 
         appState?.upsertNode(node, refreshNodeDatabaseFlags: true)
@@ -1566,13 +1606,51 @@ final class MeshtasticProtocolService {
     // MARK: - DeviceMetadata
 
     private func handleDeviceMetadata(_ meta: Meshtastic_DeviceMetadata) {
+        lastDeviceMetadata = meta
+        // Metadata can arrive before the own NodeInfo; keep it instead of dropping it.
+        if appState?.myNodeInfo == nil, myNodeId != 0 {
+            appState?.myNodeInfo = MyNodeInfo(
+                nodeId: myNodeId,
+                shortName: "",
+                longName: "",
+                hardwareModel: hardwareModelName(meta.hwModel),
+                firmwareVersion: ""
+            )
+        }
+        if var myInfo = appState?.myNodeInfo {
+            if meta.hwModel != .unset {
+                myInfo.hardwareModel = hardwareModelName(meta.hwModel)
+            }
+            applyCachedDeviceInfo(to: &myInfo)
+            appState?.myNodeInfo = myInfo
+        }
+        AppLogger.shared.log(
+            "[Protocol] DeviceMetadata: FW=\(meta.firmwareVersion), HW=\(meta.hwModel), "
+                + "wifi=\(meta.hasWifi_p), bt=\(meta.hasBluetooth_p)",
+            debug: SettingsService.shared.debugDevice
+        )
+    }
+
+    /// Re-applies the session's cached `DeviceMetadata` and `pio_env` to a
+    /// (re)created `MyNodeInfo` so they are not lost.
+    private func applyCachedDeviceInfo(to info: inout MyNodeInfo) {
+        if !lastPioEnv.isEmpty {
+            info.pioEnv = lastPioEnv
+        }
+        guard let meta = lastDeviceMetadata else { return }
         if !meta.firmwareVersion.isEmpty {
-            appState?.myNodeInfo?.firmwareVersion = meta.firmwareVersion
+            info.firmwareVersion = meta.firmwareVersion
         }
         if meta.hwModel != .unset {
-            appState?.myNodeInfo?.hardwareModel = hardwareModelName(meta.hwModel)
+            info.hardwareModelRaw = meta.hwModel.rawValue
         }
-        AppLogger.shared.log("[Protocol] DeviceMetadata: FW=\(meta.firmwareVersion), HW=\(meta.hwModel)", debug: SettingsService.shared.debugDevice)
+        info.hasWifi = meta.hasWifi_p
+        info.hasBluetooth = meta.hasBluetooth_p
+    }
+
+    private func clearDeviceInfoCache() {
+        lastDeviceMetadata = nil
+        lastPioEnv = ""
     }
 
     private func requestDeviceMetadata() async {
@@ -3701,23 +3779,42 @@ final class MeshtasticProtocolService {
         rawChannels.removeAll()
         rawOwner = nil
         pendingPositions.removeAll()
+        clearDeviceInfoCache()
         stopHeartbeat()
         PkiDecryptionService.shared.clearPrivateKey()
         connectionService?.disconnect()
     }
 
-    // MARK: - TCP Heartbeat
+    // MARK: - Heartbeat / Link watchdog
+
+    /// A plain keepalive. The nonce must stay 0: a non-zero nonce makes the
+    /// firmware broadcast its NodeInfo on the mesh.
+    nonisolated static func makeHeartbeat() -> Meshtastic_ToRadio {
+        var toRadio = Meshtastic_ToRadio()
+        toRadio.heartbeat = Meshtastic_Heartbeat()
+        return toRadio
+    }
 
     private func startHeartbeat() {
         stopHeartbeat()
+        linkWatchdog.reset(now: Date())
         heartbeatTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
+                try? await Task.sleep(for: .seconds(LinkWatchdog.heartbeatInterval))
                 guard !Task.isCancelled else { break }
-                guard let self, !self.isDisconnecting else { break }
-                var toRadio = Meshtastic_ToRadio()
-                toRadio.heartbeat = Meshtastic_Heartbeat()
-                await self.sendRaw(toRadio)
+                guard let self, !self.isDisconnecting, self.connectionService != nil else { break }
+
+                let now = Date()
+                if self.linkWatchdog.checkStale(now: now) {
+                    AppLogger.shared.log(
+                        "[Protocol] Link stale — requesting reconnect (\(self.linkWatchdog.describe(now: now)))"
+                    )
+                    self.onLinkStale?()
+                    break
+                }
+
+                await self.sendRaw(Self.makeHeartbeat())
+                self.linkWatchdog.onHeartbeatSent(now: Date())
                 AppLogger.shared.log("[Protocol] Heartbeat sent", debug: SettingsService.shared.debugDevice)
             }
         }

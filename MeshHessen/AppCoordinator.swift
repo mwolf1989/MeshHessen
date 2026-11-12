@@ -97,6 +97,9 @@ final class AppCoordinator {
                 await self?.applyMqttConfiguration(configuration)
             }
         }
+        protocol_.onLinkStale = { [weak self] in
+            self?.handleLinkStale()
+        }
 
         Task { @MainActor [weak self] in
             await self?.configureAuxiliaryServiceHandlers()
@@ -901,6 +904,22 @@ final class AppCoordinator {
     }
 
     // MARK: - Reconnection logic
+
+    /// Called by the protocol's link watchdog when the device stopped answering
+    /// although the port/socket still looks open. Tears the link down without
+    /// marking it user-requested, then takes the regular auto-reconnect path.
+    private func handleLinkStale() {
+        guard !userRequestedDisconnect, let connection = activeConnection else { return }
+        AppLogger.shared.log("[Coordinator] Link stale on \(connection.type.rawValue) — reconnecting")
+        cancelProtocolInitialization()
+        // Same teardown order as `teardownActiveConnection`. The transport's own
+        // disconnect callback arrives asynchronously and is then dropped by the
+        // stale-service guard in `performConnect`, because
+        // `handleUnexpectedDisconnect` detaches `activeConnection` first.
+        protocol_.disconnect()
+        connection.disconnect()
+        handleUnexpectedDisconnect()
+    }
 
     /// Called when the connection service reports an unexpected disconnect.
     private func handleUnexpectedDisconnect() {

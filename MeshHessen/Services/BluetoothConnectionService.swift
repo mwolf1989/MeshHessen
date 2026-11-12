@@ -41,6 +41,10 @@ final class BluetoothConnectionService: NSObject, ConnectionService, @unchecked 
     private var toRadioChar: CBCharacteristic?
     private var fromRadioChar: CBCharacteristic?
     private var fromNumChar: CBCharacteristic?
+    /// Set once the missing Meshtastic service was re-discovered after a
+    /// connect; a second miss fails with ``ConnectionError/serviceNotFound``.
+    /// Only touched on `bluetoothQueue`.
+    private var serviceDiscoveryRetried = false
 
     private var connectContinuation: CheckedContinuation<Void, Error>?
     /// Protects `connectContinuation` from simultaneous access by the BLE delegate queue and MainActor
@@ -513,6 +517,7 @@ extension BluetoothConnectionService: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         let name = peripheral.name ?? "Unknown"
         AppLogger.shared.log("[BLE] Connected to: \(name)", debug: SettingsService.shared.debugBluetooth)
+        serviceDiscoveryRetried = false
         peripheral.discoverServices([BluetoothConnectionService.serviceUUID])
     }
 
@@ -562,8 +567,16 @@ extension BluetoothConnectionService: CBPeripheralDelegate {
         }
         guard let service = peripheral.services?.first(where: { $0.uuid == BluetoothConnectionService.serviceUUID })
         else {
-            AppLogger.shared.log("[BLE] Meshtastic service not found", debug: true)
-            takeConnectContinuation()?.resume(throwing: ConnectionError.cancelled)
+            // A stale GATT cache (e.g. after a firmware update) can hide the
+            // service on the first pass — ask once more before giving up.
+            if !serviceDiscoveryRetried {
+                serviceDiscoveryRetried = true
+                AppLogger.shared.log("[BLE] Meshtastic service not found — retrying discovery", debug: true)
+                peripheral.discoverServices([BluetoothConnectionService.serviceUUID])
+                return
+            }
+            AppLogger.shared.log("[BLE] Meshtastic service not found after retry")
+            takeConnectContinuation()?.resume(throwing: ConnectionError.serviceNotFound)
             return
         }
         AppLogger.shared.log("[BLE] Discovered service, discovering characteristics...", debug: SettingsService.shared.debugBluetooth)
@@ -572,6 +585,12 @@ extension BluetoothConnectionService: CBPeripheralDelegate {
             BluetoothConnectionService.fromRadioUUID,
             BluetoothConnectionService.fromNumUUID
         ], for: service)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
+        let ids = invalidatedServices.map(\.uuid.uuidString).joined(separator: ", ")
+        AppLogger.shared.log("[BLE] Services modified (invalidated: \(ids)) — re-discovering", debug: true)
+        peripheral.discoverServices([BluetoothConnectionService.serviceUUID])
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
