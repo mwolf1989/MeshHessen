@@ -1736,7 +1736,20 @@ final class MeshtasticProtocolService {
         try Meshtastic_RouteDiscovery(serializedBytes: payload)
     }
 
+    /// A request asks us for data (`wantResponse`) and is not itself a reply (`requestID == 0`).
+    /// Such packets must not be stored as results; the firmware answers them on its own.
+    nonisolated static func isIncomingRequest(_ data: Meshtastic_Data, to: UInt32, myNodeId: UInt32) -> Bool {
+        myNodeId != 0 && to == myNodeId && data.wantResponse && data.requestID == 0
+    }
+
     private func handleTraceroutePacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
+        if Self.isIncomingRequest(data, to: packet.to, myNodeId: myNodeId) {
+            AppLogger.shared.log(
+                "[Traceroute] Ignoring incoming traceroute request from \(nodeDisplayName(packet.from))",
+                debug: SettingsService.shared.debugDevice
+            )
+            return
+        }
         let route: Meshtastic_RouteDiscovery
         do {
             route = try Self.decodeRouteDiscovery(data.payload)
@@ -2763,6 +2776,13 @@ final class MeshtasticProtocolService {
     // MARK: - Telemetry
 
     private func handleTelemetry(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
+        if Self.isIncomingRequest(data, to: packet.to, myNodeId: myNodeId) {
+            AppLogger.shared.log(
+                "[Telemetry] Ignoring incoming telemetry request from \(nodeDisplayName(packet.from))",
+                debug: SettingsService.shared.debugDevice
+            )
+            return
+        }
         guard packet.from != 0 else { return }
         let node = nodeForTelemetry(senderID: packet.from)
         defer { coreDataStore?.upsertNode(node) }

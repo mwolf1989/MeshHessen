@@ -487,9 +487,9 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         enqueueWrite { service, db in
             let isDay = service.dayFlag(timestamp, latitude: latitude, longitude: longitude)
             let ts = timestamp.timeIntervalSince1970
-            let samples: [TelemetrySeriesMetric: Double] = [
-                .snr: Double(snr), .rssi: Double(rssi), .packetCount: 1,
-            ]
+            let storedSamples = Self.signalSamples(snr: snr, rssi: rssi, hopCount: hopCount, viaMqtt: viaMqtt)
+            var samples = storedSamples
+            samples[.packetCount] = 1
             let succeeded = service.inTransaction(on: db) {
                 let inserted = service.run(
                     """
@@ -505,9 +505,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                     ],
                     on: db
                 )
-                let storedSamples: [TelemetrySeriesMetric: Double] = [
-                    .snr: Double(snr), .rssi: Double(rssi),
-                ]
+                // Called even without signal values: it also writes the packet_count sample.
                 return inserted && service.insertSamples(
                     nodeId: nodeId,
                     timestamp: ts,
@@ -521,6 +519,22 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                 service.publishFreshTelemetry(nodeID: nodeId, timestamp: timestamp, values: samples)
             }
         }
+    }
+
+    /// SNR/RSSI describe only the last radio hop, so they are recorded only for
+    /// packets heard directly over RF (0 hops, not via MQTT). A value of 0 means
+    /// "not measured" and is skipped.
+    static func signalSamples(
+        snr: Float,
+        rssi: Int32,
+        hopCount: Int,
+        viaMqtt: Bool
+    ) -> [TelemetrySeriesMetric: Double] {
+        guard hopCount == 0, !viaMqtt else { return [:] }
+        var values: [TelemetrySeriesMetric: Double] = [:]
+        if snr != 0 { values[.snr] = Double(snr) }
+        if rssi != 0 { values[.rssi] = Double(rssi) }
+        return values
     }
 
     /// Restores the latest true 0-hop RF contact per node for the permanent

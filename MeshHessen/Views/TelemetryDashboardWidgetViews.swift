@@ -419,7 +419,7 @@ private struct DashboardGauge: View {
                     Text(range.upperBound, format: .number.precision(.fractionLength(0)))
                 }
                 .gaugeStyle(.accessoryCircular)
-                .tint(Gradient(colors: [.red, .orange, .green]))
+                .tint(.accentColor)
                 .scaleEffect(1.35)
                 .padding(18)
 
@@ -485,7 +485,7 @@ private struct DashboardHeatmap: View {
     let cells: [TelemetryHeatmapCell]
 
     private var bounds: (minimum: Double, maximum: Double) {
-        if let range = widget.effectiveDisplayRange {
+        if let range = widget.explicitDisplayRange {
             return (range.lowerBound, range.upperBound)
         }
         let values = cells.map(\.value)
@@ -554,14 +554,14 @@ private struct DashboardCandlestick: View {
                     yStart: .value(String(localized: "Low"), candle.low),
                     yEnd: .value(String(localized: "High"), candle.high)
                 )
-                .foregroundStyle(candle.close >= candle.open ? .green : .red)
+                .foregroundStyle(color(for: candle))
                 RectangleMark(
                     x: .value(String(localized: "Day"), candle.date, unit: .day),
                     yStart: .value(String(localized: "dashboard.candlestick.open", defaultValue: "Open"), candle.open),
                     yEnd: .value(String(localized: "dashboard.candlestick.close", defaultValue: "Close"), candle.close),
                     width: .fixed(8)
                 )
-                .foregroundStyle(candle.close >= candle.open ? .green : .red)
+                .foregroundStyle(color(for: candle))
             }
             .chartXAxis {
                 AxisMarks(values: .automatic) { _ in
@@ -573,6 +573,14 @@ private struct DashboardCandlestick: View {
             .chartYAxisLabel(widget.metric.unit)
             .modifier(DashboardMetricScale(widget: widget))
         }
+    }
+
+    /// Candles whose body is under 2 % of their range are noise, not a rise or fall.
+    private func color(for candle: TelemetryCandlePoint) -> Color {
+        let body = abs(candle.close - candle.open)
+        let span = max(abs(candle.high - candle.low), .leastNonzeroMagnitude)
+        if body < 0.02 * span { return .secondary }
+        return candle.close >= candle.open ? .green : .red
     }
 }
 
@@ -858,7 +866,7 @@ private struct DashboardMetricScale: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if let range = widget.effectiveDisplayRange {
+        if let range = widget.explicitDisplayRange {
             content.chartYScale(domain: range)
         } else {
             content
@@ -871,7 +879,7 @@ private struct DashboardHistogramScale: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if let range = widget.effectiveDisplayRange {
+        if let range = widget.explicitDisplayRange {
             content.chartXScale(domain: range)
         } else {
             content
