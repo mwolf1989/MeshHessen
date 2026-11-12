@@ -124,9 +124,10 @@ struct TracerouteHop: Identifiable, Codable, Equatable, Sendable {
         self.distanceToNext = distanceToNext
     }
 
-    /// Decodes the firmware's quarter-dB SNR representation while preserving its unknown sentinel.
+    /// Decodes the firmware's quarter-dB SNR representation. Both the unknown sentinel (-128)
+    /// and 0 (hop not measured over RF, e.g. MQTT) mean "no measurement".
     static func decodedSNR(_ encodedSNR: Int32?) -> Float? {
-        guard let encodedSNR, encodedSNR != Int32(Int8.min) else { return nil }
+        guard let encodedSNR, encodedSNR != Int32(Int8.min), encodedSNR != 0 else { return nil }
         return Float(encodedSNR) / 4.0
     }
 
