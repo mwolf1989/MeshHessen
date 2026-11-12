@@ -261,6 +261,13 @@ struct TelemetryDashboardWidget: Identifiable, Codable, Hashable, Sendable {
         return displayMinimum...displayMaximum
     }
 
+    /// The axis range the user configured, without the metric's suggested fallback.
+    /// Charts apply only this range and otherwise scale to the drawn data. A single
+    /// bound does not form a usable range (`normalize()` drops it), so it yields nil.
+    var explicitDisplayRange: ClosedRange<Double>? {
+        displayRange
+    }
+
     var effectiveDisplayRange: ClosedRange<Double>? {
         displayRange ?? metric.suggestedRange
     }
