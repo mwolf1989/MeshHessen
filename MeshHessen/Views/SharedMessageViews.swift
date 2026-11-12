@@ -446,6 +446,21 @@ struct MessageBubbleView: View {
                 .disabled(senderNode.id == appState.myNodeInfo?.nodeId)
             Button("Telemetry…") { showTelemetry = senderNode }
         }
+
+        if message.fromId != 0, message.fromId != appState.myNodeInfo?.nodeId {
+            if senderNode == nil {
+                Divider()
+            }
+            Menu("Request Info") {
+                ForEach(NodeInfoRequestType.allCases) { requestType in
+                    Button {
+                        Task { await coordinator.protocol_.requestNodeInfo(requestType, from: message.fromId) }
+                    } label: {
+                        Label(requestType.displayName, systemImage: requestType.systemImage)
+                    }
+                }
+            }
+        }
     }
 
     private var senderNode: NodeInfo? {
