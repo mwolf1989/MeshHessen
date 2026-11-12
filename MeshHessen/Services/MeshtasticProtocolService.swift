@@ -1158,7 +1158,9 @@ final class MeshtasticProtocolService {
         let nodeId = packet.from
         let node = makeNodeInfo(from: user, num: nodeId)
         appState?.upsertNode(node)
-        coreDataStore?.upsertNode(node)
+        // A User packet never carries a position: persist the merged node so
+        // the stored coordinates, battery and SNR are not overwritten with nil.
+        coreDataStore?.upsertNode(appState?.node(forId: nodeId) ?? node)
     }
 
     // MARK: - NodeInfo (from NodeInfo message)
@@ -1208,7 +1210,7 @@ final class MeshtasticProtocolService {
         }
 
         appState?.upsertNode(node, refreshNodeDatabaseFlags: true)
-        coreDataStore?.upsertNode(node)
+        coreDataStore?.upsertNode(appState?.node(forId: info.num) ?? node)
 
         AppLogger.shared.log("[Protocol] NodeInfo: \(node.name) (\(node.nodeId))", debug: SettingsService.shared.debugDevice)
     }

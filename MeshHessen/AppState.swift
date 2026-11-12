@@ -352,22 +352,43 @@ final class AppState {
 
     func node(forId id: UInt32) -> NodeInfo? { nodes[id] }
 
+    /// Merges `info` into the known node with the same id, or inserts it.
+    ///
+    /// Partial updates (e.g. a NodeInfo broadcast, which never carries a
+    /// position) must not erase what is already known: coordinates are never
+    /// cleared or replaced by the 0/0 "no fix" value, `lastHeard` only moves forward, and
+    /// NodeDB-only flags (`isFavorite`, `isOwnNode`, `viaMqtt`) are only taken
+    /// from device NodeDB snapshots (`refreshNodeDatabaseFlags`).
     func upsertNode(_ info: NodeInfo, refreshNodeDatabaseFlags: Bool = false) {
         if let existing = nodes[info.id] {
             existing.shortName = info.shortName
             existing.longName = info.longName
             existing.name = info.name
             if info.snr != "-"       { existing.snr = info.snr; existing.snrFloat = info.snrFloat }
-            if info.lastSeen != "-"  { existing.lastSeen = info.lastSeen; existing.lastHeard = info.lastHeard }
+            if info.lastSeen != "-", info.lastHeard > existing.lastHeard {
+                existing.lastSeen = info.lastSeen
+                existing.lastHeard = info.lastHeard
+            }
             if info.battery != "-"   { existing.battery = info.battery; existing.batteryLevel = info.batteryLevel }
             if info.rssi != "-"      { existing.rssi = info.rssi; existing.rssiInt = info.rssiInt }
-            if let lat = info.latitude  { existing.latitude = lat }
-            if let lon = info.longitude { existing.longitude = lon }
-            if let alt = info.altitude  { existing.altitude = alt }
-            existing.viaMqtt = info.viaMqtt
+            if !Self.isNoFixPosition(info) {
+                if let lat = info.latitude  { existing.latitude = lat }
+                if let lon = info.longitude { existing.longitude = lon }
+                if let alt = info.altitude  { existing.altitude = alt }
+            }
+            if !info.hardwareModel.isEmpty,
+               info.hardwareModel != "Unknown" || existing.hardwareModel.isEmpty {
+                existing.hardwareModel = info.hardwareModel
+            }
+            if !info.role.isEmpty {
+                existing.role = info.role
+                existing.isInfrastructure = info.isInfrastructure
+            }
+            if !info.publicKey.isEmpty { existing.publicKey = info.publicKey }
             if refreshNodeDatabaseFlags {
                 existing.isFavorite = info.isFavorite
                 existing.isOwnNode = info.isOwnNode
+                existing.viaMqtt = info.viaMqtt
             }
             // Preserve pin state from existing node (don't overwrite with incoming data)
             if info.isPinned { existing.isPinned = info.isPinned }
@@ -375,10 +396,19 @@ final class AppState {
                 existing.lastTracerouteHopCount = info.lastTracerouteHopCount
             }
         } else {
+            if Self.isNoFixPosition(info) {
+                info.latitude = nil
+                info.longitude = nil
+            }
             nodes[info.id] = info
         }
         // Recalculate distance if we have own position and node GPS
         recalculateDistance(for: info.id)
+    }
+
+    /// Latitude and longitude both `0` is the firmware's "no fix" value, not a position.
+    private static func isNoFixPosition(_ node: NodeInfo) -> Bool {
+        node.latitude == 0 && node.longitude == 0
     }
 
     func recalculateDistance(for nodeId: UInt32) {
