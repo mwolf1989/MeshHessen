@@ -56,6 +56,20 @@ enum RoutingError: Int, CaseIterable, Identifiable {
         }
     }
 
+    /// Remediation shown with a rejected remote-admin request (Windows parity).
+    var adminHint: String? {
+        switch self {
+        case .adminPublicKeyUnauthorized:
+            return String(localized: "The remote node does not list this node's public key as an admin key.")
+        case .pkiFailed, .pkiUnknownPubkey:
+            return String(localized: "The remote node's public key is unknown or outdated. Request its node info and try again.")
+        case .maxRetransmit, .noRoute:
+            return String(localized: "The remote node did not answer. It may be out of range or offline.")
+        default:
+            return nil
+        }
+    }
+
     var canRetry: Bool {
         switch self {
         case .none, .noChannel, .tooLarge, .notAuthorized, .pkiFailed,

@@ -201,4 +201,38 @@ struct MapOfflineParityTests {
         #expect(plans.contains(.init(source: "emergency", minimumZoom: 13, maximumZoom: 14)))
         #expect(VectorOfflinePackageDownloaderService.estimatedResourceCount(for: request) > 25_671)
     }
+
+    @Test("Offline mode downloads from the Mesh Hessen server, never from custom URLs")
+    func offlineModeUsesMeshHessenServer() throws {
+        let suiteName = "MapOfflineParityTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = SettingsService(defaults: defaults)
+        settings.osmTileURL = "https://tiles.example.org/osm/{z}/{x}/{y}.png"
+        settings.topographicTileURL = "https://tiles.example.org/topo/{z}/{x}/{y}.png"
+        settings.darkTileURL = "https://tiles.example.org/dark/{z}/{x}/{y}.png"
+        settings.vectorStyleOSMURL = "https://tiles.example.org/styles/osm.json"
+        settings.vectorStyleTopographicURL = "https://tiles.example.org/styles/topo.json"
+        settings.vectorStyleDarkURL = "https://tiles.example.org/styles/dark.json"
+
+        for source in MapTileSource.allCases {
+            let offline = MapRuntimeConfiguration.rasterDescriptor(mode: .offline, source: source, settings: settings)
+            let meshHessen = MapRuntimeConfiguration.rasterDescriptor(
+                mode: .meshHessen,
+                source: source,
+                settings: settings
+            )
+            let custom = MapRuntimeConfiguration.rasterDescriptor(mode: .custom, source: source, settings: settings)
+            #expect(offline == meshHessen)
+            #expect(offline.urlTemplate == source.meshHessenRasterURLTemplate)
+            #expect(custom.urlTemplate.hasPrefix("https://tiles.example.org/"))
+
+            let offlineStyle = MapRuntimeConfiguration.vectorStyleURL(mode: .offline, source: source, settings: settings)
+            #expect(offlineStyle == source.meshHessenVectorStyleURL)
+            #expect(
+                MapRuntimeConfiguration.vectorStyleURL(mode: .custom, source: source, settings: settings)
+                    .hasPrefix("https://tiles.example.org/")
+            )
+        }
+    }
 }

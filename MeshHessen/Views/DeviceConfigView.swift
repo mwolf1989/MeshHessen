@@ -50,6 +50,7 @@ private struct NodeAdministrationView: View {
     @State private var pendingAction: AdminNodeAction?
     @State private var pendingActionName = ""
     @State private var showActionConfirmation = false
+    @State private var showNodeDatabaseReset = false
     @State private var loadMode = AdministrationLoadMode.complete
     @State private var loadedSections: Set<AdministrationSection> = []
     @State private var showRemoteLoadChoice = false
@@ -133,6 +134,16 @@ private struct NodeAdministrationView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This command changes or erases state on the selected node and cannot be undone.")
+        }
+        .sheet(isPresented: $showNodeDatabaseReset) {
+            NodeDatabaseResetSheet { removeFavorites in
+                Task {
+                    await run(
+                        .resetNodeDatabase(preserveFavorites: !removeFavorites),
+                        named: String(localized: "Reset NodeDB")
+                    )
+                }
+            }
         }
     }
 
@@ -560,7 +571,7 @@ private struct NodeAdministrationView: View {
                     Button("Apply Mesh Hessen quick configuration") {
                         Task { await quickConfigure() }
                     }
-                    Text("Sets SHORT_SLOW, hop limit 7, EU_868 when the region is unset, and adds the Mesh Hessen channel to the first free slot.")
+                    Text("Sets SHORT_SLOW, EU_868, hop limit 7, TX on, OK to MQTT on and Ignore MQTT off, adds the Mesh Hessen channel to the first free slot, and verifies the result.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -601,8 +612,8 @@ private struct NodeAdministrationView: View {
             }
 
             Section("Reset") {
-                Button("Reset node database (preserve favorites)") {
-                    confirm(.resetNodeDatabase(preserveFavorites: true), named: String(localized: "Reset NodeDB"))
+                Button("Reset node database…") {
+                    showNodeDatabaseReset = true
                 }
                 Button("Reset configuration") {
                     confirm(.resetConfiguration(afterSeconds: 2), named: String(localized: "Reset configuration"))
@@ -753,8 +764,25 @@ private struct NodeAdministrationView: View {
             } else {
                 await loadAll()
             }
+            await verifyQuickConfiguration()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func verifyQuickConfiguration() async {
+        statusMessage = String(localized: "Verifying Mesh Hessen profile…")
+        do {
+            let timeout = Duration.seconds(SettingsService.shared.remoteAdminTimeoutSeconds)
+            let issues = try await coordinator.protocol_.verifyMeshHessenQuickConfiguration(
+                target: target,
+                timeout: timeout
+            )
+            statusMessage = issues.isEmpty
+                ? String(localized: "Mesh Hessen profile verified")
+                : String(localized: "Mesh Hessen profile incomplete: \(issues.joined(separator: ", "))")
+        } catch {
+            statusMessage = String(localized: "Mesh Hessen profile could not be verified: \(error.localizedDescription)")
         }
     }
 
@@ -1128,6 +1156,38 @@ private struct NodeAdministrationView: View {
         .trafficManagement: ["enabled", "position_dedup_enabled", "position_precision_bits", "position_min_interval_secs", "nodeinfo_direct_response", "nodeinfo_direct_response_max_hops", "rate_limit_enabled", "rate_limit_window_secs", "rate_limit_max_packets", "drop_unknown_enabled", "unknown_packet_threshold", "exhaust_hop_telemetry", "exhaust_hop_position", "router_preserve_hops"],
         .tak: ["team", "role"],
     ]
+}
+
+// MARK: - NodeDB reset
+
+/// Windows parity: the NodeDB reset asks whether favorites are wiped as well.
+private struct NodeDatabaseResetSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var removeFavorites = false
+
+    let onConfirm: (_ removeFavorites: Bool) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Reset node database?")
+                .font(.headline)
+            Text("The selected node forgets all known nodes. This cannot be undone.")
+                .foregroundStyle(.secondary)
+            Toggle("Also remove favorites", isOn: $removeFavorites)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Reset NodeDB", role: .destructive) {
+                    onConfirm(removeFavorites)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+    }
 }
 
 // MARK: - Native core configuration forms

@@ -46,7 +46,9 @@ final class MeshtasticProtocolService {
             case .invalidTarget:
                 return String(localized: "The administration target is invalid.")
             case .routingFailed(let error):
-                return String(localized: "The administration request failed: \(error.display).")
+                let message = String(localized: "The administration request failed: \(error.display).")
+                guard let hint = error.adminHint else { return message }
+                return message + "\n\n" + hint
             case .adminTimedOut(let operation):
                 return String(localized: "The node did not answer the administration request: \(operation).")
             case .incompleteResponse(let categories):
@@ -205,8 +207,8 @@ final class MeshtasticProtocolService {
     private let maxPacketLength = 512
 
     // Hardcoded Mesh Hessen PSK (for decryption hint — actual decrypt not implemented)
-    static let meshHessenPSK = "+uTMEaOR7hkqaXv+DROOEd5BhvAIQY/CZ/Hr4soZcOU="
-    static let meshHessenChannelName = "Mesh Hessen"
+    nonisolated static let meshHessenPSK = "+uTMEaOR7hkqaXv+DROOEd5BhvAIQY/CZ/Hr4soZcOU="
+    nonisolated static let meshHessenChannelName = "Mesh Hessen"
 
     init(telemetryDatabase: TelemetryDatabaseService = .shared) {
         self.telemetryDatabase = telemetryDatabase
@@ -2429,8 +2431,10 @@ final class MeshtasticProtocolService {
         return true
     }
 
-    /// Windows parity quick setup: SHORT_SLOW, EU_868 when unset, hop limit 7,
-    /// and the Mesh Hessen channel in the first free secondary slot.
+    /// Windows parity quick setup: SHORT_SLOW, EU_868 (forced: the profile is only
+    /// valid there), hop limit 7, TX on, ok_to_mqtt on, ignore_mqtt off, and the
+    /// Mesh Hessen channel in the first free secondary slot. Does not wait for the
+    /// reboot that follows; use `verifyMeshHessenQuickConfiguration` afterwards.
     @discardableResult
     func applyMeshHessenQuickConfiguration(
         to target: AdminTarget = .local,
@@ -2440,8 +2444,11 @@ final class MeshtasticProtocolService {
         var updated = original
         updated.lora.usePreset = true
         updated.lora.modemPreset = .shortSlow
-        if updated.lora.region == .unset { updated.lora.region = .eu868 }
+        updated.lora.region = .eu868
         updated.lora.hopLimit = 7
+        updated.lora.txEnabled = true
+        updated.lora.configOkToMqtt = true
+        updated.lora.ignoreMqtt = false
 
         let meshPSK = Data(base64Encoded: Self.meshHessenPSK) ?? Data()
         let alreadyPresent = updated.channels.contains { $0.settings.psk == meshPSK }
@@ -2467,6 +2474,53 @@ final class MeshtasticProtocolService {
             to: target,
             timeout: timeout
         )
+    }
+
+    /// Re-reads LoRa and channels and returns the unmet Mesh Hessen profile items
+    /// (empty when the profile is active).
+    func verifyMeshHessenQuickConfiguration(
+        target: AdminTarget = .local,
+        timeout: Duration = .seconds(30)
+    ) async throws -> [String] {
+        var selection = MeshConfigurationRequestSelection.channels
+        selection.configCategories = [.lora]
+        let snapshot = try await requestCompleteConfiguration(from: target, selection: selection, timeout: timeout)
+        return Self.meshHessenProfileIssues(in: snapshot)
+    }
+
+    /// Human-readable profile items the snapshot does not satisfy, mirroring the
+    /// Windows read-back check (`VerifyMeshHessenProfile`).
+    nonisolated static func meshHessenProfileIssues(in snapshot: MeshConfigurationSnapshot) -> [String] {
+        var issues: [String] = []
+        if snapshot.loadedConfigCategories.contains(.lora) {
+            let lora = snapshot.lora
+            if !lora.usePreset || lora.modemPreset != .shortSlow {
+                issues.append(String(localized: "Modem preset is not SHORT_SLOW"))
+            }
+            if lora.region != .eu868 {
+                issues.append(String(localized: "Region is not EU_868"))
+            }
+            if lora.hopLimit != 7 {
+                issues.append(String(localized: "Hop limit is \(lora.hopLimit) instead of 7"))
+            }
+            if !lora.configOkToMqtt {
+                issues.append(String(localized: "OK to MQTT is off"))
+            }
+            if lora.ignoreMqtt {
+                issues.append(String(localized: "Ignore MQTT is on"))
+            }
+        } else {
+            issues.append(String(localized: "LoRa configuration could not be read"))
+        }
+        if snapshot.channelsLoaded {
+            let meshPSK = Data(base64Encoded: meshHessenPSK) ?? Data()
+            if !snapshot.channels.contains(where: { $0.settings.psk == meshPSK }) {
+                issues.append(String(localized: "Mesh Hessen channel is missing"))
+            }
+        } else {
+            issues.append(String(localized: "Channels could not be read"))
+        }
+        return issues
     }
 
     func clearRemoteAdminSession(for nodeID: UInt32) {
@@ -3741,6 +3795,11 @@ final class MeshtasticProtocolService {
         packet.priority = .reliable
 
         let isRemote = fromNodeID != toNodeID
+        if isRemote {
+            // Windows parity: do not rely on the firmware default for remote admin.
+            packet.hopLimit = 7
+            packet.hopStart = 7
+        }
         if isRemote, let targetPublicKey, targetPublicKey.count == 32 {
             packet.channel = 0
             packet.publicKey = targetPublicKey

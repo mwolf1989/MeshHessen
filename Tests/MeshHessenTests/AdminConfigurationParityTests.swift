@@ -91,6 +91,8 @@ struct AdminConfigurationParityTests {
         #expect(packet.channel == 0)
         #expect(packet.wantAck)
         #expect(packet.priority == .reliable)
+        #expect(packet.hopLimit == 7)
+        #expect(packet.hopStart == 7)
     }
 
     @Test("Local admin remains unencrypted even when a target key is supplied")
@@ -110,6 +112,8 @@ struct AdminConfigurationParityTests {
         #expect(packet.channel == 0)
         #expect(packet.wantAck)
         #expect(packet.priority == .reliable)
+        #expect(packet.hopLimit == 0)
+        #expect(packet.hopStart == 0)
     }
 
     @Test("Remote admin without a valid key uses the configured admin channel or primary fallback")
@@ -138,6 +142,8 @@ struct AdminConfigurationParityTests {
         #expect(adminChannelPacket.publicKey.isEmpty)
         #expect(!primaryFallbackPacket.pkiEncrypted)
         #expect(primaryFallbackPacket.channel == 0)
+        #expect(adminChannelPacket.hopLimit == 7)
+        #expect(primaryFallbackPacket.hopStart == 7)
     }
 
     @Test("Routing NACKs correlate only with their pending admin packet ID")
@@ -170,6 +176,64 @@ struct AdminConfigurationParityTests {
             error: .pkiFailed
         )
         #expect(!finishedMatched)
+    }
+
+    @Test("Rejected remote-admin requests carry a remediation hint")
+    func remoteAdminHints() {
+        let hinted: [RoutingError] = [.adminPublicKeyUnauthorized, .pkiFailed, .pkiUnknownPubkey, .maxRetransmit, .noRoute]
+        for error in hinted {
+            #expect(error.adminHint != nil, "missing hint for \(error)")
+        }
+        #expect(RoutingError.adminPublicKeyUnauthorized.adminHint != RoutingError.pkiFailed.adminHint)
+        #expect(RoutingError.pkiFailed.adminHint == RoutingError.pkiUnknownPubkey.adminHint)
+        #expect(RoutingError.maxRetransmit.adminHint == RoutingError.noRoute.adminHint)
+        #expect(RoutingError.tooLarge.adminHint == nil)
+        #expect(RoutingError.none.adminHint == nil)
+
+        let description = MeshtasticProtocolService.DeviceConfigError
+            .routingFailed(.adminPublicKeyUnauthorized)
+            .errorDescription ?? ""
+        #expect(description.hasSuffix(RoutingError.adminPublicKeyUnauthorized.adminHint ?? "<missing>"))
+        let plain = MeshtasticProtocolService.DeviceConfigError.routingFailed(.tooLarge).errorDescription ?? ""
+        #expect(!plain.contains("\n"))
+    }
+
+    @Test("Mesh Hessen profile verification lists every unmet item")
+    func meshHessenProfileVerification() throws {
+        var compliant = MeshConfigurationSnapshot()
+        compliant.loadedConfigCategories = [.lora]
+        compliant.channelsLoaded = true
+        compliant.lora.usePreset = true
+        compliant.lora.modemPreset = .shortSlow
+        compliant.lora.region = .eu868
+        compliant.lora.hopLimit = 7
+        compliant.lora.txEnabled = true
+        compliant.lora.configOkToMqtt = true
+        compliant.lora.ignoreMqtt = false
+        var channel = Meshtastic_Channel()
+        channel.index = 1
+        channel.role = .secondary
+        channel.settings.name = MeshtasticProtocolService.meshHessenChannelName
+        channel.settings.psk = try #require(Data(base64Encoded: MeshtasticProtocolService.meshHessenPSK))
+        compliant.channels = [channel]
+
+        #expect(MeshtasticProtocolService.meshHessenProfileIssues(in: compliant).isEmpty)
+
+        var nonCompliant = compliant
+        nonCompliant.lora.modemPreset = .longFast
+        nonCompliant.lora.region = .us
+        nonCompliant.lora.hopLimit = 3
+        nonCompliant.lora.configOkToMqtt = false
+        nonCompliant.lora.ignoreMqtt = true
+        nonCompliant.channels = []
+        #expect(MeshtasticProtocolService.meshHessenProfileIssues(in: nonCompliant).count == 6)
+
+        var customPreset = compliant
+        customPreset.lora.usePreset = false
+        #expect(MeshtasticProtocolService.meshHessenProfileIssues(in: customPreset).count == 1)
+
+        let unread = MeshConfigurationSnapshot()
+        #expect(MeshtasticProtocolService.meshHessenProfileIssues(in: unread).count == 2)
     }
 
     @Test("Local and remote target validation rejects broadcast and unknown IDs")

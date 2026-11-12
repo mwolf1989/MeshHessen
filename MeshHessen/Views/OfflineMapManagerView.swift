@@ -26,20 +26,7 @@ struct OfflineMapManagerView: View {
     }
 
     private var descriptor: MapTileSourceDescriptor {
-        switch settings.mapMode {
-        case .meshHessen:
-            return .init(source: source, urlTemplate: source.meshHessenRasterURLTemplate)
-        case .publicOpenStreetMap:
-            return .init(source: .osm, urlTemplate: settings.publicOSMTileURL)
-        case .custom, .offline:
-            let template: String
-            switch source {
-            case .osm: template = settings.osmTileURL
-            case .topographic: template = settings.topographicTileURL
-            case .dark: template = settings.darkTileURL
-            }
-            return .init(source: source, urlTemplate: template)
-        }
+        MapRuntimeConfiguration.rasterDescriptor(mode: settings.mapMode, source: source, settings: settings)
     }
 
     private var estimate: Int {
