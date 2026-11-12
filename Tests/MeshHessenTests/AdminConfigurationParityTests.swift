@@ -198,6 +198,44 @@ struct AdminConfigurationParityTests {
         #expect(!plain.contains("\n"))
     }
 
+    @Test("Mesh Hessen profile verification lists every unmet item")
+    func meshHessenProfileVerification() throws {
+        var compliant = MeshConfigurationSnapshot()
+        compliant.loadedConfigCategories = [.lora]
+        compliant.channelsLoaded = true
+        compliant.lora.usePreset = true
+        compliant.lora.modemPreset = .shortSlow
+        compliant.lora.region = .eu868
+        compliant.lora.hopLimit = 7
+        compliant.lora.txEnabled = true
+        compliant.lora.configOkToMqtt = true
+        compliant.lora.ignoreMqtt = false
+        var channel = Meshtastic_Channel()
+        channel.index = 1
+        channel.role = .secondary
+        channel.settings.name = MeshtasticProtocolService.meshHessenChannelName
+        channel.settings.psk = try #require(Data(base64Encoded: MeshtasticProtocolService.meshHessenPSK))
+        compliant.channels = [channel]
+
+        #expect(MeshtasticProtocolService.meshHessenProfileIssues(in: compliant).isEmpty)
+
+        var nonCompliant = compliant
+        nonCompliant.lora.modemPreset = .longFast
+        nonCompliant.lora.region = .us
+        nonCompliant.lora.hopLimit = 3
+        nonCompliant.lora.configOkToMqtt = false
+        nonCompliant.lora.ignoreMqtt = true
+        nonCompliant.channels = []
+        #expect(MeshtasticProtocolService.meshHessenProfileIssues(in: nonCompliant).count == 6)
+
+        var customPreset = compliant
+        customPreset.lora.usePreset = false
+        #expect(MeshtasticProtocolService.meshHessenProfileIssues(in: customPreset).count == 1)
+
+        let unread = MeshConfigurationSnapshot()
+        #expect(MeshtasticProtocolService.meshHessenProfileIssues(in: unread).count == 2)
+    }
+
     @Test("Local and remote target validation rejects broadcast and unknown IDs")
     func targetValidation() {
         #expect(AdminTarget.local.destination(localNodeID: 0x1234) == 0x1234)

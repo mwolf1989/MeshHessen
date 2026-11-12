@@ -571,7 +571,7 @@ private struct NodeAdministrationView: View {
                     Button("Apply Mesh Hessen quick configuration") {
                         Task { await quickConfigure() }
                     }
-                    Text("Sets SHORT_SLOW, hop limit 7, EU_868 when the region is unset, and adds the Mesh Hessen channel to the first free slot.")
+                    Text("Sets SHORT_SLOW, EU_868, hop limit 7, TX on, OK to MQTT on and Ignore MQTT off, adds the Mesh Hessen channel to the first free slot, and verifies the result.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -764,8 +764,25 @@ private struct NodeAdministrationView: View {
             } else {
                 await loadAll()
             }
+            await verifyQuickConfiguration()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func verifyQuickConfiguration() async {
+        statusMessage = String(localized: "Verifying Mesh Hessen profile…")
+        do {
+            let timeout = Duration.seconds(SettingsService.shared.remoteAdminTimeoutSeconds)
+            let issues = try await coordinator.protocol_.verifyMeshHessenQuickConfiguration(
+                target: target,
+                timeout: timeout
+            )
+            statusMessage = issues.isEmpty
+                ? String(localized: "Mesh Hessen profile verified")
+                : String(localized: "Mesh Hessen profile incomplete: \(issues.joined(separator: ", "))")
+        } catch {
+            statusMessage = String(localized: "Mesh Hessen profile could not be verified: \(error.localizedDescription)")
         }
     }
 
