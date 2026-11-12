@@ -91,6 +91,7 @@ struct EmojiPickerView: View {
 /// Shows reaction pills below a message bubble
 struct ReactionPillsView: View {
     let reactions: [String: [UInt32]]
+    var nameForNode: ((UInt32) -> String)? = nil
 
     var body: some View {
         if !reactions.isEmpty {
@@ -108,9 +109,16 @@ struct ReactionPillsView: View {
                     .padding(.vertical, 2)
                     .background(Color.secondary.opacity(0.15))
                     .clipShape(Capsule())
+                    .help(tooltip(emoji: emoji, senders: senders))
                 }
             }
         }
+    }
+
+    private func tooltip(emoji: String, senders: [UInt32]) -> String {
+        guard let nameForNode else { return "" }
+        let names = senders.map(nameForNode)
+        return "\(emoji)  \(names.joined(separator: ", "))"
     }
 }
 
@@ -280,7 +288,9 @@ struct MessageBubbleView: View {
             }
 
             // Reaction pills
-            ReactionPillsView(reactions: message.reactionsByEmoji)
+            ReactionPillsView(reactions: message.reactionsByEmoji) { nodeId in
+                appState.node(forId: nodeId)?.name ?? String(format: "!%08x", nodeId)
+            }
 
             if let receptionSummary {
                 Label(receptionSummary.text, systemImage: receptionSummary.symbol)
