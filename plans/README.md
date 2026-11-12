@@ -14,12 +14,12 @@ Generated on 2026-11-12 by a feature-gap audit of the Windows client against thi
 | [001](001-channel-owner-clone-and-byte-limits.md) | Channel/owner writes never drop device fields; UTF-8 byte limits | P1 | M | MED | — | DONE (reviewed) — merged into `main` from `fix/001-channel-owner-clone` |
 | [002](002-protobuf-v2.8.2-and-firmware-capabilities.md) | Protobufs v2.8.2 + firmware capability gate | P1 | S–M | MED | — | DONE (reviewed) — merged into `main` from `chore/002-protobuf-2.8.2` |
 | [003](003-pki-aes-ccm-decryption.md) | PKI decryption uses AES-256-CCM | P1 | M | MED | — | DONE (reviewed) — merged into `main` from `fix/003-pki-aes-ccm` |
-| [004](004-node-position-retention.md) | Node positions survive NodeInfo broadcasts and restarts | P1 | M | LOW–MED | — | TODO |
-| [005](005-telemetry-data-correctness.md) | Direct-RF-only signal series, requests ≠ results, chart scales | P1 | M | LOW | — | TODO |
+| [004](004-node-position-retention.md) | Node positions survive NodeInfo broadcasts and restarts | P1 | M | LOW–MED | — | DONE (reviewed) — merged into `main` from `fix/004-node-position-retention` |
+| [005](005-telemetry-data-correctness.md) | Direct-RF-only signal series, requests ≠ results, chart scales | P1 | M | LOW | — | DONE (reviewed) — merged into `main` from `fix/005-telemetry-data-correctness` |
 | [006](006-messaging-quick-fixes.md) | Eight messaging fixes (BEL, Enter, scroll, names, …) | P1 | M | LOW | — | DONE (reviewed) — merged into `main` from `fix/006-messaging-quick-fixes` |
 | [007](007-virtual-node-two-stage-config.md) | Virtual Node two-stage config nonces | P2 | S | LOW | — | DONE (reviewed) — merged into `main` from `fix/007-virtual-node-two-stage` |
-| [008](008-link-watchdog-and-handshake-metadata.md) | Link watchdog, heartbeat on BLE, metadata, ClientNotification | P1 | M | MED | — | TODO |
-| [009](009-map-and-admin-polish.md) | Offline map source, NodeDB reset, admin hints, quick config | P2 | M | LOW–MED | — | TODO |
+| [008](008-link-watchdog-and-handshake-metadata.md) | Link watchdog, heartbeat on BLE, metadata, ClientNotification | P1 | M | MED | — | DONE (reviewed) — merged into `main` from `fix/008-link-watchdog-metadata` |
+| [009](009-map-and-admin-polish.md) | Offline map source, NodeDB reset, admin hints, quick config | P2 | M | LOW–MED | — | DONE (reviewed) — merged into `main` from `fix/009-map-and-admin-polish` |
 | [010](010-firmware-2.8-small-features.md) | FW 2.8: signed ACKs, signature policy, heard flag, AEAD badge, presets | P2 | M | LOW | 002 | TODO |
 | [011](011-module-forms-and-mesh-beacon.md) | Six native module forms + Mesh Beacon | P2 | M–L | LOW–MED | 002, 001 | TODO |
 | [012](012-node-status.md) | Node status (port 36): show, remember, set | P2 | M | LOW | 001 | TODO |
@@ -54,6 +54,15 @@ Learnings that affect later plans:
 - **006**: a fourth alert-bell sender (`MeshtasticProtocolService.sendSOSAlert`, used by App Intents) was missed by the plan and fixed in a revision. Shift+Enter appends the newline at the end of the text, not at the cursor.
 - **007**: the own-node fallback is implemented and tested but not wired: `VirtualNodeService` (an actor) cannot reach `AppState`; follow-up = a setter on the actor fed from `AppCoordinator`.
 - Running several executors at once makes the first `swift build` in each fresh worktree slow or flaky (parallel clones of swift-protobuf's submodules); retrying works.
+
+2026-11-12 (second wave) — plans 004, 005, 008, 009 executed the same way and reviewed. Merged into `main` one at a time (`89c4bc0`, `c6c14e4`, `313e761`, `4203e31`); the only conflict (008 vs 004 in `MeshtasticProtocolService.swift`: new stored properties and `disconnect()`) was resolved by keeping both sides. The combined result builds (`swift build`, `xcodebuild` Debug) and `swift test` passes with 346 tests in 48 suites. Nothing was verified on hardware or in the running app.
+
+Learnings that affect later plans:
+- **004**: new SQLite tables added to `telemetryTableNames` must also update the hard-coded table count and the "every table populated" clear test in `TelemetryDashboardParityTests.swift` (plan 022 will hit this). Clearing telemetry also deletes `node_positions` (read by 022/029). Only exact 0/0 counts as "no position". `viaMqtt` is now taken only from NodeDB snapshots in `AppState.upsertNode`; live packets set it directly.
+- **005**: `TelemetryDatabaseService.signalSamples(snr:rssi:hopCount:viaMqtt:)` is the reusable direct-RF filter; `packet_count` is written as a side effect of `insertSamples(variant: "packet")`, so it is still called with empty signal values. `MeshtasticProtocolService.isIncomingRequest` (top of `handleTraceroutePacket`/`handleTelemetry`) is the hook plan 017 replaces with its classifier; it needs `myNodeId != 0`. Charts now auto-scale unless the user sets a range (`explicitDisplayRange`); the gauge still uses `effectiveDisplayRange` (plan 019).
+- **008**: hooks for 014/024/025 are `protocol_.deviceMetadata`, `myNodeInfo.pioEnv/hardwareModelRaw/hasWifi/hasBluetooth` and `protocol_.onClientNotification` (not yet wired in `AppCoordinator`). Caches are cleared on `initialize()` and `disconnect()`. `myNodeInfo` can now exist with empty names. Heartbeat runs on all transports every 300 s and a stale link triggers an automatic reconnect — **plans 025/026 must suppress `onLinkStale` or stop the heartbeat while flashing.** Virtual Node frames do not feed the watchdog.
+- **009**: `meshHessenPSK`/`meshHessenChannelName` are now `nonisolated static`. Quick configuration verifies by re-reading LoRa + channels only. Old string-catalog keys are left in place and show as stale in Xcode. Windows' double LoRa write for the `ignore_mqtt` coercion was deliberately not ported. `SettingsService(defaults:)` with a UUID-named suite works in tests.
+- The first `swift build` in a fresh worktree took ~10 min (full clone of protocolbuffers/protobuf); the worktree guard rejects chained git commands, so executors should run git commands one per call.
 
 ## Suggested waves
 
