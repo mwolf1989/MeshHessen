@@ -165,6 +165,9 @@ enum ConnectionError: LocalizedError {
     case timeout
     /// Permanent OS-level denial (e.g. sandbox EPERM on serial port). Retrying is pointless.
     case notPermitted
+    /// The Meshtastic GATT service is missing on the BLE peripheral (often a stale
+    /// pairing after a firmware update). Retrying without user action is pointless.
+    case serviceNotFound
 
     var errorDescription: String? {
         switch self {
@@ -173,13 +176,15 @@ enum ConnectionError: LocalizedError {
         case .cancelled:         return String(localized: "Connection cancelled")
         case .timeout:           return String(localized: "Connection timed out")
         case .notPermitted:      return String(localized: "Serial port access denied. Please re-plug the device and grant access in System Settings → Privacy & Security.")
+        case .serviceNotFound:
+            return String(localized: "The Meshtastic Bluetooth service was not found on this device. If the node's firmware was updated, remove it under System Settings → Bluetooth (Forget This Device) and connect again.")
         }
     }
 
     /// True for errors that are permanent and should not trigger auto-reconnect.
     var isPermanent: Bool {
         switch self {
-        case .notPermitted, .invalidParameters: return true
+        case .notPermitted, .invalidParameters, .serviceNotFound: return true
         case .notConnected, .cancelled, .timeout: return false
         }
     }
