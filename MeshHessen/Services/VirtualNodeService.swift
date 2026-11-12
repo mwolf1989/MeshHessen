@@ -15,7 +15,13 @@ struct VirtualNodeReplayCache: Sendable {
         let isReady: Bool
     }
 
+    /// `want_config_id` of a phone app's handshake stage 1: everything except nodes.
+    static let configOnlyNonce: UInt32 = 69420
+    /// `want_config_id` of a phone app's handshake stage 2: node infos only.
+    static let nodesOnlyNonce: UInt32 = 69421
+
     private var myInfoFrame: Data?
+    private var myNodeNum: UInt32?
     private var metadataFrame: Data?
     private var channelFrames: [Int32: Data] = [:]
     private var configFrames: [Int: Data] = [:]
@@ -44,8 +50,9 @@ struct VirtualNodeReplayCache: Sendable {
         }
 
         switch fromRadio.payloadVariant {
-        case .myInfo?:
+        case .myInfo(let myInfo)?:
             myInfoFrame = framedData
+            myNodeNum = myInfo.myNodeNum
         case .metadata?:
             metadataFrame = framedData
         case .channel(let channel)?:
@@ -69,14 +76,38 @@ struct VirtualNodeReplayCache: Sendable {
         return true
     }
 
-    func replayFrames(wantConfigID: UInt32) throws -> [Data] {
+    /// Builds the reply to a client's `WantConfigId`.
+    ///
+    /// Meshtastic phone apps run a two-stage handshake with fixed nonces
+    /// (firmware `PhoneAPI.h`): `configOnlyNonce` asks for my_info, metadata,
+    /// configs, module configs and channels without nodes; `nodesOnlyNonce`
+    /// asks for node infos only. Sending my_info in stage 2 makes the app
+    /// restart its handshake. Any other nonce receives the full dump.
+    ///
+    /// - Parameter ownNodeFallback: Used as the own node's `NodeInfo` when node
+    ///   frames are part of the reply and the radio never sent one for itself.
+    func replayFrames(
+        wantConfigID: UInt32,
+        ownNodeFallback: Meshtastic_NodeInfo? = nil
+    ) throws -> [Data] {
         var frames: [Data] = []
-        if let myInfoFrame { frames.append(myInfoFrame) }
-        if let metadataFrame { frames.append(metadataFrame) }
-        frames.append(contentsOf: channelFrames.sorted { $0.key < $1.key }.map(\.value))
-        frames.append(contentsOf: configFrames.sorted { $0.key < $1.key }.map(\.value))
-        frames.append(contentsOf: moduleConfigFrames.sorted { $0.key < $1.key }.map(\.value))
-        frames.append(contentsOf: nodeFrames.sorted { $0.key < $1.key }.map(\.value))
+        switch wantConfigID {
+        case Self.configOnlyNonce:
+            if let myInfoFrame { frames.append(myInfoFrame) }
+            if let metadataFrame { frames.append(metadataFrame) }
+            frames.append(contentsOf: configFrames.sorted { $0.key < $1.key }.map(\.value))
+            frames.append(contentsOf: moduleConfigFrames.sorted { $0.key < $1.key }.map(\.value))
+            frames.append(contentsOf: channelFrames.sorted { $0.key < $1.key }.map(\.value))
+        case Self.nodesOnlyNonce:
+            frames.append(contentsOf: try nodeReplayFrames(ownNodeFallback: ownNodeFallback))
+        default:
+            if let myInfoFrame { frames.append(myInfoFrame) }
+            if let metadataFrame { frames.append(metadataFrame) }
+            frames.append(contentsOf: channelFrames.sorted { $0.key < $1.key }.map(\.value))
+            frames.append(contentsOf: configFrames.sorted { $0.key < $1.key }.map(\.value))
+            frames.append(contentsOf: moduleConfigFrames.sorted { $0.key < $1.key }.map(\.value))
+            frames.append(contentsOf: try nodeReplayFrames(ownNodeFallback: ownNodeFallback))
+        }
 
         var completion = Meshtastic_FromRadio()
         completion.configCompleteID = wantConfigID
@@ -84,8 +115,22 @@ struct VirtualNodeReplayCache: Sendable {
         return frames
     }
 
+    private func nodeReplayFrames(ownNodeFallback: Meshtastic_NodeInfo?) throws -> [Data] {
+        var frames = nodeFrames.sorted { $0.key < $1.key }.map(\.value)
+        if let myNodeNum,
+           nodeFrames[myNodeNum] == nil,
+           var ownNode = ownNodeFallback {
+            ownNode.num = myNodeNum
+            var envelope = Meshtastic_FromRadio()
+            envelope.nodeInfo = ownNode
+            frames.append(try MeshtasticStreamFrameCodec.frame(envelope.serializedData()))
+        }
+        return frames
+    }
+
     mutating func removeAll() {
         myInfoFrame = nil
+        myNodeNum = nil
         metadataFrame = nil
         channelFrames.removeAll(keepingCapacity: true)
         configFrames.removeAll(keepingCapacity: true)
@@ -546,7 +591,11 @@ actor VirtualNodeService {
     }
 
     private func sendReplay(to id: UUID, wantConfigID: UInt32) async {
-        guard let frames = try? replayCache.replayFrames(wantConfigID: wantConfigID) else { return }
+        // The own-node fallback needs AppState, which this actor cannot reach.
+        guard let frames = try? replayCache.replayFrames(
+            wantConfigID: wantConfigID,
+            ownNodeFallback: nil
+        ) else { return }
         for frame in frames {
             guard await send(frame, to: id) else { return }
             await pace()

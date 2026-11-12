@@ -163,6 +163,172 @@ struct VirtualNodeReplayCacheTests {
         #expect(nodeEnvelope.nodeInfo.lastHeard == 2)
     }
 
+    @Test("Stage 1 nonce replays configuration without node infos")
+    func configOnlyStage() throws {
+        let cache = try populatedCache()
+        let envelopes = try replayEnvelopes(
+            cache,
+            wantConfigID: VirtualNodeReplayCache.configOnlyNonce
+        )
+
+        #expect(VirtualNodeReplayCache.configOnlyNonce == 69420)
+        #expect(envelopes.count == 7)
+        #expect(envelopes.filter(isMyInfo).count == 1)
+        #expect(envelopes[0].myInfo.myNodeNum == ownNodeNumber)
+        #expect(envelopes[1].metadata.firmwareVersion == "2.7.0")
+        #expect(envelopes.filter { if case .config? = $0.payloadVariant { true } else { false } }.count == 1)
+        #expect(envelopes.filter { if case .moduleConfig? = $0.payloadVariant { true } else { false } }.count == 1)
+        #expect(envelopes.filter { if case .channel? = $0.payloadVariant { true } else { false } }.count == 2)
+        #expect(envelopes.filter(isNodeInfo).isEmpty)
+        #expect(envelopes.last?.configCompleteID == 69420)
+    }
+
+    @Test("Stage 2 nonce replays node infos only")
+    func nodesOnlyStage() throws {
+        let cache = try populatedCache()
+        let envelopes = try replayEnvelopes(
+            cache,
+            wantConfigID: VirtualNodeReplayCache.nodesOnlyNonce
+        )
+
+        #expect(VirtualNodeReplayCache.nodesOnlyNonce == 69421)
+        #expect(envelopes.count == 3)
+        #expect(envelopes.dropLast().allSatisfy(isNodeInfo))
+        #expect(envelopes.dropLast().map(\.nodeInfo.num) == [4, 99])
+        #expect(envelopes.allSatisfy { !isMyInfo($0) })
+        #expect(envelopes.last?.configCompleteID == 69421)
+    }
+
+    @Test("Other nonces still receive the full dump")
+    func genericNonceFullDump() throws {
+        let cache = try populatedCache()
+        let envelopes = try replayEnvelopes(cache, wantConfigID: 12345)
+
+        // my_info, metadata, 2 channels, 1 config, 1 module config, 2 nodes, completion.
+        #expect(envelopes.count == 9)
+        #expect(envelopes[0].myInfo.myNodeNum == ownNodeNumber)
+        #expect(envelopes[6].nodeInfo.num == 4)
+        #expect(envelopes[7].nodeInfo.num == 99)
+        #expect(envelopes.last?.configCompleteID == 12345)
+    }
+
+    @Test("A missing own node is synthesised once from the fallback")
+    func ownNodeFallback() throws {
+        var fallback = Meshtastic_NodeInfo()
+        fallback.num = ownNodeNumber
+        fallback.user.id = String(format: "!%08x", ownNodeNumber)
+        fallback.user.longName = "Mac Node"
+        fallback.user.shortName = "MAC"
+
+        let missingOwn = try populatedCache()
+        for nonce in [VirtualNodeReplayCache.nodesOnlyNonce, 12345] {
+            let envelopes = try replayEnvelopes(missingOwn, wantConfigID: nonce, ownNodeFallback: fallback)
+            let ownNodes = envelopes.filter { isNodeInfo($0) && $0.nodeInfo.num == ownNodeNumber }
+            #expect(ownNodes.count == 1)
+            #expect(ownNodes.first?.nodeInfo.user.id == "!01020304")
+            #expect(ownNodes.first?.nodeInfo.user.longName == "Mac Node")
+            #expect(envelopes.filter(isNodeInfo).count == 3)
+        }
+
+        let stageOne = try replayEnvelopes(
+            missingOwn,
+            wantConfigID: VirtualNodeReplayCache.configOnlyNonce,
+            ownNodeFallback: fallback
+        )
+        #expect(stageOne.filter(isNodeInfo).isEmpty)
+
+        var withOwn = missingOwn
+        var ownNode = Meshtastic_NodeInfo()
+        ownNode.num = ownNodeNumber
+        ownNode.user.longName = "Radio Node"
+        var ownEnvelope = Meshtastic_FromRadio()
+        ownEnvelope.nodeInfo = ownNode
+        #expect(try ingest(ownEnvelope, into: &withOwn))
+
+        let envelopes = try replayEnvelopes(
+            withOwn,
+            wantConfigID: VirtualNodeReplayCache.nodesOnlyNonce,
+            ownNodeFallback: fallback
+        )
+        let ownNodes = envelopes.filter { isNodeInfo($0) && $0.nodeInfo.num == ownNodeNumber }
+        #expect(ownNodes.count == 1)
+        #expect(ownNodes.first?.nodeInfo.user.longName == "Radio Node")
+        #expect(envelopes.filter(isNodeInfo).count == 3)
+    }
+
+    private let ownNodeNumber: UInt32 = 0x01020304
+
+    /// my_info, metadata, two channels, one config, one module config and two
+    /// foreign nodes (4 and 99); the own node has no NodeInfo frame.
+    private func populatedCache() throws -> VirtualNodeReplayCache {
+        var cache = VirtualNodeReplayCache()
+
+        var myInfo = Meshtastic_MyNodeInfo()
+        myInfo.myNodeNum = ownNodeNumber
+        var myInfoEnvelope = Meshtastic_FromRadio()
+        myInfoEnvelope.myInfo = myInfo
+        #expect(try ingest(myInfoEnvelope, into: &cache))
+
+        var metadata = Meshtastic_DeviceMetadata()
+        metadata.firmwareVersion = "2.7.0"
+        var metadataEnvelope = Meshtastic_FromRadio()
+        metadataEnvelope.metadata = metadata
+        #expect(try ingest(metadataEnvelope, into: &cache))
+
+        for index: Int32 in [3, 0] {
+            var channel = Meshtastic_Channel()
+            channel.index = index
+            var envelope = Meshtastic_FromRadio()
+            envelope.channel = channel
+            #expect(try ingest(envelope, into: &cache))
+        }
+
+        var config = Meshtastic_Config()
+        config.device = Meshtastic_Config.DeviceConfig()
+        var configEnvelope = Meshtastic_FromRadio()
+        configEnvelope.config = config
+        #expect(try ingest(configEnvelope, into: &cache))
+
+        var moduleConfig = Meshtastic_ModuleConfig()
+        moduleConfig.mqtt = Meshtastic_ModuleConfig.MQTTConfig()
+        var moduleConfigEnvelope = Meshtastic_FromRadio()
+        moduleConfigEnvelope.moduleConfig = moduleConfig
+        #expect(try ingest(moduleConfigEnvelope, into: &cache))
+
+        for nodeNumber: UInt32 in [99, 4] {
+            var node = Meshtastic_NodeInfo()
+            node.num = nodeNumber
+            var envelope = Meshtastic_FromRadio()
+            envelope.nodeInfo = node
+            #expect(try ingest(envelope, into: &cache))
+        }
+
+        var physicalCompletion = Meshtastic_FromRadio()
+        physicalCompletion.configCompleteID = 7
+        #expect(try !ingest(physicalCompletion, into: &cache))
+        return cache
+    }
+
+    private func isMyInfo(_ envelope: Meshtastic_FromRadio) -> Bool {
+        if case .myInfo? = envelope.payloadVariant { return true }
+        return false
+    }
+
+    private func isNodeInfo(_ envelope: Meshtastic_FromRadio) -> Bool {
+        if case .nodeInfo? = envelope.payloadVariant { return true }
+        return false
+    }
+
+    private func replayEnvelopes(
+        _ cache: VirtualNodeReplayCache,
+        wantConfigID: UInt32,
+        ownNodeFallback: Meshtastic_NodeInfo? = nil
+    ) throws -> [Meshtastic_FromRadio] {
+        try cache.replayFrames(wantConfigID: wantConfigID, ownNodeFallback: ownNodeFallback).map {
+            try Meshtastic_FromRadio(serializedBytes: MeshtasticStreamFrameCodec.payload(from: $0))
+        }
+    }
+
     private func ingest(
         _ envelope: Meshtastic_FromRadio,
         into cache: inout VirtualNodeReplayCache
