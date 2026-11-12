@@ -997,6 +997,7 @@ private struct NodeAdministrationView: View {
         case .statusmessage: return .statusMessage
         case .trafficManagement: return .trafficManagement
         case .tak: return .tak
+        case .meshBeacon: return nil
         case nil: return nil
         }
     }

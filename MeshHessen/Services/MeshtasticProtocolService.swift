@@ -554,6 +554,10 @@ final class MeshtasticProtocolService {
         case .fileInfo: variant = "fileInfo"
         case .clientNotification: variant = "clientNotification"
         case .deviceuiConfig: variant = "deviceuiConfig"
+        case .lockdownStatus: variant = "lockdownStatus"
+        case .regionPresets: variant = "regionPresets"
+        case .displayFrame: variant = "displayFrame"
+        case .displayPalette: variant = "displayPalette"
         case .none: variant = "none"
         }
         AppLogger.shared.log("[Protocol] FromRadio: \(variant)", debug: true)
@@ -1364,6 +1368,8 @@ final class MeshtasticProtocolService {
             receivedModuleConfigs[MeshModuleConfigCategory.trafficManagement.rawValue] = moduleConfig
         case .tak:
             receivedModuleConfigs[MeshModuleConfigCategory.tak.rawValue] = moduleConfig
+        case .meshBeacon:
+            AppLogger.shared.log("[Protocol] ModuleConfig: MeshBeacon (not handled)", debug: SettingsService.shared.debugDevice)
         case nil:
             AppLogger.shared.log("[Protocol] ModuleConfig received (empty)", debug: SettingsService.shared.debugDevice)
         }
@@ -2494,6 +2500,7 @@ final class MeshtasticProtocolService {
         case .statusmessage: return .statusMessage
         case .trafficManagement: return .trafficManagement
         case .tak: return .tak
+        case .meshBeacon: return nil
         case nil: return nil
         }
     }
@@ -2916,6 +2923,12 @@ final class MeshtasticProtocolService {
                 ),
                 latitude: lat,
                 longitude: lon
+            )
+
+        case .soilWaterMetrics:
+            AppLogger.shared.log(
+                "[Protocol] SoilWaterMetrics from \(nodeDisplayName(packet.from)) (not handled)",
+                debug: SettingsService.shared.debugDevice
             )
 
         case nil:
