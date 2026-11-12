@@ -11,13 +11,13 @@ Generated on 2026-11-12 by a feature-gap audit of the Windows client against thi
 
 | Plan | Title | Prio | Effort | Risk | Depends on | Status |
 |------|-------|------|--------|------|------------|--------|
-| [001](001-channel-owner-clone-and-byte-limits.md) | Channel/owner writes never drop device fields; UTF-8 byte limits | P1 | M | MED | — | TODO |
-| [002](002-protobuf-v2.8.2-and-firmware-capabilities.md) | Protobufs v2.8.2 + firmware capability gate | P1 | S–M | MED | — | TODO |
-| [003](003-pki-aes-ccm-decryption.md) | PKI decryption uses AES-256-CCM | P1 | M | MED | — | TODO |
+| [001](001-channel-owner-clone-and-byte-limits.md) | Channel/owner writes never drop device fields; UTF-8 byte limits | P1 | M | MED | — | DONE (reviewed) — merged into `main` from `fix/001-channel-owner-clone` |
+| [002](002-protobuf-v2.8.2-and-firmware-capabilities.md) | Protobufs v2.8.2 + firmware capability gate | P1 | S–M | MED | — | DONE (reviewed) — merged into `main` from `chore/002-protobuf-2.8.2` |
+| [003](003-pki-aes-ccm-decryption.md) | PKI decryption uses AES-256-CCM | P1 | M | MED | — | DONE (reviewed) — merged into `main` from `fix/003-pki-aes-ccm` |
 | [004](004-node-position-retention.md) | Node positions survive NodeInfo broadcasts and restarts | P1 | M | LOW–MED | — | TODO |
 | [005](005-telemetry-data-correctness.md) | Direct-RF-only signal series, requests ≠ results, chart scales | P1 | M | LOW | — | TODO |
-| [006](006-messaging-quick-fixes.md) | Eight messaging fixes (BEL, Enter, scroll, names, …) | P1 | M | LOW | — | TODO |
-| [007](007-virtual-node-two-stage-config.md) | Virtual Node two-stage config nonces | P2 | S | LOW | — | TODO |
+| [006](006-messaging-quick-fixes.md) | Eight messaging fixes (BEL, Enter, scroll, names, …) | P1 | M | LOW | — | DONE (reviewed) — merged into `main` from `fix/006-messaging-quick-fixes` |
+| [007](007-virtual-node-two-stage-config.md) | Virtual Node two-stage config nonces | P2 | S | LOW | — | DONE (reviewed) — merged into `main` from `fix/007-virtual-node-two-stage` |
 | [008](008-link-watchdog-and-handshake-metadata.md) | Link watchdog, heartbeat on BLE, metadata, ClientNotification | P1 | M | MED | — | TODO |
 | [009](009-map-and-admin-polish.md) | Offline map source, NodeDB reset, admin hints, quick config | P2 | M | LOW–MED | — | TODO |
 | [010](010-firmware-2.8-small-features.md) | FW 2.8: signed ACKs, signature policy, heard flag, AEAD badge, presets | P2 | M | LOW | 002 | TODO |
@@ -42,6 +42,18 @@ Generated on 2026-11-12 by a feature-gap audit of the Windows client against thi
 | [029](029-triangulation.md) | Position triangulation (easter egg) | P3 | L | LOW | 004, 022, (028) | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale). Dependencies in parentheses are soft.
+
+## Execution log
+
+2026-11-12 — plans 001, 002, 003, 006, 007 executed by Opus 5.5 executors in isolated worktrees and reviewed (done criteria re-run, diffs and tests read). The five branches were then merged into `main` (merge commits `b6bdf50` … `874ba8f`) without conflicts; the combined result builds (`swift build`, `xcodebuild` Debug) and `swift test` passes with 301 tests in 44 suites. Nothing was verified on hardware or in the running app.
+
+Learnings that affect later plans:
+- **002**: upstream protos carry `option swift_prefix = "";`, which strips the `Meshtastic_` prefix and collides with app types. The option is deleted from every copied proto (documented in `MeshHessen/Proto/README.md`). New oneof cases (`meshBeacon`, `soilWaterMetrics`, display frames) currently have neutral branches — plans 011, 013, 014 must replace them. `VirtualNodeService` does not cache MeshBeacon module-config frames for replay yet (plan 011 should add key 17). New files under `MeshHessen/Proto/` must be added to `membershipExceptions` in `project.pbxproj`.
+- **003**: `AESCTR.crypt` (moved to `MeshHessen/Services/AESCCM.swift`) still requires a 32-byte key; plan 015 must allow 16-byte keys. The plan's split of the RFC vector into ciphertext/tag was wrong (correct: 23-byte ciphertext + 8-byte tag); the combined hex was right.
+- **001**: a second channel entry point exists (admin config loader records into the snapshot directly); the raw cache is also rebuilt from completed local snapshots. Duplicate detection now requires name **and** PSK to match.
+- **006**: a fourth alert-bell sender (`MeshtasticProtocolService.sendSOSAlert`, used by App Intents) was missed by the plan and fixed in a revision. Shift+Enter appends the newline at the end of the text, not at the cursor.
+- **007**: the own-node fallback is implemented and tested but not wired: `VirtualNodeService` (an actor) cannot reach `AppState`; follow-up = a setter on the actor fed from `AppCoordinator`.
+- Running several executors at once makes the first `swift build` in each fresh worktree slow or flaky (parallel clones of swift-protobuf's submodules); retrying works.
 
 ## Suggested waves
 

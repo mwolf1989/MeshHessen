@@ -97,7 +97,7 @@ Implement AAD support too (plan 015 needs 8 bytes of AAD): when `aad` is non-emp
   - nonce `00000003020100A0A1A2A3A4A5`
   - aad `0001020304050607`
   - plaintext `08090A0B0C0D0E0F101112131415161718191A1B1C1D1E` (23 bytes)
-  - `seal(..., tagLength: 8)` must equal `588C979A61C663D2F066D0C2C0F989806D5F6B61DAC38417` ‖ `E8D12CFDF926E0` (i.e. hex `588C979A61C663D2F066D0C2C0F989806D5F6B61DAC38417E8D12CFDF926E0`), and `open` of that must return the plaintext.
+  - `seal(..., tagLength: 8)` must equal `588C979A61C663D2F066D0C2C0F989806D5F6B61DAC384` (23-byte ciphertext) ‖ `17E8D12CFDF926E0` (8-byte tag) (i.e. hex `588C979A61C663D2F066D0C2C0F989806D5F6B61DAC38417E8D12CFDF926E0`), and `open` of that must return the plaintext.
   - Intermediate values for debugging: B0 = `59000000030201 00A0A1A2A3A4A5 0017`, CBC-MAC = `2DC697E411CA83A8`, S0 prefix = `3A2E46C8EC33A548`.
   - `AESCCM` must therefore accept 16-byte keys as well as 32-byte keys.
 - Round trip `open(seal(x)) == x` with a 32-byte key for plaintext lengths 0, 1, 15, 16, 17, 100, with and without AAD, tag lengths 8 and 12.
