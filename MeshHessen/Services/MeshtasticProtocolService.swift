@@ -95,6 +95,11 @@ final class MeshtasticProtocolService {
     private var tempChannels = ChannelSnapshotAccumulator()
     private var isCollectingChannelSnapshot = false
 
+    // `set_channel` / `set_owner` replace the whole object on the device, so
+    // writes must start from the device's own protos (local node only).
+    private var rawChannels: [Int: Meshtastic_Channel] = [:]
+    private var rawOwner: Meshtastic_User?
+
     // Device config storage (populated by admin getConfigResponse / getModuleConfigResponse)
     enum ConfigCategory: String {
         case device, position, power, network, display, lora, bluetooth, security, session, deviceUI
@@ -212,6 +217,8 @@ final class MeshtasticProtocolService {
         adminResponseSequence = 0
         tempChannels.begin(targetNodeID: 0, requestedIndices: Set(0..<8))
         isCollectingChannelSnapshot = true
+        rawChannels.removeAll()
+        rawOwner = nil
         receiveBuffer = Data()
         myNodeId = 0
         consecutiveTextChunks = 0
@@ -1130,6 +1137,11 @@ final class MeshtasticProtocolService {
 
         // If this is our own node
         if packet.from == myNodeId || myNodeId == 0 {
+            // Only cache once the identity is known: a foreign user (with its
+            // public key) must never become the base of our own set_owner.
+            if packet.from == myNodeId, myNodeId != 0 {
+                rawOwner = user
+            }
             let existingFW = appState?.myNodeInfo?.firmwareVersion ?? ""
             let hwModel = user.hwModel != .unset ? hardwareModelName(user.hwModel) : (appState?.myNodeInfo?.hardwareModel ?? "Unknown")
             appState?.myNodeInfo = MyNodeInfo(
@@ -1181,6 +1193,7 @@ final class MeshtasticProtocolService {
         node.note = SettingsService.shared.note(for: info.num)
 
         if info.num == myNodeId {
+            rawOwner = user
             let existingFW = appState?.myNodeInfo?.firmwareVersion ?? ""
             let hwModel = user.hwModel != .unset ? hardwareModelName(user.hwModel) : (appState?.myNodeInfo?.hardwareModel ?? "Unknown")
             appState?.myNodeInfo = MyNodeInfo(
@@ -1201,6 +1214,14 @@ final class MeshtasticProtocolService {
     // MARK: - Channel
 
     private func handleChannel(_ channel: Meshtastic_Channel, sourceNodeID: UInt32) {
+        if sourceNodeID == myNodeId {
+            if channel.role == .disabled {
+                rawChannels.removeValue(forKey: Int(channel.index))
+            } else {
+                rawChannels[Int(channel.index)] = channel
+            }
+        }
+
         if isCollectingChannelSnapshot {
             guard tempChannels.record(channel, from: sourceNodeID) else { return }
             AppLogger.shared.log(
@@ -1259,6 +1280,12 @@ final class MeshtasticProtocolService {
             return
         }
 
+        if tempChannels.targetNodeID == myNodeId {
+            rawChannels = Dictionary(
+                tempChannels.activeChannels.map { (Int($0.index), $0) },
+                uniquingKeysWith: { _, latest in latest }
+            )
+        }
         let activeChannels = tempChannels.activeChannels.map { channelInfo(from: $0) }
         appState?.channels = activeChannels
         activeChannels.forEach { coreDataStore?.upsertChannel($0) }
@@ -1419,6 +1446,7 @@ final class MeshtasticProtocolService {
             }
         case .getOwnerResponse(let owner):
             if packet.from == myNodeId {
+                rawOwner = owner
                 appState?.myNodeInfo?.shortName = owner.shortName
                 appState?.myNodeInfo?.longName = owner.longName
                 if let node = appState?.node(forId: packet.from) {
@@ -3167,15 +3195,22 @@ final class MeshtasticProtocolService {
             return
         }
 
-        var owner = Meshtastic_User()
-        owner.shortName = shortName
-        owner.longName = longName
-        owner.id = String(format: "!%08x", myNodeId)
+        if rawOwner == nil {
+            AppLogger.shared.log("[Protocol] setOwner: no device owner known; writing names only", debug: true)
+        }
+        let owner = Self.ownerForWrite(
+            base: rawOwner,
+            shortName: shortName,
+            longName: longName,
+            nodeId: myNodeId
+        )
 
         var admin = Meshtastic_AdminMessage()
         admin.setOwner = owner
         admin.sessionPasskey = sessionPasskey
-        await sendAdminMessage(admin)
+        if await sendAdminMessage(admin) {
+            rawOwner = owner
+        }
     }
 
     func sendSOSAlert(_ customText: String? = nil, channelIndex: Int = 0) async {
@@ -3290,6 +3325,7 @@ final class MeshtasticProtocolService {
             return false
         }
 
+        let name = UTF8Limits.clamp(name, maxBytes: UTF8Limits.channelNameBytes)
         var settings = Meshtastic_ChannelSettings()
         settings.name = name
         settings.psk = psk
@@ -3328,54 +3364,22 @@ final class MeshtasticProtocolService {
             return
         }
 
-        let remaining = (appState?.channels ?? [])
-            .filter { $0.id != index }
-            .sorted { $0.id < $1.id }
+        guard let raw = rawActiveChannelSnapshot() else {
+            AppLogger.shared.log("[Protocol] deleteChannel aborted: raw channel snapshot incomplete", debug: true)
+            return
+        }
 
-        for (newIndex, channelInfo) in remaining.enumerated() {
-            var settings = Meshtastic_ChannelSettings()
-            settings.name = channelInfo.name
-            settings.psk = Data(base64Encoded: channelInfo.psk) ?? Data()
-            settings.uplinkEnabled = channelInfo.uplinkEnabled
-            settings.downlinkEnabled = channelInfo.downlinkEnabled
-
-            var channel = Meshtastic_Channel()
-            channel.index = Int32(newIndex)
-            channel.settings = settings
-            channel.role = newIndex == 0 ? .primary : .secondary
-
+        let remaining = Self.reindexedChannels(raw, removing: index)
+        let writes = remaining + Self.disabledChannels(from: remaining.count)
+        for channel in writes {
             var admin = Meshtastic_AdminMessage()
             admin.setChannel = channel
             admin.sessionPasskey = sessionPasskey
             guard await sendAdminMessage(admin) else { return }
         }
 
-        // Always disable all trailing slots. This also handles sparse channel
-        // indices correctly; using `channels.count - 1` disabled the wrong slot.
-        for trailingIndex in remaining.count..<8 {
-            var channel = Meshtastic_Channel()
-            channel.index = Int32(trailingIndex)
-            channel.role = .disabled
-
-            var admin = Meshtastic_AdminMessage()
-            admin.setChannel = channel
-            admin.sessionPasskey = sessionPasskey
-            guard await sendAdminMessage(admin) else { return }
-        }
-
-        let normalized = remaining.enumerated().map { newIndex, channel in
-            ChannelInfo(
-                id: newIndex,
-                name: channel.name,
-                psk: channel.psk,
-                role: newIndex == 0 ? "PRIMARY" : "SECONDARY",
-                uplinkEnabled: channel.uplinkEnabled,
-                downlinkEnabled: channel.downlinkEnabled
-            )
-        }
-        appState?.channels = normalized
-        normalized.forEach { coreDataStore?.upsertChannel($0) }
-        coreDataStore?.removeChannelsNotIn(indices: Set(normalized.map(\.id)))
+        writes.forEach { handleChannel($0, sourceNodeID: myNodeId) }
+        coreDataStore?.removeChannelsNotIn(indices: Set(remaining.map { Int($0.index) }))
     }
 
     @discardableResult
@@ -3413,55 +3417,29 @@ final class MeshtasticProtocolService {
             return
         }
 
-        let current = appState?.channels.sorted(by: { $0.id < $1.id }) ?? []
+        guard let current = rawActiveChannelSnapshot() else {
+            AppLogger.shared.log("[Protocol] cleanupDuplicateChannels aborted: raw channel snapshot incomplete", debug: true)
+            return
+        }
         guard !current.isEmpty else { return }
 
-        // Keep first occurrence of each channel name
-        var desired: [ChannelInfo] = []
-        var seenNames = Set<String>()
-        for ch in current {
-            let key = ch.name.lowercased()
-            if ch.id == 0 || !seenNames.contains(key) {
-                seenNames.insert(key)
-                desired.append(ch)
-            }
-        }
-
+        let desired = Self.deduplicatedChannels(current)
         let removed = current.count - desired.count
         if removed == 0 {
             AppLogger.shared.log("[Protocol] No duplicate channels found", debug: true)
             return
         }
 
-        AppLogger.shared.log("[Protocol] Cleaning up \(removed) duplicate channel(s): keeping \(desired.map(\.name))", debug: true)
+        AppLogger.shared.log(
+            "[Protocol] Cleaning up \(removed) duplicate channel(s): keeping \(desired.map { extractChannelName($0) })",
+            debug: true
+        )
 
-        // Write desired channels into slots 0..<desired.count
-        // Send rapidly — no sleep between writes — to get them all out
-        // before a potential TCP reset.
-        for (newIdx, ch) in desired.enumerated() {
-            var settings = Meshtastic_ChannelSettings()
-            settings.name = ch.name
-            settings.psk = Data(base64Encoded: ch.psk) ?? Data()
-            settings.uplinkEnabled = ch.uplinkEnabled
-            settings.downlinkEnabled = ch.downlinkEnabled
-
-            var channel = Meshtastic_Channel()
-            channel.index = Int32(newIdx)
-            channel.settings = settings
-            channel.role = newIdx == 0 ? .primary : .secondary
-
-            var admin = Meshtastic_AdminMessage()
-            admin.setChannel = channel
-            admin.sessionPasskey = sessionPasskey
-            await sendAdminMessage(admin)
-        }
-
-        // Disable remaining slots
-        for idx in desired.count..<8 {
-            var channel = Meshtastic_Channel()
-            channel.index = Int32(idx)
-            channel.role = .disabled
-
+        // Write desired channels into slots 0..<desired.count, then disable
+        // the rest. Send rapidly — no sleep between writes — to get them all
+        // out before a potential TCP reset.
+        let writes = desired + Self.disabledChannels(from: desired.count)
+        for channel in writes {
             var admin = Meshtastic_AdminMessage()
             admin.setChannel = channel
             admin.sessionPasskey = sessionPasskey
@@ -3469,19 +3447,97 @@ final class MeshtasticProtocolService {
         }
 
         // Update local state optimistically
-        appState?.channels = desired.enumerated().map { newIdx, ch in
-            ChannelInfo(
-                id: newIdx, name: ch.name, psk: ch.psk,
-                role: newIdx == 0 ? "PRIMARY" : "SECONDARY",
-                uplinkEnabled: ch.uplinkEnabled, downlinkEnabled: ch.downlinkEnabled
-            )
-        }
+        writes.forEach { handleChannel($0, sourceNodeID: myNodeId) }
+        coreDataStore?.removeChannelsNotIn(indices: Set(desired.map { Int($0.index) }))
 
         AppLogger.shared.log("[Protocol] Channel cleanup complete: \(desired.count) channels remain", debug: true)
     }
 
+    /// Raw device protos for every active slot shown in `appState.channels`,
+    /// sorted by index; nil when any of them is missing from the cache.
+    private func rawActiveChannelSnapshot() -> [Meshtastic_Channel]? {
+        let shownIndices = (appState?.channels ?? []).map(\.id).sorted()
+        let raw = shownIndices.compactMap { rawChannels[$0] }
+        guard raw.count == shownIndices.count else { return nil }
+        return raw
+    }
+
+    // MARK: - Channel / Owner Write Builders
+
+    /// Removes `index` and moves the survivors into contiguous slots. Each proto
+    /// is copied as received from the device; only `index` and `role` change.
+    nonisolated static func reindexedChannels(
+        _ raw: [Meshtastic_Channel],
+        removing index: Int
+    ) -> [Meshtastic_Channel] {
+        normalizedSlots(
+            raw.filter { Int($0.index) != index && $0.role != .disabled }
+                .sorted { $0.index < $1.index }
+        )
+    }
+
+    /// Keeps slot 0 and the first occurrence of every (name, PSK) pair, then
+    /// reindexes. Compares the raw settings, never UI display names, so an
+    /// unnamed primary is not confused with a channel literally named "Default".
+    nonisolated static func deduplicatedChannels(_ raw: [Meshtastic_Channel]) -> [Meshtastic_Channel] {
+        struct Key: Hashable {
+            let name: String
+            let psk: Data
+        }
+        var seen = Set<Key>()
+        var kept: [Meshtastic_Channel] = []
+        for channel in raw.filter({ $0.role != .disabled }).sorted(by: { $0.index < $1.index }) {
+            let key = Key(name: channel.settings.name.lowercased(), psk: channel.settings.psk)
+            let isNew = seen.insert(key).inserted
+            if channel.index == 0 || isNew {
+                kept.append(channel)
+            }
+        }
+        return normalizedSlots(kept)
+    }
+
+    /// Copies the device's own `User` and overwrites only the names, so fields
+    /// such as `isLicensed`, `publicKey`, `role` and `hwModel` survive.
+    nonisolated static func ownerForWrite(
+        base: Meshtastic_User?,
+        shortName: String,
+        longName: String,
+        nodeId: UInt32
+    ) -> Meshtastic_User {
+        var owner: Meshtastic_User
+        if let base {
+            owner = base
+        } else {
+            owner = Meshtastic_User()
+            owner.id = String(format: "!%08x", nodeId)
+        }
+        owner.shortName = shortName
+        owner.longName = longName
+        return owner
+    }
+
+    private nonisolated static func normalizedSlots(_ channels: [Meshtastic_Channel]) -> [Meshtastic_Channel] {
+        channels.enumerated().map { newIndex, original in
+            var channel = original
+            channel.index = Int32(newIndex)
+            channel.role = newIndex == 0 ? .primary : .secondary
+            return channel
+        }
+    }
+
+    private nonisolated static func disabledChannels(from start: Int) -> [Meshtastic_Channel] {
+        (min(start, 8)..<8).map { index in
+            var channel = Meshtastic_Channel()
+            channel.index = Int32(index)
+            channel.role = .disabled
+            return channel
+        }
+    }
+
     func disconnect() {
         isDisconnecting = true
+        rawChannels.removeAll()
+        rawOwner = nil
         stopHeartbeat()
         PkiDecryptionService.shared.clearPrivateKey()
         connectionService?.disconnect()

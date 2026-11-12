@@ -436,8 +436,14 @@ struct NodeInfoSheet: View {
     }
 
     private func saveOwnerSettings() {
-        let short = ownerShortName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let long = ownerLongName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let short = UTF8Limits.clamp(
+            ownerShortName.trimmingCharacters(in: .whitespacesAndNewlines),
+            maxBytes: UTF8Limits.shortNameBytes
+        )
+        let long = UTF8Limits.clamp(
+            ownerLongName.trimmingCharacters(in: .whitespacesAndNewlines),
+            maxBytes: UTF8Limits.longNameBytes(firmwareVersion: appState.myNodeInfo?.firmwareVersion)
+        )
         guard !short.isEmpty else { return }
 
         isSavingOwner = true

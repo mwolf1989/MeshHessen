@@ -21,7 +21,13 @@ struct AddChannelSheet: View {
             Divider()
 
             Form {
-                TextField("Channel Name", text: $channelName)
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Channel Name", text: channelNameDraft)
+                    Text("\(channelName.utf8.count)/\(UTF8Limits.channelNameBytes) Bytes")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
                 TextField("PSK (base64)", text: pskDraft)
                     .font(.system(.body, design: .monospaced))
 
@@ -81,6 +87,13 @@ struct AddChannelSheet: View {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private var channelNameDraft: Binding<String> {
+        Binding(
+            get: { channelName },
+            set: { channelName = UTF8Limits.clamp($0, maxBytes: UTF8Limits.channelNameBytes) }
+        )
     }
 
     private var pskDraft: Binding<String> {

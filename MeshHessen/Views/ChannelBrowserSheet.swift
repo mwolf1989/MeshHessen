@@ -84,7 +84,10 @@ struct ChannelBrowserSheet: View {
                             Task {
                                 do {
                                     try await coordinator.addChannel(
-                                        name: ch.name,
+                                        name: UTF8Limits.clamp(
+                                            ch.name,
+                                            maxBytes: UTF8Limits.channelNameBytes
+                                        ),
                                         pskBase64: ch.psk,
                                         uplinkEnabled: false,
                                         downlinkEnabled: false
