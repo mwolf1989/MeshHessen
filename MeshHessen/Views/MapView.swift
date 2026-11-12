@@ -444,29 +444,42 @@ struct MapRuntimeConfiguration: Equatable {
         requestedRenderMode = settings.mapRenderMode
         source = MapTileSource(style: settings.meshMapStyle)
 
-        let customRasterTemplate: String
-        switch source {
-        case .osm: customRasterTemplate = settings.osmTileURL
-        case .topographic: customRasterTemplate = settings.topographicTileURL
-        case .dark: customRasterTemplate = settings.darkTileURL
-        }
-        switch mode {
-        case .meshHessen:
-            descriptor = .init(source: source, urlTemplate: source.meshHessenRasterURLTemplate)
-        case .publicOpenStreetMap:
-            descriptor = .init(source: .osm, urlTemplate: settings.publicOSMTileURL)
-        case .custom, .offline:
-            descriptor = .init(source: source, urlTemplate: customRasterTemplate)
-        }
+        descriptor = Self.rasterDescriptor(mode: mode, source: source, settings: settings)
+        vectorStyleURL = Self.vectorStyleURL(mode: mode, source: source, settings: settings)
+    }
 
-        if mode == .meshHessen {
-            vectorStyleURL = source.meshHessenVectorStyleURL
-        } else {
+    /// Raster tile source for a map mode. Offline mode fills its cache from the
+    /// Mesh Hessen server (Windows parity); custom URLs apply only in custom mode.
+    static func rasterDescriptor(
+        mode: MapMode,
+        source: MapTileSource,
+        settings: SettingsService
+    ) -> MapTileSourceDescriptor {
+        switch mode {
+        case .meshHessen, .offline:
+            return .init(source: source, urlTemplate: source.meshHessenRasterURLTemplate)
+        case .publicOpenStreetMap:
+            return .init(source: .osm, urlTemplate: settings.publicOSMTileURL)
+        case .custom:
+            let template: String
             switch source {
-            case .osm: vectorStyleURL = settings.vectorStyleOSMURL
-            case .topographic: vectorStyleURL = settings.vectorStyleTopographicURL
-            case .dark: vectorStyleURL = settings.vectorStyleDarkURL
+            case .osm: template = settings.osmTileURL
+            case .topographic: template = settings.topographicTileURL
+            case .dark: template = settings.darkTileURL
             }
+            return .init(source: source, urlTemplate: template)
+        }
+    }
+
+    /// Vector style URL for a map mode, following the same rules as `rasterDescriptor`.
+    static func vectorStyleURL(mode: MapMode, source: MapTileSource, settings: SettingsService) -> String {
+        if mode == .meshHessen || mode == .offline {
+            return source.meshHessenVectorStyleURL
+        }
+        switch source {
+        case .osm: return settings.vectorStyleOSMURL
+        case .topographic: return settings.vectorStyleTopographicURL
+        case .dark: return settings.vectorStyleDarkURL
         }
     }
 
