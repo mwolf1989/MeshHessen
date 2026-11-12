@@ -3216,7 +3216,8 @@ final class MeshtasticProtocolService {
     }
 
     func sendSOSAlert(_ customText: String? = nil, channelIndex: Int = 0) async {
-        let msg = customText.map { "🔔 \($0)" } ?? "🔔 Alert Bell Character!"
+        let extra = customText.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } ?? ""
+        let msg = MessageItem.truncatingToPayloadLimit(AlertBell.text(extra))
         await sendTextMessage(msg, channelIndex: channelIndex)
     }
 

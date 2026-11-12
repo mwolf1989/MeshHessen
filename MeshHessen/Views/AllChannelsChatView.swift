@@ -76,6 +76,7 @@ struct AllChannelsChatView: View {
                     }
                     .padding(12)
                 }
+                .defaultScrollAnchor(.bottom)
                 .onChange(of: messages.count) { _, _ in
                     guard !isSearchActive else { return }
                     if let last = messages.last {
@@ -109,16 +110,25 @@ struct AllChannelsChatView: View {
                     }
 
                     TextField("Message…", text: $messageText, axis: .vertical)
-                        .lineLimit(1...4)
+                        .lineLimit(1...6)
                         .focused($inputFocused)
                         .onChange(of: messageText) { _, value in
                             let limited = MessageItem.truncatingToPayloadLimit(value)
                             if limited != value { messageText = limited }
                         }
+                        .onKeyPress(.return, phases: .down) { press in
+                            if press.modifiers.contains(.shift) {
+                                messageText += "\n"
+                                return .handled
+                            }
+                            if canSend { send() }
+                            return .handled
+                        }
 
                     Button("Send", systemImage: "paperplane.fill", action: send)
                         .buttonStyle(.borderedProminent)
-                        .disabled(trimmedMessage.isEmpty || isSending || !appState.protocolReady)
+                        .disabled(!canSend)
+                        .keyboardShortcut(.return, modifiers: .command)
                 }
 
                 Text("\(MessageItem.payloadByteCount(messageText))/\(MessageItem.maximumPayloadBytes) Bytes")
@@ -179,9 +189,17 @@ struct AllChannelsChatView: View {
         messageText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var canSend: Bool {
+        !trimmedMessage.isEmpty && !isSending && appState.protocolReady
+    }
+
     private func channelDisplayName(for message: MessageItem) -> String {
         if message.isUnknownChannel {
             return message.channelName
+        }
+        if let channel = appState.channels.first(where: { $0.id == message.channelIndex }),
+           !channel.name.isEmpty {
+            return channel.name
         }
         return message.channelName.isEmpty
             ? String(localized: "Channel \(message.channelIndex)")
@@ -207,9 +225,7 @@ struct AllChannelsChatView: View {
 
     private func sendSOS() {
         let extra = trimmedMessage
-        let text = MessageItem.truncatingToPayloadLimit(
-            extra.isEmpty ? "🔔 Alert Bell Character!" : "🔔 \(extra)"
-        )
+        let text = MessageItem.truncatingToPayloadLimit(AlertBell.text(extra))
         messageText = ""
         replyingTo = nil
         isSending = true

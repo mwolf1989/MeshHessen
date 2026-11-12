@@ -301,6 +301,18 @@ enum EmojiReaction {
     static let rows = 4
 }
 
+// MARK: - Alert Bell
+
+/// Outgoing alert-bell text. The firmware's external-notification bell fires only
+/// when the payload contains the ASCII BEL control character (0x07); the emoji is display-only.
+enum AlertBell {
+    static let prefix = "\u{0007}🔔 "
+
+    static func text(_ extra: String) -> String {
+        prefix + (extra.isEmpty ? "Alert Bell Character!" : extra)
+    }
+}
+
 /// Legacy Tapback enum for backward compatibility
 enum Tapback: Int, CaseIterable, Identifiable {
     case wave = 0

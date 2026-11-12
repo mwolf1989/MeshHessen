@@ -9,7 +9,9 @@ struct DMWindowView: View {
     @FocusState private var inputFocused: Bool
 
     private var conversations: [DirectMessageConversation] {
-        Array(appState.dmConversations.values).sorted { $0.nodeName < $1.nodeName }
+        Array(appState.dmConversations.values).sorted {
+            $0.displayName(in: appState) < $1.displayName(in: appState)
+        }
     }
 
     var body: some View {
@@ -19,7 +21,7 @@ struct DMWindowView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
-                                Text(conv.nodeName)
+                                Text(conv.displayName(in: appState))
                                     .fontWeight(conv.hasUnread ? .bold : .medium)
                                     .foregroundStyle(conv.hasUnread ? Color.orange : Color.primary)
                                 if conv.hasUnread {
@@ -94,6 +96,16 @@ private struct DMConversationView: View {
     @State private var replyingTo: MessageItem?
     @FocusState private var inputFocused: Bool
 
+    private var partnerName: String {
+        conversation.displayName(in: appState)
+    }
+
+    private var canSend: Bool {
+        !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && MessageItem.payloadByteCount(messageText) <= MessageItem.maximumPayloadBytes
+            && !isSending
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -152,6 +164,7 @@ private struct DMConversationView: View {
                     }
                     .padding(12)
                 }
+                .defaultScrollAnchor(.bottom)
                 .onChange(of: conversation.messages.count) { _, _ in
                     if suppressNextAutoScroll {
                         suppressNextAutoScroll = false
@@ -185,13 +198,13 @@ private struct DMConversationView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                         .buttonStyle(.plain)
-                        .help("Send SOS directly to \(conversation.nodeName)")
+                        .help("Send SOS directly to \(partnerName)")
                         .disabled(!appState.protocolReady || isSending)
                     }
 
-                    TextField("Message to \(conversation.nodeName)…", text: $messageText, axis: .vertical)
+                    TextField("Message to \(partnerName)…", text: $messageText, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
-                        .lineLimit(1...4)
+                        .lineLimit(1...6)
                         .frame(maxWidth: .infinity)
                         .focused($inputFocused)
                         .onChange(of: messageText) { _, newValue in
@@ -200,16 +213,20 @@ private struct DMConversationView: View {
                                 messageText = limited
                             }
                         }
+                        .onKeyPress(.return, phases: .down) { press in
+                            if press.modifiers.contains(.shift) {
+                                messageText += "\n"
+                                return .handled
+                            }
+                            if canSend { sendMessage() }
+                            return .handled
+                        }
 
                     Button(action: sendMessage) {
                         Image(systemName: "paperplane.fill")
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(
-                        messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || MessageItem.payloadByteCount(messageText) > MessageItem.maximumPayloadBytes
-                            || isSending
-                    )
+                    .disabled(!canSend)
                     .keyboardShortcut(.return, modifiers: .command)
                 }
 
@@ -220,7 +237,7 @@ private struct DMConversationView: View {
             }
             .padding(10)
         }
-        .navigationTitle("DM: \(conversation.nodeName)")
+        .navigationTitle("DM: \(partnerName)")
         .onAppear {
             conversation.hasUnread = false
             coordinator.coreDataStore.setConversationUnread(partnerNodeId: conversation.id, hasUnread: false)
@@ -240,7 +257,7 @@ private struct DMConversationView: View {
             }
             Button("Abbrechen", role: .cancel) {}
         } message: {
-            Text("Der Notruf wird als Direktnachricht an \(conversation.nodeName) gesendet. Text im Eingabefeld wird als Zusatztext übernommen.")
+            Text("Der Notruf wird als Direktnachricht an \(partnerName) gesendet. Text im Eingabefeld wird als Zusatztext übernommen.")
         }
     }
 
@@ -303,9 +320,7 @@ private struct DMConversationView: View {
 
     private func sendSOSAlert() {
         let additionalText = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let alertText = MessageItem.truncatingToPayloadLimit(
-            additionalText.isEmpty ? "🔔 Alert Bell Character!" : "🔔 \(additionalText)"
-        )
+        let alertText = MessageItem.truncatingToPayloadLimit(AlertBell.text(additionalText))
         messageText = ""
         replyingTo = nil
         isSending = true
@@ -356,5 +371,18 @@ private struct DMConversationView: View {
                 )
             }
         }
+    }
+}
+
+// MARK: - Display Name
+
+private extension DirectMessageConversation {
+    /// The partner's current node name, so titles follow renames; falls back to the stored name.
+    @MainActor
+    func displayName(in appState: AppState) -> String {
+        if let name = appState.node(forId: id)?.name, !name.isEmpty {
+            return name
+        }
+        return nodeName
     }
 }

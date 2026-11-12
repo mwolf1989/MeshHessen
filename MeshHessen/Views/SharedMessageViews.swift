@@ -91,6 +91,7 @@ struct EmojiPickerView: View {
 /// Shows reaction pills below a message bubble
 struct ReactionPillsView: View {
     let reactions: [String: [UInt32]]
+    var nameForNode: ((UInt32) -> String)? = nil
 
     var body: some View {
         if !reactions.isEmpty {
@@ -108,9 +109,16 @@ struct ReactionPillsView: View {
                     .padding(.vertical, 2)
                     .background(Color.secondary.opacity(0.15))
                     .clipShape(Capsule())
+                    .help(tooltip(emoji: emoji, senders: senders))
                 }
             }
         }
+    }
+
+    private func tooltip(emoji: String, senders: [UInt32]) -> String {
+        guard let nameForNode else { return "" }
+        let names = senders.map(nameForNode)
+        return "\(emoji)  \(names.joined(separator: ", "))"
     }
 }
 
@@ -280,7 +288,9 @@ struct MessageBubbleView: View {
             }
 
             // Reaction pills
-            ReactionPillsView(reactions: message.reactionsByEmoji)
+            ReactionPillsView(reactions: message.reactionsByEmoji) { nodeId in
+                appState.node(forId: nodeId)?.name ?? String(format: "!%08x", nodeId)
+            }
 
             if let receptionSummary {
                 Label(receptionSummary.text, systemImage: receptionSummary.symbol)
@@ -435,6 +445,21 @@ struct MessageBubbleView: View {
             Button("Traceroute…") { showTraceroute = senderNode }
                 .disabled(senderNode.id == appState.myNodeInfo?.nodeId)
             Button("Telemetry…") { showTelemetry = senderNode }
+        }
+
+        if message.fromId != 0, message.fromId != appState.myNodeInfo?.nodeId {
+            if senderNode == nil {
+                Divider()
+            }
+            Menu("Request Info") {
+                ForEach(NodeInfoRequestType.allCases) { requestType in
+                    Button {
+                        Task { await coordinator.protocol_.requestNodeInfo(requestType, from: message.fromId) }
+                    } label: {
+                        Label(requestType.displayName, systemImage: requestType.systemImage)
+                    }
+                }
+            }
         }
     }
 

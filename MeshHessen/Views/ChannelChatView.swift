@@ -27,6 +27,12 @@ struct ChannelChatView: View {
 
     private var isSearchActive: Bool { !normalizedSearchText.isEmpty }
 
+    private var canSend: Bool {
+        !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && MessageItem.payloadByteCount(messageText) <= MessageItem.maximumPayloadBytes
+            && !isSending
+    }
+
     private var messages: [MessageItem] {
         if isSearchActive { return searchResults }
         return (appState.channelMessages[channelIndex] ?? []).filter {
@@ -102,6 +108,7 @@ struct ChannelChatView: View {
                     }
                     .padding(12)
                 }
+                .defaultScrollAnchor(.bottom)
                 .onChange(of: messages.count) { _, _ in
                     guard !isSearchActive else { return }
                     if suppressNextAutoScroll {
@@ -142,7 +149,7 @@ struct ChannelChatView: View {
 
                     TextField("Message…", text: $messageText, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
-                        .lineLimit(1...4)
+                        .lineLimit(1...6)
                         .frame(maxWidth: .infinity)
                         .focused($inputFocused)
                         .onChange(of: messageText) { _, newValue in
@@ -151,16 +158,20 @@ struct ChannelChatView: View {
                                 messageText = limited
                             }
                         }
+                        .onKeyPress(.return, phases: .down) { press in
+                            if press.modifiers.contains(.shift) {
+                                messageText += "\n"
+                                return .handled
+                            }
+                            if canSend { sendMessage() }
+                            return .handled
+                        }
 
                     Button(action: sendMessage) {
                         Image(systemName: "paperplane.fill")
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(
-                        messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || MessageItem.payloadByteCount(messageText) > MessageItem.maximumPayloadBytes
-                            || isSending
-                    )
+                    .disabled(!canSend)
                     .keyboardShortcut(.return, modifiers: .command)
                 }
 
@@ -291,9 +302,7 @@ struct ChannelChatView: View {
 
     private func sendSOSAlert() {
         let additionalText = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let alertText = MessageItem.truncatingToPayloadLimit(
-            additionalText.isEmpty ? "🔔 Alert Bell Character!" : "🔔 \(additionalText)"
-        )
+        let alertText = MessageItem.truncatingToPayloadLimit(AlertBell.text(additionalText))
         messageText = ""
         replyingTo = nil
         isSending = true

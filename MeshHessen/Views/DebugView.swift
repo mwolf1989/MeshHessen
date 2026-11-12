@@ -49,7 +49,7 @@ struct DebugView: View {
                     }
                     .padding(4)
                 }
-                .onChange(of: appState.debugLines.count) { _, _ in
+                .onChange(of: appState.debugLines.last?.id) { _, _ in
                     guard autoScroll else { return }
                     pendingScrollTask?.cancel()
                     pendingScrollTask = Task { @MainActor in
