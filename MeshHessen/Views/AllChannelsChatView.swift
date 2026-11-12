@@ -207,9 +207,7 @@ struct AllChannelsChatView: View {
 
     private func sendSOS() {
         let extra = trimmedMessage
-        let text = MessageItem.truncatingToPayloadLimit(
-            extra.isEmpty ? "🔔 Alert Bell Character!" : "🔔 \(extra)"
-        )
+        let text = MessageItem.truncatingToPayloadLimit(AlertBell.text(extra))
         messageText = ""
         replyingTo = nil
         isSending = true

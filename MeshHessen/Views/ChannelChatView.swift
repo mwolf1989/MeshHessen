@@ -291,9 +291,7 @@ struct ChannelChatView: View {
 
     private func sendSOSAlert() {
         let additionalText = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let alertText = MessageItem.truncatingToPayloadLimit(
-            additionalText.isEmpty ? "🔔 Alert Bell Character!" : "🔔 \(additionalText)"
-        )
+        let alertText = MessageItem.truncatingToPayloadLimit(AlertBell.text(additionalText))
         messageText = ""
         replyingTo = nil
         isSending = true
