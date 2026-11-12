@@ -20,12 +20,14 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				Proto/README.md,
 				Proto/meshtastic/admin.proto,
 				Proto/meshtastic/atak.proto,
 				Proto/meshtastic/channel.proto,
 				Proto/meshtastic/config.proto,
 				Proto/meshtastic/connection_status.proto,
 				Proto/meshtastic/device_ui.proto,
+				Proto/meshtastic/field_metadata.proto,
 				Proto/meshtastic/mesh.proto,
 				Proto/meshtastic/module_config.proto,
 				Proto/meshtastic/portnums.proto,
