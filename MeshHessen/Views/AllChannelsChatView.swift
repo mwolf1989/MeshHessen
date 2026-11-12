@@ -76,6 +76,7 @@ struct AllChannelsChatView: View {
                     }
                     .padding(12)
                 }
+                .defaultScrollAnchor(.bottom)
                 .onChange(of: messages.count) { _, _ in
                     guard !isSearchActive else { return }
                     if let last = messages.last {

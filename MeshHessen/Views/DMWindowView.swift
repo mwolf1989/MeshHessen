@@ -158,6 +158,7 @@ private struct DMConversationView: View {
                     }
                     .padding(12)
                 }
+                .defaultScrollAnchor(.bottom)
                 .onChange(of: conversation.messages.count) { _, _ in
                     if suppressNextAutoScroll {
                         suppressNextAutoScroll = false
