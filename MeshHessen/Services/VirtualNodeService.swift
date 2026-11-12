@@ -128,6 +128,8 @@ struct VirtualNodeReplayCache: Sendable {
         case .statusmessage?: return 14
         case .trafficManagement?: return 15
         case .tak?: return 16
+        // Firmware 2.8 MeshBeacon (field 17): not cached for replay yet, same as before the proto update.
+        case .meshBeacon?: return nil
         case nil: return nil
         }
     }

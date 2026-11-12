@@ -8,7 +8,11 @@
 // For information on using the generated types, please see the documentation:
 //   https://github.com/apple/swift-protobuf/
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 import SwiftProtobuf
 
 // If the compiler emits an error on this type, it is because this file
@@ -16,7 +20,7 @@ import SwiftProtobuf
 // incompatible with the version of SwiftProtobuf to which you are linking.
 // Please ensure that you are building against the same version of the API
 // that was used to generate this file.
-fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAPIVersionCheck {
+fileprivate nonisolated struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAPIVersionCheck {
   struct _2: SwiftProtobuf.ProtobufAPIVersion_2 {}
   typealias Version = _2
 }
@@ -37,7 +41,7 @@ fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAP
 /// FIXME: Add description of multi-channel support and how primary vs secondary channels are used.
 /// FIXME: explain how apps use channels for security.
 /// explain how remote settings and remote gpio are managed as an example
-struct Meshtastic_ChannelSettings: Sendable {
+nonisolated struct Meshtastic_ChannelSettings: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -105,6 +109,14 @@ struct Meshtastic_ChannelSettings: Sendable {
   /// Clears the value of `moduleSettings`. Subsequent reads from it will return its default value.
   mutating func clearModuleSettings() {self._moduleSettings = nil}
 
+  ///
+  /// Enable authenticated encryption (AES-CCM) for this channel.
+  /// When true, messages include a 12-byte authentication tag that prevents
+  /// forgery and bit-flipping attacks. All nodes on the channel must have
+  /// this enabled - unauthenticated (AES-CTR) packets are rejected.
+  /// Experimental. Default: false (standard AES-CTR encryption).
+  var useAead: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -114,7 +126,7 @@ struct Meshtastic_ChannelSettings: Sendable {
 
 ///
 /// This message is specifically for modules to store per-channel configuration data.
-struct Meshtastic_ModuleSettings: Sendable {
+nonisolated struct Meshtastic_ModuleSettings: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -135,7 +147,7 @@ struct Meshtastic_ModuleSettings: Sendable {
 
 ///
 /// A pair of a channel number, mode and the (sharable) settings for that channel
-struct Meshtastic_Channel: Sendable {
+nonisolated struct Meshtastic_Channel: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -173,7 +185,7 @@ struct Meshtastic_Channel: Sendable {
   /// cross band routing as needed.
   /// If a device has only a single radio (the common case) only one channel can be PRIMARY at a time
   /// (but any number of SECONDARY channels can't be sent received on that common frequency)
-  enum Role: SwiftProtobuf.Enum, Swift.CaseIterable {
+  nonisolated enum Role: SwiftProtobuf.Enum, Swift.CaseIterable {
     typealias RawValue = Int
 
     ///
@@ -228,11 +240,11 @@ struct Meshtastic_Channel: Sendable {
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
-fileprivate let _protobuf_package = "meshtastic"
+fileprivate nonisolated let _protobuf_package = "meshtastic"
 
-extension Meshtastic_ChannelSettings: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ChannelSettings: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ChannelSettings"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}channel_num\0\u{1}psk\0\u{1}name\0\u{1}id\0\u{3}uplink_enabled\0\u{3}downlink_enabled\0\u{3}module_settings\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}channel_num\0\u{1}psk\0\u{1}name\0\u{1}id\0\u{3}uplink_enabled\0\u{3}downlink_enabled\0\u{3}module_settings\0\u{3}use_aead\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -247,6 +259,7 @@ extension Meshtastic_ChannelSettings: SwiftProtobuf.Message, SwiftProtobuf._Mess
       case 5: try { try decoder.decodeSingularBoolField(value: &self.uplinkEnabled) }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.downlinkEnabled) }()
       case 7: try { try decoder.decodeSingularMessageField(value: &self._moduleSettings) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self.useAead) }()
       default: break
       }
     }
@@ -278,6 +291,9 @@ extension Meshtastic_ChannelSettings: SwiftProtobuf.Message, SwiftProtobuf._Mess
     try { if let v = self._moduleSettings {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
     } }()
+    if self.useAead != false {
+      try visitor.visitSingularBoolField(value: self.useAead, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -289,12 +305,13 @@ extension Meshtastic_ChannelSettings: SwiftProtobuf.Message, SwiftProtobuf._Mess
     if lhs.uplinkEnabled != rhs.uplinkEnabled {return false}
     if lhs.downlinkEnabled != rhs.downlinkEnabled {return false}
     if lhs._moduleSettings != rhs._moduleSettings {return false}
+    if lhs.useAead != rhs.useAead {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
-extension Meshtastic_ModuleSettings: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleSettings: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ModuleSettings"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}position_precision\0\u{3}is_muted\0")
 
@@ -329,7 +346,7 @@ extension Meshtastic_ModuleSettings: SwiftProtobuf.Message, SwiftProtobuf._Messa
   }
 }
 
-extension Meshtastic_Channel: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Channel: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Channel"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}index\0\u{1}settings\0\u{1}role\0")
 
@@ -373,6 +390,6 @@ extension Meshtastic_Channel: SwiftProtobuf.Message, SwiftProtobuf._MessageImple
   }
 }
 
-extension Meshtastic_Channel.Role: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_Channel.Role: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DISABLED\0\u{1}PRIMARY\0\u{1}SECONDARY\0")
 }

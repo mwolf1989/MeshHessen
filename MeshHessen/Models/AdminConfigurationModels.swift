@@ -493,6 +493,8 @@ struct MeshConfigurationSnapshot: Equatable, Sendable {
         case .statusmessage(let value): statusMessage = value
         case .trafficManagement(let value): trafficManagement = value
         case .tak(let value): tak = value
+        // Firmware 2.8 MeshBeacon: not stored yet, same as before the proto update.
+        case .meshBeacon: break
         case nil: break
         }
     }

@@ -8,7 +8,11 @@
 // For information on using the generated types, please see the documentation:
 //   https://github.com/apple/swift-protobuf/
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 import SwiftProtobuf
 
 // If the compiler emits an error on this type, it is because this file
@@ -16,14 +20,14 @@ import SwiftProtobuf
 // incompatible with the version of SwiftProtobuf to which you are linking.
 // Please ensure that you are building against the same version of the API
 // that was used to generate this file.
-fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAPIVersionCheck {
+fileprivate nonisolated struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAPIVersionCheck {
   struct _2: SwiftProtobuf.ProtobufAPIVersion_2 {}
   typealias Version = _2
 }
 
 ///
 /// Firmware update mode for OTA updates
-enum Meshtastic_OTAMode: SwiftProtobuf.Enum, Swift.CaseIterable {
+nonisolated enum Meshtastic_OTAMode: SwiftProtobuf.Enum, Swift.CaseIterable {
   typealias RawValue = Int
 
   ///
@@ -74,7 +78,7 @@ enum Meshtastic_OTAMode: SwiftProtobuf.Enum, Swift.CaseIterable {
 /// This message is handled by the Admin module and is responsible for all settings/channel read/write operations.
 /// This message is used to do settings operations to both remote AND local nodes.
 /// (Prior to 1.2 these operations were done via special ToRadio operations)
-struct Meshtastic_AdminMessage: Sendable {
+nonisolated struct Meshtastic_AdminMessage: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -83,201 +87,207 @@ struct Meshtastic_AdminMessage: Sendable {
   /// The node generates this key and sends it with any get_x_response packets.
   /// The client MUST include the same key with any set_x commands. Key expires after 300 seconds.
   /// Prevents replay attacks for admin messages.
-  var sessionPasskey: Data = Data()
+  var sessionPasskey: Data {
+    get {_storage._sessionPasskey}
+    set {_uniqueStorage()._sessionPasskey = newValue}
+  }
 
   ///
   /// TODO: REPLACE
-  var payloadVariant: Meshtastic_AdminMessage.OneOf_PayloadVariant? = nil
+  var payloadVariant: OneOf_PayloadVariant? {
+    get {return _storage._payloadVariant}
+    set {_uniqueStorage()._payloadVariant = newValue}
+  }
 
   ///
   /// Send the specified channel in the response to this message
   /// NOTE: This field is sent with the channel index + 1 (to ensure we never try to send 'zero' - which protobufs treats as not present)
   var getChannelRequest: UInt32 {
     get {
-      if case .getChannelRequest(let v)? = payloadVariant {return v}
+      if case .getChannelRequest(let v)? = _storage._payloadVariant {return v}
       return 0
     }
-    set {payloadVariant = .getChannelRequest(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getChannelRequest(newValue)}
   }
 
   ///
   /// TODO: REPLACE
   var getChannelResponse: Meshtastic_Channel {
     get {
-      if case .getChannelResponse(let v)? = payloadVariant {return v}
+      if case .getChannelResponse(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_Channel()
     }
-    set {payloadVariant = .getChannelResponse(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getChannelResponse(newValue)}
   }
 
   ///
   /// Send the current owner data in the response to this message.
   var getOwnerRequest: Bool {
     get {
-      if case .getOwnerRequest(let v)? = payloadVariant {return v}
+      if case .getOwnerRequest(let v)? = _storage._payloadVariant {return v}
       return false
     }
-    set {payloadVariant = .getOwnerRequest(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getOwnerRequest(newValue)}
   }
 
   ///
   /// TODO: REPLACE
   var getOwnerResponse: Meshtastic_User {
     get {
-      if case .getOwnerResponse(let v)? = payloadVariant {return v}
+      if case .getOwnerResponse(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_User()
     }
-    set {payloadVariant = .getOwnerResponse(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getOwnerResponse(newValue)}
   }
 
   ///
   /// Ask for the following config data to be sent
   var getConfigRequest: Meshtastic_AdminMessage.ConfigType {
     get {
-      if case .getConfigRequest(let v)? = payloadVariant {return v}
+      if case .getConfigRequest(let v)? = _storage._payloadVariant {return v}
       return .deviceConfig
     }
-    set {payloadVariant = .getConfigRequest(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getConfigRequest(newValue)}
   }
 
   ///
   /// Send the current Config in the response to this message.
   var getConfigResponse: Meshtastic_Config {
     get {
-      if case .getConfigResponse(let v)? = payloadVariant {return v}
+      if case .getConfigResponse(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_Config()
     }
-    set {payloadVariant = .getConfigResponse(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getConfigResponse(newValue)}
   }
 
   ///
   /// Ask for the following config data to be sent
   var getModuleConfigRequest: Meshtastic_AdminMessage.ModuleConfigType {
     get {
-      if case .getModuleConfigRequest(let v)? = payloadVariant {return v}
+      if case .getModuleConfigRequest(let v)? = _storage._payloadVariant {return v}
       return .mqttConfig
     }
-    set {payloadVariant = .getModuleConfigRequest(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getModuleConfigRequest(newValue)}
   }
 
   ///
   /// Send the current Config in the response to this message.
   var getModuleConfigResponse: Meshtastic_ModuleConfig {
     get {
-      if case .getModuleConfigResponse(let v)? = payloadVariant {return v}
+      if case .getModuleConfigResponse(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_ModuleConfig()
     }
-    set {payloadVariant = .getModuleConfigResponse(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getModuleConfigResponse(newValue)}
   }
 
   ///
   /// Get the Canned Message Module messages in the response to this message.
   var getCannedMessageModuleMessagesRequest: Bool {
     get {
-      if case .getCannedMessageModuleMessagesRequest(let v)? = payloadVariant {return v}
+      if case .getCannedMessageModuleMessagesRequest(let v)? = _storage._payloadVariant {return v}
       return false
     }
-    set {payloadVariant = .getCannedMessageModuleMessagesRequest(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getCannedMessageModuleMessagesRequest(newValue)}
   }
 
   ///
   /// Get the Canned Message Module messages in the response to this message.
   var getCannedMessageModuleMessagesResponse: String {
     get {
-      if case .getCannedMessageModuleMessagesResponse(let v)? = payloadVariant {return v}
+      if case .getCannedMessageModuleMessagesResponse(let v)? = _storage._payloadVariant {return v}
       return String()
     }
-    set {payloadVariant = .getCannedMessageModuleMessagesResponse(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getCannedMessageModuleMessagesResponse(newValue)}
   }
 
   ///
   /// Request the node to send device metadata (firmware, protobuf version, etc)
   var getDeviceMetadataRequest: Bool {
     get {
-      if case .getDeviceMetadataRequest(let v)? = payloadVariant {return v}
+      if case .getDeviceMetadataRequest(let v)? = _storage._payloadVariant {return v}
       return false
     }
-    set {payloadVariant = .getDeviceMetadataRequest(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getDeviceMetadataRequest(newValue)}
   }
 
   ///
   /// Device metadata response
   var getDeviceMetadataResponse: Meshtastic_DeviceMetadata {
     get {
-      if case .getDeviceMetadataResponse(let v)? = payloadVariant {return v}
+      if case .getDeviceMetadataResponse(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_DeviceMetadata()
     }
-    set {payloadVariant = .getDeviceMetadataResponse(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getDeviceMetadataResponse(newValue)}
   }
 
   ///
   /// Get the Ringtone in the response to this message.
   var getRingtoneRequest: Bool {
     get {
-      if case .getRingtoneRequest(let v)? = payloadVariant {return v}
+      if case .getRingtoneRequest(let v)? = _storage._payloadVariant {return v}
       return false
     }
-    set {payloadVariant = .getRingtoneRequest(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getRingtoneRequest(newValue)}
   }
 
   ///
   /// Get the Ringtone in the response to this message.
   var getRingtoneResponse: String {
     get {
-      if case .getRingtoneResponse(let v)? = payloadVariant {return v}
+      if case .getRingtoneResponse(let v)? = _storage._payloadVariant {return v}
       return String()
     }
-    set {payloadVariant = .getRingtoneResponse(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getRingtoneResponse(newValue)}
   }
 
   ///
   /// Request the node to send it's connection status
   var getDeviceConnectionStatusRequest: Bool {
     get {
-      if case .getDeviceConnectionStatusRequest(let v)? = payloadVariant {return v}
+      if case .getDeviceConnectionStatusRequest(let v)? = _storage._payloadVariant {return v}
       return false
     }
-    set {payloadVariant = .getDeviceConnectionStatusRequest(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getDeviceConnectionStatusRequest(newValue)}
   }
 
   ///
   /// Device connection status response
   var getDeviceConnectionStatusResponse: Meshtastic_DeviceConnectionStatus {
     get {
-      if case .getDeviceConnectionStatusResponse(let v)? = payloadVariant {return v}
+      if case .getDeviceConnectionStatusResponse(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_DeviceConnectionStatus()
     }
-    set {payloadVariant = .getDeviceConnectionStatusResponse(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getDeviceConnectionStatusResponse(newValue)}
   }
 
   ///
   /// Setup a node for licensed amateur (ham) radio operation
   var setHamMode: Meshtastic_HamParameters {
     get {
-      if case .setHamMode(let v)? = payloadVariant {return v}
+      if case .setHamMode(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_HamParameters()
     }
-    set {payloadVariant = .setHamMode(newValue)}
+    set {_uniqueStorage()._payloadVariant = .setHamMode(newValue)}
   }
 
   ///
   /// Get the mesh's nodes with their available gpio pins for RemoteHardware module use
   var getNodeRemoteHardwarePinsRequest: Bool {
     get {
-      if case .getNodeRemoteHardwarePinsRequest(let v)? = payloadVariant {return v}
+      if case .getNodeRemoteHardwarePinsRequest(let v)? = _storage._payloadVariant {return v}
       return false
     }
-    set {payloadVariant = .getNodeRemoteHardwarePinsRequest(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getNodeRemoteHardwarePinsRequest(newValue)}
   }
 
   ///
   /// Respond with the mesh's nodes with their available gpio pins for RemoteHardware module use
   var getNodeRemoteHardwarePinsResponse: Meshtastic_NodeRemoteHardwarePinsResponse {
     get {
-      if case .getNodeRemoteHardwarePinsResponse(let v)? = payloadVariant {return v}
+      if case .getNodeRemoteHardwarePinsResponse(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_NodeRemoteHardwarePinsResponse()
     }
-    set {payloadVariant = .getNodeRemoteHardwarePinsResponse(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getNodeRemoteHardwarePinsResponse(newValue)}
   }
 
   ///
@@ -285,60 +295,60 @@ struct Meshtastic_AdminMessage: Sendable {
   /// Only implemented on NRF52 currently
   var enterDfuModeRequest: Bool {
     get {
-      if case .enterDfuModeRequest(let v)? = payloadVariant {return v}
+      if case .enterDfuModeRequest(let v)? = _storage._payloadVariant {return v}
       return false
     }
-    set {payloadVariant = .enterDfuModeRequest(newValue)}
+    set {_uniqueStorage()._payloadVariant = .enterDfuModeRequest(newValue)}
   }
 
   ///
   /// Delete the file by the specified path from the device
   var deleteFileRequest: String {
     get {
-      if case .deleteFileRequest(let v)? = payloadVariant {return v}
+      if case .deleteFileRequest(let v)? = _storage._payloadVariant {return v}
       return String()
     }
-    set {payloadVariant = .deleteFileRequest(newValue)}
+    set {_uniqueStorage()._payloadVariant = .deleteFileRequest(newValue)}
   }
 
   ///
   /// Set zero and offset for scale chips
   var setScale: UInt32 {
     get {
-      if case .setScale(let v)? = payloadVariant {return v}
+      if case .setScale(let v)? = _storage._payloadVariant {return v}
       return 0
     }
-    set {payloadVariant = .setScale(newValue)}
+    set {_uniqueStorage()._payloadVariant = .setScale(newValue)}
   }
 
   ///
   /// Backup the node's preferences
   var backupPreferences: Meshtastic_AdminMessage.BackupLocation {
     get {
-      if case .backupPreferences(let v)? = payloadVariant {return v}
+      if case .backupPreferences(let v)? = _storage._payloadVariant {return v}
       return .flash
     }
-    set {payloadVariant = .backupPreferences(newValue)}
+    set {_uniqueStorage()._payloadVariant = .backupPreferences(newValue)}
   }
 
   ///
   /// Restore the node's preferences
   var restorePreferences: Meshtastic_AdminMessage.BackupLocation {
     get {
-      if case .restorePreferences(let v)? = payloadVariant {return v}
+      if case .restorePreferences(let v)? = _storage._payloadVariant {return v}
       return .flash
     }
-    set {payloadVariant = .restorePreferences(newValue)}
+    set {_uniqueStorage()._payloadVariant = .restorePreferences(newValue)}
   }
 
   ///
   /// Remove backups of the node's preferences
   var removeBackupPreferences: Meshtastic_AdminMessage.BackupLocation {
     get {
-      if case .removeBackupPreferences(let v)? = payloadVariant {return v}
+      if case .removeBackupPreferences(let v)? = _storage._payloadVariant {return v}
       return .flash
     }
-    set {payloadVariant = .removeBackupPreferences(newValue)}
+    set {_uniqueStorage()._payloadVariant = .removeBackupPreferences(newValue)}
   }
 
   ///
@@ -346,20 +356,20 @@ struct Meshtastic_AdminMessage: Sendable {
   /// This is used to trigger physical input events like button presses, touch events, etc.
   var sendInputEvent: Meshtastic_AdminMessage.InputEvent {
     get {
-      if case .sendInputEvent(let v)? = payloadVariant {return v}
+      if case .sendInputEvent(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_AdminMessage.InputEvent()
     }
-    set {payloadVariant = .sendInputEvent(newValue)}
+    set {_uniqueStorage()._payloadVariant = .sendInputEvent(newValue)}
   }
 
   ///
   /// Set the owner for this node
   var setOwner: Meshtastic_User {
     get {
-      if case .setOwner(let v)? = payloadVariant {return v}
+      if case .setOwner(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_User()
     }
-    set {payloadVariant = .setOwner(newValue)}
+    set {_uniqueStorage()._payloadVariant = .setOwner(newValue)}
   }
 
   ///
@@ -370,100 +380,100 @@ struct Meshtastic_AdminMessage: Sendable {
   /// If the client sets a particular channel to be primary, the previous channel will be set to SECONDARY automatically.
   var setChannel: Meshtastic_Channel {
     get {
-      if case .setChannel(let v)? = payloadVariant {return v}
+      if case .setChannel(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_Channel()
     }
-    set {payloadVariant = .setChannel(newValue)}
+    set {_uniqueStorage()._payloadVariant = .setChannel(newValue)}
   }
 
   ///
   /// Set the current Config
   var setConfig: Meshtastic_Config {
     get {
-      if case .setConfig(let v)? = payloadVariant {return v}
+      if case .setConfig(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_Config()
     }
-    set {payloadVariant = .setConfig(newValue)}
+    set {_uniqueStorage()._payloadVariant = .setConfig(newValue)}
   }
 
   ///
   /// Set the current Config
   var setModuleConfig: Meshtastic_ModuleConfig {
     get {
-      if case .setModuleConfig(let v)? = payloadVariant {return v}
+      if case .setModuleConfig(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_ModuleConfig()
     }
-    set {payloadVariant = .setModuleConfig(newValue)}
+    set {_uniqueStorage()._payloadVariant = .setModuleConfig(newValue)}
   }
 
   ///
   /// Set the Canned Message Module messages text.
   var setCannedMessageModuleMessages: String {
     get {
-      if case .setCannedMessageModuleMessages(let v)? = payloadVariant {return v}
+      if case .setCannedMessageModuleMessages(let v)? = _storage._payloadVariant {return v}
       return String()
     }
-    set {payloadVariant = .setCannedMessageModuleMessages(newValue)}
+    set {_uniqueStorage()._payloadVariant = .setCannedMessageModuleMessages(newValue)}
   }
 
   ///
   /// Set the ringtone for ExternalNotification.
   var setRingtoneMessage: String {
     get {
-      if case .setRingtoneMessage(let v)? = payloadVariant {return v}
+      if case .setRingtoneMessage(let v)? = _storage._payloadVariant {return v}
       return String()
     }
-    set {payloadVariant = .setRingtoneMessage(newValue)}
+    set {_uniqueStorage()._payloadVariant = .setRingtoneMessage(newValue)}
   }
 
   ///
   /// Remove the node by the specified node-num from the NodeDB on the device
   var removeByNodenum: UInt32 {
     get {
-      if case .removeByNodenum(let v)? = payloadVariant {return v}
+      if case .removeByNodenum(let v)? = _storage._payloadVariant {return v}
       return 0
     }
-    set {payloadVariant = .removeByNodenum(newValue)}
+    set {_uniqueStorage()._payloadVariant = .removeByNodenum(newValue)}
   }
 
   ///
   /// Set specified node-num to be favorited on the NodeDB on the device
   var setFavoriteNode: UInt32 {
     get {
-      if case .setFavoriteNode(let v)? = payloadVariant {return v}
+      if case .setFavoriteNode(let v)? = _storage._payloadVariant {return v}
       return 0
     }
-    set {payloadVariant = .setFavoriteNode(newValue)}
+    set {_uniqueStorage()._payloadVariant = .setFavoriteNode(newValue)}
   }
 
   ///
   /// Set specified node-num to be un-favorited on the NodeDB on the device
   var removeFavoriteNode: UInt32 {
     get {
-      if case .removeFavoriteNode(let v)? = payloadVariant {return v}
+      if case .removeFavoriteNode(let v)? = _storage._payloadVariant {return v}
       return 0
     }
-    set {payloadVariant = .removeFavoriteNode(newValue)}
+    set {_uniqueStorage()._payloadVariant = .removeFavoriteNode(newValue)}
   }
 
   ///
   /// Set fixed position data on the node and then set the position.fixed_position = true
   var setFixedPosition: Meshtastic_Position {
     get {
-      if case .setFixedPosition(let v)? = payloadVariant {return v}
+      if case .setFixedPosition(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_Position()
     }
-    set {payloadVariant = .setFixedPosition(newValue)}
+    set {_uniqueStorage()._payloadVariant = .setFixedPosition(newValue)}
   }
 
   ///
   /// Clear fixed position coordinates and then set position.fixed_position = false
   var removeFixedPosition: Bool {
     get {
-      if case .removeFixedPosition(let v)? = payloadVariant {return v}
+      if case .removeFixedPosition(let v)? = _storage._payloadVariant {return v}
       return false
     }
-    set {payloadVariant = .removeFixedPosition(newValue)}
+    set {_uniqueStorage()._payloadVariant = .removeFixedPosition(newValue)}
   }
 
   ///
@@ -471,70 +481,101 @@ struct Meshtastic_AdminMessage: Sendable {
   /// Convenience method to set the time on the node (as Net quality) without any other position data
   var setTimeOnly: UInt32 {
     get {
-      if case .setTimeOnly(let v)? = payloadVariant {return v}
+      if case .setTimeOnly(let v)? = _storage._payloadVariant {return v}
       return 0
     }
-    set {payloadVariant = .setTimeOnly(newValue)}
+    set {_uniqueStorage()._payloadVariant = .setTimeOnly(newValue)}
   }
 
   ///
   /// Tell the node to send the stored ui data.
   var getUiConfigRequest: Bool {
     get {
-      if case .getUiConfigRequest(let v)? = payloadVariant {return v}
+      if case .getUiConfigRequest(let v)? = _storage._payloadVariant {return v}
       return false
     }
-    set {payloadVariant = .getUiConfigRequest(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getUiConfigRequest(newValue)}
   }
 
   ///
   /// Reply stored device ui data.
   var getUiConfigResponse: Meshtastic_DeviceUIConfig {
     get {
-      if case .getUiConfigResponse(let v)? = payloadVariant {return v}
+      if case .getUiConfigResponse(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_DeviceUIConfig()
     }
-    set {payloadVariant = .getUiConfigResponse(newValue)}
+    set {_uniqueStorage()._payloadVariant = .getUiConfigResponse(newValue)}
   }
 
   ///
   /// Tell the node to store UI data persistently.
   var storeUiConfig: Meshtastic_DeviceUIConfig {
     get {
-      if case .storeUiConfig(let v)? = payloadVariant {return v}
+      if case .storeUiConfig(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_DeviceUIConfig()
     }
-    set {payloadVariant = .storeUiConfig(newValue)}
+    set {_uniqueStorage()._payloadVariant = .storeUiConfig(newValue)}
   }
 
   ///
   /// Set specified node-num to be ignored on the NodeDB on the device
   var setIgnoredNode: UInt32 {
     get {
-      if case .setIgnoredNode(let v)? = payloadVariant {return v}
+      if case .setIgnoredNode(let v)? = _storage._payloadVariant {return v}
       return 0
     }
-    set {payloadVariant = .setIgnoredNode(newValue)}
+    set {_uniqueStorage()._payloadVariant = .setIgnoredNode(newValue)}
   }
 
   ///
   /// Set specified node-num to be un-ignored on the NodeDB on the device
   var removeIgnoredNode: UInt32 {
     get {
-      if case .removeIgnoredNode(let v)? = payloadVariant {return v}
+      if case .removeIgnoredNode(let v)? = _storage._payloadVariant {return v}
       return 0
     }
-    set {payloadVariant = .removeIgnoredNode(newValue)}
+    set {_uniqueStorage()._payloadVariant = .removeIgnoredNode(newValue)}
   }
 
   ///
   /// Set specified node-num to be muted
   var toggleMutedNode: UInt32 {
     get {
-      if case .toggleMutedNode(let v)? = payloadVariant {return v}
+      if case .toggleMutedNode(let v)? = _storage._payloadVariant {return v}
       return 0
     }
-    set {payloadVariant = .toggleMutedNode(newValue)}
+    set {_uniqueStorage()._payloadVariant = .toggleMutedNode(newValue)}
+  }
+
+  ///
+  /// Request a single frame of the device's display framebuffer.
+  /// The frame is delivered to the local client as FromRadio.display_frame
+  /// chunks (see DisplayFrame in mesh.proto). There is no AdminMessage
+  /// response. Local connection only: a node receiving this over the mesh,
+  /// or a build without a display, ignores it. During active mirroring it
+  /// forces one frame on the next redraw even if the screen is unchanged.
+  var getDisplayFrameRequest: Bool {
+    get {
+      if case .getDisplayFrameRequest(let v)? = _storage._payloadVariant {return v}
+      return false
+    }
+    set {_uniqueStorage()._payloadVariant = .getDisplayFrameRequest(newValue)}
+  }
+
+  ///
+  /// Enable (true) or disable (false) continuous mirroring of the device
+  /// display. Unlike most bool verbs in this oneof, false is meaningful.
+  /// While enabled, the device sends a DisplayFrame after each screen
+  /// redraw that changed the framebuffer, as FromRadio.display_frame
+  /// chunks; the first frame arrives immediately and acts as the
+  /// acknowledgement. Local connection only (see get_display_frame_request)
+  /// and not persisted across reboot.
+  var setDisplayMirror: Bool {
+    get {
+      if case .setDisplayMirror(let v)? = _storage._payloadVariant {return v}
+      return false
+    }
+    set {_uniqueStorage()._payloadVariant = .setDisplayMirror(newValue)}
   }
 
   ///
@@ -542,50 +583,50 @@ struct Meshtastic_AdminMessage: Sendable {
   /// This will delay the standard *implicit* save to the file system and subsequent reboot behavior until committed (commit_edit_settings)
   var beginEditSettings: Bool {
     get {
-      if case .beginEditSettings(let v)? = payloadVariant {return v}
+      if case .beginEditSettings(let v)? = _storage._payloadVariant {return v}
       return false
     }
-    set {payloadVariant = .beginEditSettings(newValue)}
+    set {_uniqueStorage()._payloadVariant = .beginEditSettings(newValue)}
   }
 
   ///
   /// Commits an open transaction for any edits made to config, module config, owner, and channel settings
   var commitEditSettings: Bool {
     get {
-      if case .commitEditSettings(let v)? = payloadVariant {return v}
+      if case .commitEditSettings(let v)? = _storage._payloadVariant {return v}
       return false
     }
-    set {payloadVariant = .commitEditSettings(newValue)}
+    set {_uniqueStorage()._payloadVariant = .commitEditSettings(newValue)}
   }
 
   ///
   /// Add a contact (User) to the nodedb
   var addContact: Meshtastic_SharedContact {
     get {
-      if case .addContact(let v)? = payloadVariant {return v}
+      if case .addContact(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_SharedContact()
     }
-    set {payloadVariant = .addContact(newValue)}
+    set {_uniqueStorage()._payloadVariant = .addContact(newValue)}
   }
 
   ///
   /// Initiate or respond to a key verification request
   var keyVerification: Meshtastic_KeyVerificationAdmin {
     get {
-      if case .keyVerification(let v)? = payloadVariant {return v}
+      if case .keyVerification(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_KeyVerificationAdmin()
     }
-    set {payloadVariant = .keyVerification(newValue)}
+    set {_uniqueStorage()._payloadVariant = .keyVerification(newValue)}
   }
 
   ///
   /// Tell the node to factory reset config everything; all device state and configuration will be returned to factory defaults and BLE bonds will be cleared.
   var factoryResetDevice: Int32 {
     get {
-      if case .factoryResetDevice(let v)? = payloadVariant {return v}
+      if case .factoryResetDevice(let v)? = _storage._payloadVariant {return v}
       return 0
     }
-    set {payloadVariant = .factoryResetDevice(newValue)}
+    set {_uniqueStorage()._payloadVariant = .factoryResetDevice(newValue)}
   }
 
   ///
@@ -596,10 +637,10 @@ struct Meshtastic_AdminMessage: Sendable {
   /// NOTE: This field was marked as deprecated in the .proto file.
   var rebootOtaSeconds: Int32 {
     get {
-      if case .rebootOtaSeconds(let v)? = payloadVariant {return v}
+      if case .rebootOtaSeconds(let v)? = _storage._payloadVariant {return v}
       return 0
     }
-    set {payloadVariant = .rebootOtaSeconds(newValue)}
+    set {_uniqueStorage()._payloadVariant = .rebootOtaSeconds(newValue)}
   }
 
   ///
@@ -607,40 +648,40 @@ struct Meshtastic_AdminMessage: Sendable {
   /// If received the simulator will exit successfully.
   var exitSimulator: Bool {
     get {
-      if case .exitSimulator(let v)? = payloadVariant {return v}
+      if case .exitSimulator(let v)? = _storage._payloadVariant {return v}
       return false
     }
-    set {payloadVariant = .exitSimulator(newValue)}
+    set {_uniqueStorage()._payloadVariant = .exitSimulator(newValue)}
   }
 
   ///
   /// Tell the node to reboot in this many seconds (or <0 to cancel reboot)
   var rebootSeconds: Int32 {
     get {
-      if case .rebootSeconds(let v)? = payloadVariant {return v}
+      if case .rebootSeconds(let v)? = _storage._payloadVariant {return v}
       return 0
     }
-    set {payloadVariant = .rebootSeconds(newValue)}
+    set {_uniqueStorage()._payloadVariant = .rebootSeconds(newValue)}
   }
 
   ///
   /// Tell the node to shutdown in this many seconds (or <0 to cancel shutdown)
   var shutdownSeconds: Int32 {
     get {
-      if case .shutdownSeconds(let v)? = payloadVariant {return v}
+      if case .shutdownSeconds(let v)? = _storage._payloadVariant {return v}
       return 0
     }
-    set {payloadVariant = .shutdownSeconds(newValue)}
+    set {_uniqueStorage()._payloadVariant = .shutdownSeconds(newValue)}
   }
 
   ///
   /// Tell the node to factory reset config; all device state and configuration will be returned to factory defaults; BLE bonds will be preserved.
   var factoryResetConfig: Int32 {
     get {
-      if case .factoryResetConfig(let v)? = payloadVariant {return v}
+      if case .factoryResetConfig(let v)? = _storage._payloadVariant {return v}
       return 0
     }
-    set {payloadVariant = .factoryResetConfig(newValue)}
+    set {_uniqueStorage()._payloadVariant = .factoryResetConfig(newValue)}
   }
 
   ///
@@ -648,37 +689,54 @@ struct Meshtastic_AdminMessage: Sendable {
   /// When true, favorites are preserved through reset.
   var nodedbReset: Bool {
     get {
-      if case .nodedbReset(let v)? = payloadVariant {return v}
+      if case .nodedbReset(let v)? = _storage._payloadVariant {return v}
       return false
     }
-    set {payloadVariant = .nodedbReset(newValue)}
+    set {_uniqueStorage()._payloadVariant = .nodedbReset(newValue)}
   }
 
   ///
   /// Tell the node to reset into the OTA Loader
   var otaRequest: Meshtastic_AdminMessage.OTAEvent {
     get {
-      if case .otaRequest(let v)? = payloadVariant {return v}
+      if case .otaRequest(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_AdminMessage.OTAEvent()
     }
-    set {payloadVariant = .otaRequest(newValue)}
+    set {_uniqueStorage()._payloadVariant = .otaRequest(newValue)}
   }
 
   ///
   /// Parameters and sensor configuration
   var sensorConfig: Meshtastic_SensorConfig {
     get {
-      if case .sensorConfig(let v)? = payloadVariant {return v}
+      if case .sensorConfig(let v)? = _storage._payloadVariant {return v}
       return Meshtastic_SensorConfig()
     }
-    set {payloadVariant = .sensorConfig(newValue)}
+    set {_uniqueStorage()._payloadVariant = .sensorConfig(newValue)}
+  }
+
+  ///
+  /// Lockdown passphrase delivery / unlock / lock-now command for hardened
+  /// firmware builds (see MESHTASTIC_LOCKDOWN). Used to provision the
+  /// passphrase on first boot, unlock encrypted storage on subsequent
+  /// reboots, re-verify on already-unlocked devices to authorize a new
+  /// client connection, or immediately re-lock the device.
+  ///
+  /// Replaces the earlier scheme that repurposed SecurityConfig.private_key
+  /// to carry passphrase bytes; that hack is retired.
+  var lockdownAuth: Meshtastic_LockdownAuth {
+    get {
+      if case .lockdownAuth(let v)? = _storage._payloadVariant {return v}
+      return Meshtastic_LockdownAuth()
+    }
+    set {_uniqueStorage()._payloadVariant = .lockdownAuth(newValue)}
   }
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   ///
   /// TODO: REPLACE
-  enum OneOf_PayloadVariant: Equatable, Sendable {
+  nonisolated enum OneOf_PayloadVariant: Equatable, Sendable {
     ///
     /// Send the specified channel in the response to this message
     /// NOTE: This field is sent with the channel index + 1 (to ensure we never try to send 'zero' - which protobufs treats as not present)
@@ -820,6 +878,23 @@ struct Meshtastic_AdminMessage: Sendable {
     /// Set specified node-num to be muted
     case toggleMutedNode(UInt32)
     ///
+    /// Request a single frame of the device's display framebuffer.
+    /// The frame is delivered to the local client as FromRadio.display_frame
+    /// chunks (see DisplayFrame in mesh.proto). There is no AdminMessage
+    /// response. Local connection only: a node receiving this over the mesh,
+    /// or a build without a display, ignores it. During active mirroring it
+    /// forces one frame on the next redraw even if the screen is unchanged.
+    case getDisplayFrameRequest(Bool)
+    ///
+    /// Enable (true) or disable (false) continuous mirroring of the device
+    /// display. Unlike most bool verbs in this oneof, false is meaningful.
+    /// While enabled, the device sends a DisplayFrame after each screen
+    /// redraw that changed the framebuffer, as FromRadio.display_frame
+    /// chunks; the first frame arrives immediately and acts as the
+    /// acknowledgement. Local connection only (see get_display_frame_request)
+    /// and not persisted across reboot.
+    case setDisplayMirror(Bool)
+    ///
     /// Begins an edit transaction for config, module config, owner, and channel settings changes
     /// This will delay the standard *implicit* save to the file system and subsequent reboot behavior until committed (commit_edit_settings)
     case beginEditSettings(Bool)
@@ -865,12 +940,22 @@ struct Meshtastic_AdminMessage: Sendable {
     ///
     /// Parameters and sensor configuration
     case sensorConfig(Meshtastic_SensorConfig)
+    ///
+    /// Lockdown passphrase delivery / unlock / lock-now command for hardened
+    /// firmware builds (see MESHTASTIC_LOCKDOWN). Used to provision the
+    /// passphrase on first boot, unlock encrypted storage on subsequent
+    /// reboots, re-verify on already-unlocked devices to authorize a new
+    /// client connection, or immediately re-lock the device.
+    ///
+    /// Replaces the earlier scheme that repurposed SecurityConfig.private_key
+    /// to carry passphrase bytes; that hack is retired.
+    case lockdownAuth(Meshtastic_LockdownAuth)
 
   }
 
   ///
   /// TODO: REPLACE
-  enum ConfigType: SwiftProtobuf.Enum, Swift.CaseIterable {
+  nonisolated enum ConfigType: SwiftProtobuf.Enum, Swift.CaseIterable {
     typealias RawValue = Int
 
     ///
@@ -968,7 +1053,7 @@ struct Meshtastic_AdminMessage: Sendable {
 
   ///
   /// TODO: REPLACE
-  enum ModuleConfigType: SwiftProtobuf.Enum, Swift.CaseIterable {
+  nonisolated enum ModuleConfigType: SwiftProtobuf.Enum, Swift.CaseIterable {
     typealias RawValue = Int
 
     ///
@@ -1034,6 +1119,10 @@ struct Meshtastic_AdminMessage: Sendable {
     ///
     /// TAK module config
     case takConfig // = 15
+
+    ///
+    /// Mesh Beacon module config
+    case meshbeaconConfig // = 16
     case UNRECOGNIZED(Int)
 
     init() {
@@ -1058,6 +1147,7 @@ struct Meshtastic_AdminMessage: Sendable {
       case 13: self = .statusmessageConfig
       case 14: self = .trafficmanagementConfig
       case 15: self = .takConfig
+      case 16: self = .meshbeaconConfig
       default: self = .UNRECOGNIZED(rawValue)
       }
     }
@@ -1080,6 +1170,7 @@ struct Meshtastic_AdminMessage: Sendable {
       case .statusmessageConfig: return 13
       case .trafficmanagementConfig: return 14
       case .takConfig: return 15
+      case .meshbeaconConfig: return 16
       case .UNRECOGNIZED(let i): return i
       }
     }
@@ -1102,11 +1193,12 @@ struct Meshtastic_AdminMessage: Sendable {
       .statusmessageConfig,
       .trafficmanagementConfig,
       .takConfig,
+      .meshbeaconConfig,
     ]
 
   }
 
-  enum BackupLocation: SwiftProtobuf.Enum, Swift.CaseIterable {
+  nonisolated enum BackupLocation: SwiftProtobuf.Enum, Swift.CaseIterable {
     typealias RawValue = Int
 
     ///
@@ -1148,7 +1240,7 @@ struct Meshtastic_AdminMessage: Sendable {
 
   ///
   /// Input event message to be sent to the node.
-  struct InputEvent: Sendable {
+  nonisolated struct InputEvent: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1177,7 +1269,7 @@ struct Meshtastic_AdminMessage: Sendable {
   ///
   /// User is requesting an over the air update.
   /// Node will reboot into the OTA loader
-  struct OTAEvent: Sendable {
+  nonisolated struct OTAEvent: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1197,11 +1289,124 @@ struct Meshtastic_AdminMessage: Sendable {
   }
 
   init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+///
+/// Lockdown passphrase delivery payload.
+///
+/// One message handles three operations distinguished by content:
+///   - Provision (first-time): passphrase set, lock_now=false. Firmware
+///     generates DEK, wraps with passphrase-derived KEK, persists.
+///   - Unlock: passphrase set, lock_now=false. Firmware verifies
+///     passphrase against stored DEK, unlocks storage, authorizes the
+///     connection that delivered this packet.
+///   - Lock now: lock_now=true, passphrase ignored. Firmware revokes
+///     all client auth and reboots into the locked state.
+///
+/// Firmware decides between provision and unlock based on its own state
+/// (whether a DEK file already exists). Clients do not need to track
+/// which case applies.
+nonisolated struct Meshtastic_LockdownAuth: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  ///
+  /// Passphrase bytes (1-32). Empty when lock_now is true.
+  /// Capped to 32 to match the proto cap on related security fields.
+  var passphrase: Data = Data()
+
+  ///
+  /// Optional override of the boot-count token TTL granted on success.
+  /// 0 = use firmware default (TOKEN_DEFAULT_BOOTS).
+  /// On reboot the firmware decrements this; when it reaches 0 the
+  /// device boots fully locked and requires a fresh passphrase.
+  var bootsRemaining: UInt32 = 0
+
+  ///
+  /// Optional wall-clock expiry for the unlock token, as absolute
+  /// Unix-epoch seconds. 0 = no time limit (only the boot-count TTL
+  /// applies). On boot, if the device RTC is set and now > this value,
+  /// the token is treated as expired.
+  var validUntilEpoch: UInt32 = 0
+
+  ///
+  /// If true, ignore passphrase fields, immediately revoke all
+  /// connection-level admin authorization, and reboot the device into
+  /// the locked state. Always honoured regardless of current lock state.
+  var lockNow: Bool = false
+
+  ///
+  /// Optional per-boot uptime cap on the unlocked session, in seconds.
+  /// 0 = unlimited (token-only enforcement, suitable for unattended
+  /// tower / infrastructure nodes).
+  ///
+  /// When non-zero, the firmware arms an uptime timer at unlock. On
+  /// each expiry, while there is still boot-count budget, the firmware
+  /// decrements the on-flash boot count in place, revokes per-
+  /// connection admin auth (clients must re-authenticate to see
+  /// content), re-engages the screen lock, and re-arms the timer
+  /// without rebooting. Mesh routing keeps running across session
+  /// boundaries; only when the boot-count budget reaches zero does
+  /// the device hard-lock and reboot.
+  ///
+  /// Total exposure ceiling = ((resolved boot count) + 1) * max_session_seconds.
+  /// The +1 accounts for the initial passphrase-unlocked session
+  /// itself, since boots_remaining is the number of subsequent
+  /// session rolls (each consuming one boot from the rollback ledger).
+  /// The resolved boot count is the value the firmware writes into the
+  /// token at unlock time: the client-supplied boots_remaining when
+  /// non-zero, otherwise the firmware default (TOKEN_DEFAULT_BOOTS).
+  /// Note that boots_remaining == 0 in this message means "use firmware
+  /// default", NOT "zero boots" - a client computing the ceiling for
+  /// display should mirror that resolution rather than multiplying the
+  /// raw request value.
+  ///
+  /// The cap is persisted in the token, so it survives token-based
+  /// auto-unlock across reboots. Explicit operator Lock Now still
+  /// deletes the token and forces passphrase re-entry.
+  ///
+  /// Uses millis() (CPU uptime), not wall-clock time, so the cap is
+  /// immune to GPS spoofing, RTC backup-battery removal, and Faraday
+  /// cage isolation - none of those move the uptime counter. The only
+  /// way to reset the session clock is a reboot, which costs a boot
+  /// from the on-flash, HMAC-bound counter.
+  var maxSessionSeconds: UInt32 = 0
+
+  ///
+  /// Disable lockdown mode. Requires a valid passphrase in the same
+  /// message (the device must prove the operator owns it before
+  /// reverting at-rest encryption). On success the firmware decrypts
+  /// every stored config / channel / nodedb file back to plaintext,
+  /// removes the wrapped DEK, unlock token, monotonic-counter, and
+  /// backoff files, and reboots out of lockdown.
+  ///
+  /// This is the inverse of the provision/unlock path: it is how the
+  /// client app's "lockdown mode" toggle returns a device to normal
+  /// operation.
+  ///
+  /// NOT reversed by this operation: APPROTECT. Once the debug port
+  /// lockout has been burned (on silicon where it is effective) it is
+  /// permanent - disabling lockdown decrypts your data and removes the
+  /// access gates, but the SWD/JTAG port stays locked for the life of
+  /// the device (recoverable only via a full chip erase over a debug
+  /// probe, which destroys all data). Clients should make this
+  /// irreversibility clear at the moment lockdown is first enabled.
+  ///
+  /// When true the passphrase field is still required; boots_remaining,
+  /// valid_until_epoch, max_session_seconds, and lock_now are ignored.
+  var disable: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
 }
 
 ///
 /// Parameters for setting up Meshtastic for ameteur radio usage
-struct Meshtastic_HamParameters: Sendable {
+nonisolated struct Meshtastic_HamParameters: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1224,6 +1429,11 @@ struct Meshtastic_HamParameters: Sendable {
   /// Optional short name of user
   var shortName: String = String()
 
+  ///
+  /// Optional long name of user
+  /// Appended to callsign
+  var longName: String = String()
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -1231,7 +1441,7 @@ struct Meshtastic_HamParameters: Sendable {
 
 ///
 /// Response envelope for node_remote_hardware_pins
-struct Meshtastic_NodeRemoteHardwarePinsResponse: Sendable {
+nonisolated struct Meshtastic_NodeRemoteHardwarePinsResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1245,7 +1455,7 @@ struct Meshtastic_NodeRemoteHardwarePinsResponse: Sendable {
   init() {}
 }
 
-struct Meshtastic_SharedContact: Sendable {
+nonisolated struct Meshtastic_SharedContact: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1282,7 +1492,7 @@ struct Meshtastic_SharedContact: Sendable {
 
 ///
 /// This message is used by a client to initiate or complete a key verification
-struct Meshtastic_KeyVerificationAdmin: Sendable {
+nonisolated struct Meshtastic_KeyVerificationAdmin: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1312,7 +1522,7 @@ struct Meshtastic_KeyVerificationAdmin: Sendable {
 
   ///
   /// Three stages of this request.
-  enum MessageType: SwiftProtobuf.Enum, Swift.CaseIterable {
+  nonisolated enum MessageType: SwiftProtobuf.Enum, Swift.CaseIterable {
     typealias RawValue = Int
 
     ///
@@ -1372,7 +1582,7 @@ struct Meshtastic_KeyVerificationAdmin: Sendable {
   fileprivate var _securityNumber: UInt32? = nil
 }
 
-struct Meshtastic_SensorConfig: Sendable {
+nonisolated struct Meshtastic_SensorConfig: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1380,46 +1590,88 @@ struct Meshtastic_SensorConfig: Sendable {
   ///
   /// SCD4X CO2 Sensor configuration
   var scd4XConfig: Meshtastic_SCD4X_config {
-    get {_scd4XConfig ?? Meshtastic_SCD4X_config()}
-    set {_scd4XConfig = newValue}
+    get {_storage._scd4XConfig ?? Meshtastic_SCD4X_config()}
+    set {_uniqueStorage()._scd4XConfig = newValue}
   }
   /// Returns true if `scd4XConfig` has been explicitly set.
-  var hasScd4XConfig: Bool {self._scd4XConfig != nil}
+  var hasScd4XConfig: Bool {_storage._scd4XConfig != nil}
   /// Clears the value of `scd4XConfig`. Subsequent reads from it will return its default value.
-  mutating func clearScd4XConfig() {self._scd4XConfig = nil}
+  mutating func clearScd4XConfig() {_uniqueStorage()._scd4XConfig = nil}
 
   ///
   /// SEN5X PM Sensor configuration
   var sen5XConfig: Meshtastic_SEN5X_config {
-    get {_sen5XConfig ?? Meshtastic_SEN5X_config()}
-    set {_sen5XConfig = newValue}
+    get {_storage._sen5XConfig ?? Meshtastic_SEN5X_config()}
+    set {_uniqueStorage()._sen5XConfig = newValue}
   }
   /// Returns true if `sen5XConfig` has been explicitly set.
-  var hasSen5XConfig: Bool {self._sen5XConfig != nil}
+  var hasSen5XConfig: Bool {_storage._sen5XConfig != nil}
   /// Clears the value of `sen5XConfig`. Subsequent reads from it will return its default value.
-  mutating func clearSen5XConfig() {self._sen5XConfig = nil}
+  mutating func clearSen5XConfig() {_uniqueStorage()._sen5XConfig = nil}
 
   ///
   /// SCD30 CO2 Sensor configuration
   var scd30Config: Meshtastic_SCD30_config {
-    get {_scd30Config ?? Meshtastic_SCD30_config()}
-    set {_scd30Config = newValue}
+    get {_storage._scd30Config ?? Meshtastic_SCD30_config()}
+    set {_uniqueStorage()._scd30Config = newValue}
   }
   /// Returns true if `scd30Config` has been explicitly set.
-  var hasScd30Config: Bool {self._scd30Config != nil}
+  var hasScd30Config: Bool {_storage._scd30Config != nil}
   /// Clears the value of `scd30Config`. Subsequent reads from it will return its default value.
-  mutating func clearScd30Config() {self._scd30Config = nil}
+  mutating func clearScd30Config() {_uniqueStorage()._scd30Config = nil}
+
+  ///
+  /// SHTXX temperature and relative humidity sensor configuration
+  var shtxxConfig: Meshtastic_SHTXX_config {
+    get {_storage._shtxxConfig ?? Meshtastic_SHTXX_config()}
+    set {_uniqueStorage()._shtxxConfig = newValue}
+  }
+  /// Returns true if `shtxxConfig` has been explicitly set.
+  var hasShtxxConfig: Bool {_storage._shtxxConfig != nil}
+  /// Clears the value of `shtxxConfig`. Subsequent reads from it will return its default value.
+  mutating func clearShtxxConfig() {_uniqueStorage()._shtxxConfig = nil}
+
+  ///
+  /// DS248X-800 temperature sensor configuration
+  var ds248XConfig: Meshtastic_DS248X_config {
+    get {_storage._ds248XConfig ?? Meshtastic_DS248X_config()}
+    set {_uniqueStorage()._ds248XConfig = newValue}
+  }
+  /// Returns true if `ds248XConfig` has been explicitly set.
+  var hasDs248XConfig: Bool {_storage._ds248XConfig != nil}
+  /// Clears the value of `ds248XConfig`. Subsequent reads from it will return its default value.
+  mutating func clearDs248XConfig() {_uniqueStorage()._ds248XConfig = nil}
+
+  ///
+  /// SEN6X PM/RHT/VOC/NOx/CO2/HCHO Sensor configuration
+  var sen6XConfig: Meshtastic_SEN6X_config {
+    get {_storage._sen6XConfig ?? Meshtastic_SEN6X_config()}
+    set {_uniqueStorage()._sen6XConfig = newValue}
+  }
+  /// Returns true if `sen6XConfig` has been explicitly set.
+  var hasSen6XConfig: Bool {_storage._sen6XConfig != nil}
+  /// Clears the value of `sen6XConfig`. Subsequent reads from it will return its default value.
+  mutating func clearSen6XConfig() {_uniqueStorage()._sen6XConfig = nil}
+
+  ///
+  /// AS3935 lightning sensor configuration
+  var as3935Config: Meshtastic_AS3935_config {
+    get {_storage._as3935Config ?? Meshtastic_AS3935_config()}
+    set {_uniqueStorage()._as3935Config = newValue}
+  }
+  /// Returns true if `as3935Config` has been explicitly set.
+  var hasAs3935Config: Bool {_storage._as3935Config != nil}
+  /// Clears the value of `as3935Config`. Subsequent reads from it will return its default value.
+  mutating func clearAs3935Config() {_uniqueStorage()._as3935Config = nil}
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
 
-  fileprivate var _scd4XConfig: Meshtastic_SCD4X_config? = nil
-  fileprivate var _sen5XConfig: Meshtastic_SEN5X_config? = nil
-  fileprivate var _scd30Config: Meshtastic_SCD30_config? = nil
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
-struct Meshtastic_SCD4X_config: Sendable {
+nonisolated struct Meshtastic_SCD4X_config: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1514,7 +1766,7 @@ struct Meshtastic_SCD4X_config: Sendable {
   fileprivate var _setPowerMode: Bool? = nil
 }
 
-struct Meshtastic_SEN5X_config: Sendable {
+nonisolated struct Meshtastic_SEN5X_config: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1541,15 +1793,134 @@ struct Meshtastic_SEN5X_config: Sendable {
   /// Clears the value of `setOneShotMode`. Subsequent reads from it will return its default value.
   mutating func clearSetOneShotMode() {self._setOneShotMode = nil}
 
+  ///
+  /// Trigger a fan cleaning cycle
+  var startFanCleaning: Bool {
+    get {_startFanCleaning ?? false}
+    set {_startFanCleaning = newValue}
+  }
+  /// Returns true if `startFanCleaning` has been explicitly set.
+  var hasStartFanCleaning: Bool {self._startFanCleaning != nil}
+  /// Clears the value of `startFanCleaning`. Subsequent reads from it will return its default value.
+  mutating func clearStartFanCleaning() {self._startFanCleaning = nil}
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
 
   fileprivate var _setTemperature: Float? = nil
   fileprivate var _setOneShotMode: Bool? = nil
+  fileprivate var _startFanCleaning: Bool? = nil
 }
 
-struct Meshtastic_SCD30_config: Sendable {
+nonisolated struct Meshtastic_SEN6X_config: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  ///
+  /// Reference temperature in degC
+  var setTemperature: Float {
+    get {_setTemperature ?? 0}
+    set {_setTemperature = newValue}
+  }
+  /// Returns true if `setTemperature` has been explicitly set.
+  var hasSetTemperature: Bool {self._setTemperature != nil}
+  /// Clears the value of `setTemperature`. Subsequent reads from it will return its default value.
+  mutating func clearSetTemperature() {self._setTemperature = nil}
+
+  ///
+  /// One-shot mode (true for low power - one-shot mode, false for normal - continuous mode)
+  var setOneShotMode: Bool {
+    get {_setOneShotMode ?? false}
+    set {_setOneShotMode = newValue}
+  }
+  /// Returns true if `setOneShotMode` has been explicitly set.
+  var hasSetOneShotMode: Bool {self._setOneShotMode != nil}
+  /// Clears the value of `setOneShotMode`. Subsequent reads from it will return its default value.
+  mutating func clearSetOneShotMode() {self._setOneShotMode = nil}
+
+  ///
+  /// Trigger a fan cleaning cycle
+  var startFanCleaning: Bool {
+    get {_startFanCleaning ?? false}
+    set {_startFanCleaning = newValue}
+  }
+  /// Returns true if `startFanCleaning` has been explicitly set.
+  var hasStartFanCleaning: Bool {self._startFanCleaning != nil}
+  /// Clears the value of `startFanCleaning`. Subsequent reads from it will return its default value.
+  mutating func clearStartFanCleaning() {self._startFanCleaning = nil}
+
+  ///
+  /// Set Automatic self-calibration enabled (CO2-capable variants only: SEN63C, SEN66, SEN69C)
+  var setAsc: Bool {
+    get {_setAsc ?? false}
+    set {_setAsc = newValue}
+  }
+  /// Returns true if `setAsc` has been explicitly set.
+  var hasSetAsc: Bool {self._setAsc != nil}
+  /// Clears the value of `setAsc`. Subsequent reads from it will return its default value.
+  mutating func clearSetAsc() {self._setAsc = nil}
+
+  ///
+  /// Recalibration target CO2 concentration in ppm (FRC only), CO2-capable variants only
+  var setTargetCo2Conc: UInt32 {
+    get {_setTargetCo2Conc ?? 0}
+    set {_setTargetCo2Conc = newValue}
+  }
+  /// Returns true if `setTargetCo2Conc` has been explicitly set.
+  var hasSetTargetCo2Conc: Bool {self._setTargetCo2Conc != nil}
+  /// Clears the value of `setTargetCo2Conc`. Subsequent reads from it will return its default value.
+  mutating func clearSetTargetCo2Conc() {self._setTargetCo2Conc = nil}
+
+  ///
+  /// Altitude of sensor in meters above sea level. 0 - 3000m (overrides ambient pressure), CO2-capable variants only
+  var setAltitude: UInt32 {
+    get {_setAltitude ?? 0}
+    set {_setAltitude = newValue}
+  }
+  /// Returns true if `setAltitude` has been explicitly set.
+  var hasSetAltitude: Bool {self._setAltitude != nil}
+  /// Clears the value of `setAltitude`. Subsequent reads from it will return its default value.
+  mutating func clearSetAltitude() {self._setAltitude = nil}
+
+  ///
+  /// Sensor ambient pressure in Pa. 70000 - 120000 Pa (overrides altitude), CO2-capable variants only
+  var setAmbientPressure: UInt32 {
+    get {_setAmbientPressure ?? 0}
+    set {_setAmbientPressure = newValue}
+  }
+  /// Returns true if `setAmbientPressure` has been explicitly set.
+  var hasSetAmbientPressure: Bool {self._setAmbientPressure != nil}
+  /// Clears the value of `setAmbientPressure`. Subsequent reads from it will return its default value.
+  mutating func clearSetAmbientPressure() {self._setAmbientPressure = nil}
+
+  ///
+  /// Perform a factory reset of the CO2 sensor's calibration, CO2-capable variants only
+  var factoryReset: Bool {
+    get {_factoryReset ?? false}
+    set {_factoryReset = newValue}
+  }
+  /// Returns true if `factoryReset` has been explicitly set.
+  var hasFactoryReset: Bool {self._factoryReset != nil}
+  /// Clears the value of `factoryReset`. Subsequent reads from it will return its default value.
+  mutating func clearFactoryReset() {self._factoryReset = nil}
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _setTemperature: Float? = nil
+  fileprivate var _setOneShotMode: Bool? = nil
+  fileprivate var _startFanCleaning: Bool? = nil
+  fileprivate var _setAsc: Bool? = nil
+  fileprivate var _setTargetCo2Conc: UInt32? = nil
+  fileprivate var _setAltitude: UInt32? = nil
+  fileprivate var _setAmbientPressure: UInt32? = nil
+  fileprivate var _factoryReset: Bool? = nil
+}
+
+nonisolated struct Meshtastic_SCD30_config: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1632,852 +2003,1001 @@ struct Meshtastic_SCD30_config: Sendable {
   fileprivate var _softReset: Bool? = nil
 }
 
+nonisolated struct Meshtastic_SHTXX_config: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  ///
+  /// Accuracy mode (0 = low, 1 = medium, 2 = high)
+  var setAccuracy: UInt32 {
+    get {_setAccuracy ?? 0}
+    set {_setAccuracy = newValue}
+  }
+  /// Returns true if `setAccuracy` has been explicitly set.
+  var hasSetAccuracy: Bool {self._setAccuracy != nil}
+  /// Clears the value of `setAccuracy`. Subsequent reads from it will return its default value.
+  mutating func clearSetAccuracy() {self._setAccuracy = nil}
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _setAccuracy: UInt32? = nil
+}
+
+nonisolated struct Meshtastic_DS248X_config: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  ///
+  /// Main channel for temperature reporting (0-7)
+  var mainTemperatureChannel: UInt32 {
+    get {_mainTemperatureChannel ?? 0}
+    set {_mainTemperatureChannel = newValue}
+  }
+  /// Returns true if `mainTemperatureChannel` has been explicitly set.
+  var hasMainTemperatureChannel: Bool {self._mainTemperatureChannel != nil}
+  /// Clears the value of `mainTemperatureChannel`. Subsequent reads from it will return its default value.
+  mutating func clearMainTemperatureChannel() {self._mainTemperatureChannel = nil}
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _mainTemperatureChannel: UInt32? = nil
+}
+
+nonisolated struct Meshtastic_AS3935_config: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  ///
+  /// Antenna tuning capacitance in pF, 0 to 120 in steps of 8. The antenna tank must
+  /// resonate within 3.5% of 500kHz; the correct trim is specific to the sensor board.
+  var setTuningCapPf: UInt32 {
+    get {_setTuningCapPf ?? 0}
+    set {_setTuningCapPf = newValue}
+  }
+  /// Returns true if `setTuningCapPf` has been explicitly set.
+  var hasSetTuningCapPf: Bool {self._setTuningCapPf != nil}
+  /// Clears the value of `setTuningCapPf`. Subsequent reads from it will return its default value.
+  mutating func clearSetTuningCapPf() {self._setTuningCapPf = nil}
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _setTuningCapPf: UInt32? = nil
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
-fileprivate let _protobuf_package = "meshtastic"
+fileprivate nonisolated let _protobuf_package = "meshtastic"
 
-extension Meshtastic_OTAMode: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_OTAMode: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0NO_REBOOT_OTA\0\u{1}OTA_BLE\0\u{1}OTA_WIFI\0")
 }
 
-extension Meshtastic_AdminMessage: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_AdminMessage: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".AdminMessage"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}get_channel_request\0\u{3}get_channel_response\0\u{3}get_owner_request\0\u{3}get_owner_response\0\u{3}get_config_request\0\u{3}get_config_response\0\u{3}get_module_config_request\0\u{3}get_module_config_response\0\u{4}\u{2}get_canned_message_module_messages_request\0\u{3}get_canned_message_module_messages_response\0\u{3}get_device_metadata_request\0\u{3}get_device_metadata_response\0\u{3}get_ringtone_request\0\u{3}get_ringtone_response\0\u{3}get_device_connection_status_request\0\u{3}get_device_connection_status_response\0\u{3}set_ham_mode\0\u{3}get_node_remote_hardware_pins_request\0\u{3}get_node_remote_hardware_pins_response\0\u{3}enter_dfu_mode_request\0\u{3}delete_file_request\0\u{3}set_scale\0\u{3}backup_preferences\0\u{3}restore_preferences\0\u{3}remove_backup_preferences\0\u{3}send_input_event\0\u{4}\u{5}set_owner\0\u{3}set_channel\0\u{3}set_config\0\u{3}set_module_config\0\u{3}set_canned_message_module_messages\0\u{3}set_ringtone_message\0\u{3}remove_by_nodenum\0\u{3}set_favorite_node\0\u{3}remove_favorite_node\0\u{3}set_fixed_position\0\u{3}remove_fixed_position\0\u{3}set_time_only\0\u{3}get_ui_config_request\0\u{3}get_ui_config_response\0\u{3}store_ui_config\0\u{3}set_ignored_node\0\u{3}remove_ignored_node\0\u{3}toggle_muted_node\0\u{4}\u{f}begin_edit_settings\0\u{3}commit_edit_settings\0\u{3}add_contact\0\u{3}key_verification\0\u{4}\u{1b}factory_reset_device\0\u{3}reboot_ota_seconds\0\u{3}exit_simulator\0\u{3}reboot_seconds\0\u{3}shutdown_seconds\0\u{3}factory_reset_config\0\u{3}nodedb_reset\0\u{3}session_passkey\0\u{3}ota_request\0\u{3}sensor_config\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}get_channel_request\0\u{3}get_channel_response\0\u{3}get_owner_request\0\u{3}get_owner_response\0\u{3}get_config_request\0\u{3}get_config_response\0\u{3}get_module_config_request\0\u{3}get_module_config_response\0\u{4}\u{2}get_canned_message_module_messages_request\0\u{3}get_canned_message_module_messages_response\0\u{3}get_device_metadata_request\0\u{3}get_device_metadata_response\0\u{3}get_ringtone_request\0\u{3}get_ringtone_response\0\u{3}get_device_connection_status_request\0\u{3}get_device_connection_status_response\0\u{3}set_ham_mode\0\u{3}get_node_remote_hardware_pins_request\0\u{3}get_node_remote_hardware_pins_response\0\u{3}enter_dfu_mode_request\0\u{3}delete_file_request\0\u{3}set_scale\0\u{3}backup_preferences\0\u{3}restore_preferences\0\u{3}remove_backup_preferences\0\u{3}send_input_event\0\u{4}\u{5}set_owner\0\u{3}set_channel\0\u{3}set_config\0\u{3}set_module_config\0\u{3}set_canned_message_module_messages\0\u{3}set_ringtone_message\0\u{3}remove_by_nodenum\0\u{3}set_favorite_node\0\u{3}remove_favorite_node\0\u{3}set_fixed_position\0\u{3}remove_fixed_position\0\u{3}set_time_only\0\u{3}get_ui_config_request\0\u{3}get_ui_config_response\0\u{3}store_ui_config\0\u{3}set_ignored_node\0\u{3}remove_ignored_node\0\u{3}toggle_muted_node\0\u{3}get_display_frame_request\0\u{3}set_display_mirror\0\u{4}\u{d}begin_edit_settings\0\u{3}commit_edit_settings\0\u{3}add_contact\0\u{3}key_verification\0\u{4}\u{1b}factory_reset_device\0\u{3}reboot_ota_seconds\0\u{3}exit_simulator\0\u{3}reboot_seconds\0\u{3}shutdown_seconds\0\u{3}factory_reset_config\0\u{3}nodedb_reset\0\u{3}session_passkey\0\u{3}ota_request\0\u{3}sensor_config\0\u{3}lockdown_auth\0")
+
+  fileprivate class _StorageClass {
+    var _sessionPasskey: Data = Data()
+    var _payloadVariant: Meshtastic_AdminMessage.OneOf_PayloadVariant?
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _sessionPasskey = source._sessionPasskey
+      _payloadVariant = source._payloadVariant
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try {
-        var v: UInt32?
-        try decoder.decodeSingularUInt32Field(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getChannelRequest(v)
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try {
+          var v: UInt32?
+          try decoder.decodeSingularUInt32Field(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getChannelRequest(v)
+          }
+        }()
+        case 2: try {
+          var v: Meshtastic_Channel?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .getChannelResponse(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getChannelResponse(v)
+          }
+        }()
+        case 3: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getOwnerRequest(v)
+          }
+        }()
+        case 4: try {
+          var v: Meshtastic_User?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .getOwnerResponse(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getOwnerResponse(v)
+          }
+        }()
+        case 5: try {
+          var v: Meshtastic_AdminMessage.ConfigType?
+          try decoder.decodeSingularEnumField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getConfigRequest(v)
+          }
+        }()
+        case 6: try {
+          var v: Meshtastic_Config?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .getConfigResponse(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getConfigResponse(v)
+          }
+        }()
+        case 7: try {
+          var v: Meshtastic_AdminMessage.ModuleConfigType?
+          try decoder.decodeSingularEnumField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getModuleConfigRequest(v)
+          }
+        }()
+        case 8: try {
+          var v: Meshtastic_ModuleConfig?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .getModuleConfigResponse(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getModuleConfigResponse(v)
+          }
+        }()
+        case 10: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getCannedMessageModuleMessagesRequest(v)
+          }
+        }()
+        case 11: try {
+          var v: String?
+          try decoder.decodeSingularStringField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getCannedMessageModuleMessagesResponse(v)
+          }
+        }()
+        case 12: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getDeviceMetadataRequest(v)
+          }
+        }()
+        case 13: try {
+          var v: Meshtastic_DeviceMetadata?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .getDeviceMetadataResponse(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getDeviceMetadataResponse(v)
+          }
+        }()
+        case 14: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getRingtoneRequest(v)
+          }
+        }()
+        case 15: try {
+          var v: String?
+          try decoder.decodeSingularStringField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getRingtoneResponse(v)
+          }
+        }()
+        case 16: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getDeviceConnectionStatusRequest(v)
+          }
+        }()
+        case 17: try {
+          var v: Meshtastic_DeviceConnectionStatus?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .getDeviceConnectionStatusResponse(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getDeviceConnectionStatusResponse(v)
+          }
+        }()
+        case 18: try {
+          var v: Meshtastic_HamParameters?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .setHamMode(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .setHamMode(v)
+          }
+        }()
+        case 19: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getNodeRemoteHardwarePinsRequest(v)
+          }
+        }()
+        case 20: try {
+          var v: Meshtastic_NodeRemoteHardwarePinsResponse?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .getNodeRemoteHardwarePinsResponse(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getNodeRemoteHardwarePinsResponse(v)
+          }
+        }()
+        case 21: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .enterDfuModeRequest(v)
+          }
+        }()
+        case 22: try {
+          var v: String?
+          try decoder.decodeSingularStringField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .deleteFileRequest(v)
+          }
+        }()
+        case 23: try {
+          var v: UInt32?
+          try decoder.decodeSingularUInt32Field(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .setScale(v)
+          }
+        }()
+        case 24: try {
+          var v: Meshtastic_AdminMessage.BackupLocation?
+          try decoder.decodeSingularEnumField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .backupPreferences(v)
+          }
+        }()
+        case 25: try {
+          var v: Meshtastic_AdminMessage.BackupLocation?
+          try decoder.decodeSingularEnumField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .restorePreferences(v)
+          }
+        }()
+        case 26: try {
+          var v: Meshtastic_AdminMessage.BackupLocation?
+          try decoder.decodeSingularEnumField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .removeBackupPreferences(v)
+          }
+        }()
+        case 27: try {
+          var v: Meshtastic_AdminMessage.InputEvent?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .sendInputEvent(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .sendInputEvent(v)
+          }
+        }()
+        case 32: try {
+          var v: Meshtastic_User?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .setOwner(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .setOwner(v)
+          }
+        }()
+        case 33: try {
+          var v: Meshtastic_Channel?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .setChannel(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .setChannel(v)
+          }
+        }()
+        case 34: try {
+          var v: Meshtastic_Config?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .setConfig(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .setConfig(v)
+          }
+        }()
+        case 35: try {
+          var v: Meshtastic_ModuleConfig?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .setModuleConfig(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .setModuleConfig(v)
+          }
+        }()
+        case 36: try {
+          var v: String?
+          try decoder.decodeSingularStringField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .setCannedMessageModuleMessages(v)
+          }
+        }()
+        case 37: try {
+          var v: String?
+          try decoder.decodeSingularStringField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .setRingtoneMessage(v)
+          }
+        }()
+        case 38: try {
+          var v: UInt32?
+          try decoder.decodeSingularUInt32Field(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .removeByNodenum(v)
+          }
+        }()
+        case 39: try {
+          var v: UInt32?
+          try decoder.decodeSingularUInt32Field(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .setFavoriteNode(v)
+          }
+        }()
+        case 40: try {
+          var v: UInt32?
+          try decoder.decodeSingularUInt32Field(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .removeFavoriteNode(v)
+          }
+        }()
+        case 41: try {
+          var v: Meshtastic_Position?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .setFixedPosition(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .setFixedPosition(v)
+          }
+        }()
+        case 42: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .removeFixedPosition(v)
+          }
+        }()
+        case 43: try {
+          var v: UInt32?
+          try decoder.decodeSingularFixed32Field(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .setTimeOnly(v)
+          }
+        }()
+        case 44: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getUiConfigRequest(v)
+          }
+        }()
+        case 45: try {
+          var v: Meshtastic_DeviceUIConfig?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .getUiConfigResponse(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getUiConfigResponse(v)
+          }
+        }()
+        case 46: try {
+          var v: Meshtastic_DeviceUIConfig?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .storeUiConfig(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .storeUiConfig(v)
+          }
+        }()
+        case 47: try {
+          var v: UInt32?
+          try decoder.decodeSingularUInt32Field(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .setIgnoredNode(v)
+          }
+        }()
+        case 48: try {
+          var v: UInt32?
+          try decoder.decodeSingularUInt32Field(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .removeIgnoredNode(v)
+          }
+        }()
+        case 49: try {
+          var v: UInt32?
+          try decoder.decodeSingularUInt32Field(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .toggleMutedNode(v)
+          }
+        }()
+        case 50: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .getDisplayFrameRequest(v)
+          }
+        }()
+        case 51: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .setDisplayMirror(v)
+          }
+        }()
+        case 64: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .beginEditSettings(v)
+          }
+        }()
+        case 65: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .commitEditSettings(v)
+          }
+        }()
+        case 66: try {
+          var v: Meshtastic_SharedContact?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .addContact(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .addContact(v)
+          }
+        }()
+        case 67: try {
+          var v: Meshtastic_KeyVerificationAdmin?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .keyVerification(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .keyVerification(v)
+          }
+        }()
+        case 94: try {
+          var v: Int32?
+          try decoder.decodeSingularInt32Field(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .factoryResetDevice(v)
+          }
+        }()
+        case 95: try {
+          var v: Int32?
+          try decoder.decodeSingularInt32Field(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .rebootOtaSeconds(v)
+          }
+        }()
+        case 96: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .exitSimulator(v)
+          }
+        }()
+        case 97: try {
+          var v: Int32?
+          try decoder.decodeSingularInt32Field(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .rebootSeconds(v)
+          }
+        }()
+        case 98: try {
+          var v: Int32?
+          try decoder.decodeSingularInt32Field(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .shutdownSeconds(v)
+          }
+        }()
+        case 99: try {
+          var v: Int32?
+          try decoder.decodeSingularInt32Field(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .factoryResetConfig(v)
+          }
+        }()
+        case 100: try {
+          var v: Bool?
+          try decoder.decodeSingularBoolField(value: &v)
+          if let v = v {
+            if _storage._payloadVariant != nil {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .nodedbReset(v)
+          }
+        }()
+        case 101: try { try decoder.decodeSingularBytesField(value: &_storage._sessionPasskey) }()
+        case 102: try {
+          var v: Meshtastic_AdminMessage.OTAEvent?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .otaRequest(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .otaRequest(v)
+          }
+        }()
+        case 103: try {
+          var v: Meshtastic_SensorConfig?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .sensorConfig(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .sensorConfig(v)
+          }
+        }()
+        case 104: try {
+          var v: Meshtastic_LockdownAuth?
+          var hadOneofValue = false
+          if let current = _storage._payloadVariant {
+            hadOneofValue = true
+            if case .lockdownAuth(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._payloadVariant = .lockdownAuth(v)
+          }
+        }()
+        default: break
         }
-      }()
-      case 2: try {
-        var v: Meshtastic_Channel?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .getChannelResponse(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getChannelResponse(v)
-        }
-      }()
-      case 3: try {
-        var v: Bool?
-        try decoder.decodeSingularBoolField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getOwnerRequest(v)
-        }
-      }()
-      case 4: try {
-        var v: Meshtastic_User?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .getOwnerResponse(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getOwnerResponse(v)
-        }
-      }()
-      case 5: try {
-        var v: Meshtastic_AdminMessage.ConfigType?
-        try decoder.decodeSingularEnumField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getConfigRequest(v)
-        }
-      }()
-      case 6: try {
-        var v: Meshtastic_Config?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .getConfigResponse(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getConfigResponse(v)
-        }
-      }()
-      case 7: try {
-        var v: Meshtastic_AdminMessage.ModuleConfigType?
-        try decoder.decodeSingularEnumField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getModuleConfigRequest(v)
-        }
-      }()
-      case 8: try {
-        var v: Meshtastic_ModuleConfig?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .getModuleConfigResponse(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getModuleConfigResponse(v)
-        }
-      }()
-      case 10: try {
-        var v: Bool?
-        try decoder.decodeSingularBoolField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getCannedMessageModuleMessagesRequest(v)
-        }
-      }()
-      case 11: try {
-        var v: String?
-        try decoder.decodeSingularStringField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getCannedMessageModuleMessagesResponse(v)
-        }
-      }()
-      case 12: try {
-        var v: Bool?
-        try decoder.decodeSingularBoolField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getDeviceMetadataRequest(v)
-        }
-      }()
-      case 13: try {
-        var v: Meshtastic_DeviceMetadata?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .getDeviceMetadataResponse(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getDeviceMetadataResponse(v)
-        }
-      }()
-      case 14: try {
-        var v: Bool?
-        try decoder.decodeSingularBoolField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getRingtoneRequest(v)
-        }
-      }()
-      case 15: try {
-        var v: String?
-        try decoder.decodeSingularStringField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getRingtoneResponse(v)
-        }
-      }()
-      case 16: try {
-        var v: Bool?
-        try decoder.decodeSingularBoolField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getDeviceConnectionStatusRequest(v)
-        }
-      }()
-      case 17: try {
-        var v: Meshtastic_DeviceConnectionStatus?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .getDeviceConnectionStatusResponse(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getDeviceConnectionStatusResponse(v)
-        }
-      }()
-      case 18: try {
-        var v: Meshtastic_HamParameters?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .setHamMode(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .setHamMode(v)
-        }
-      }()
-      case 19: try {
-        var v: Bool?
-        try decoder.decodeSingularBoolField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getNodeRemoteHardwarePinsRequest(v)
-        }
-      }()
-      case 20: try {
-        var v: Meshtastic_NodeRemoteHardwarePinsResponse?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .getNodeRemoteHardwarePinsResponse(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getNodeRemoteHardwarePinsResponse(v)
-        }
-      }()
-      case 21: try {
-        var v: Bool?
-        try decoder.decodeSingularBoolField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .enterDfuModeRequest(v)
-        }
-      }()
-      case 22: try {
-        var v: String?
-        try decoder.decodeSingularStringField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .deleteFileRequest(v)
-        }
-      }()
-      case 23: try {
-        var v: UInt32?
-        try decoder.decodeSingularUInt32Field(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .setScale(v)
-        }
-      }()
-      case 24: try {
-        var v: Meshtastic_AdminMessage.BackupLocation?
-        try decoder.decodeSingularEnumField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .backupPreferences(v)
-        }
-      }()
-      case 25: try {
-        var v: Meshtastic_AdminMessage.BackupLocation?
-        try decoder.decodeSingularEnumField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .restorePreferences(v)
-        }
-      }()
-      case 26: try {
-        var v: Meshtastic_AdminMessage.BackupLocation?
-        try decoder.decodeSingularEnumField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .removeBackupPreferences(v)
-        }
-      }()
-      case 27: try {
-        var v: Meshtastic_AdminMessage.InputEvent?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .sendInputEvent(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .sendInputEvent(v)
-        }
-      }()
-      case 32: try {
-        var v: Meshtastic_User?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .setOwner(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .setOwner(v)
-        }
-      }()
-      case 33: try {
-        var v: Meshtastic_Channel?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .setChannel(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .setChannel(v)
-        }
-      }()
-      case 34: try {
-        var v: Meshtastic_Config?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .setConfig(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .setConfig(v)
-        }
-      }()
-      case 35: try {
-        var v: Meshtastic_ModuleConfig?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .setModuleConfig(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .setModuleConfig(v)
-        }
-      }()
-      case 36: try {
-        var v: String?
-        try decoder.decodeSingularStringField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .setCannedMessageModuleMessages(v)
-        }
-      }()
-      case 37: try {
-        var v: String?
-        try decoder.decodeSingularStringField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .setRingtoneMessage(v)
-        }
-      }()
-      case 38: try {
-        var v: UInt32?
-        try decoder.decodeSingularUInt32Field(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .removeByNodenum(v)
-        }
-      }()
-      case 39: try {
-        var v: UInt32?
-        try decoder.decodeSingularUInt32Field(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .setFavoriteNode(v)
-        }
-      }()
-      case 40: try {
-        var v: UInt32?
-        try decoder.decodeSingularUInt32Field(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .removeFavoriteNode(v)
-        }
-      }()
-      case 41: try {
-        var v: Meshtastic_Position?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .setFixedPosition(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .setFixedPosition(v)
-        }
-      }()
-      case 42: try {
-        var v: Bool?
-        try decoder.decodeSingularBoolField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .removeFixedPosition(v)
-        }
-      }()
-      case 43: try {
-        var v: UInt32?
-        try decoder.decodeSingularFixed32Field(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .setTimeOnly(v)
-        }
-      }()
-      case 44: try {
-        var v: Bool?
-        try decoder.decodeSingularBoolField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getUiConfigRequest(v)
-        }
-      }()
-      case 45: try {
-        var v: Meshtastic_DeviceUIConfig?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .getUiConfigResponse(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .getUiConfigResponse(v)
-        }
-      }()
-      case 46: try {
-        var v: Meshtastic_DeviceUIConfig?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .storeUiConfig(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .storeUiConfig(v)
-        }
-      }()
-      case 47: try {
-        var v: UInt32?
-        try decoder.decodeSingularUInt32Field(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .setIgnoredNode(v)
-        }
-      }()
-      case 48: try {
-        var v: UInt32?
-        try decoder.decodeSingularUInt32Field(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .removeIgnoredNode(v)
-        }
-      }()
-      case 49: try {
-        var v: UInt32?
-        try decoder.decodeSingularUInt32Field(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .toggleMutedNode(v)
-        }
-      }()
-      case 64: try {
-        var v: Bool?
-        try decoder.decodeSingularBoolField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .beginEditSettings(v)
-        }
-      }()
-      case 65: try {
-        var v: Bool?
-        try decoder.decodeSingularBoolField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .commitEditSettings(v)
-        }
-      }()
-      case 66: try {
-        var v: Meshtastic_SharedContact?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .addContact(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .addContact(v)
-        }
-      }()
-      case 67: try {
-        var v: Meshtastic_KeyVerificationAdmin?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .keyVerification(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .keyVerification(v)
-        }
-      }()
-      case 94: try {
-        var v: Int32?
-        try decoder.decodeSingularInt32Field(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .factoryResetDevice(v)
-        }
-      }()
-      case 95: try {
-        var v: Int32?
-        try decoder.decodeSingularInt32Field(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .rebootOtaSeconds(v)
-        }
-      }()
-      case 96: try {
-        var v: Bool?
-        try decoder.decodeSingularBoolField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .exitSimulator(v)
-        }
-      }()
-      case 97: try {
-        var v: Int32?
-        try decoder.decodeSingularInt32Field(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .rebootSeconds(v)
-        }
-      }()
-      case 98: try {
-        var v: Int32?
-        try decoder.decodeSingularInt32Field(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .shutdownSeconds(v)
-        }
-      }()
-      case 99: try {
-        var v: Int32?
-        try decoder.decodeSingularInt32Field(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .factoryResetConfig(v)
-        }
-      }()
-      case 100: try {
-        var v: Bool?
-        try decoder.decodeSingularBoolField(value: &v)
-        if let v = v {
-          if self.payloadVariant != nil {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .nodedbReset(v)
-        }
-      }()
-      case 101: try { try decoder.decodeSingularBytesField(value: &self.sessionPasskey) }()
-      case 102: try {
-        var v: Meshtastic_AdminMessage.OTAEvent?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .otaRequest(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .otaRequest(v)
-        }
-      }()
-      case 103: try {
-        var v: Meshtastic_SensorConfig?
-        var hadOneofValue = false
-        if let current = self.payloadVariant {
-          hadOneofValue = true
-          if case .sensorConfig(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.payloadVariant = .sensorConfig(v)
-        }
-      }()
-      default: break
       }
     }
   }
 
   func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    switch self.payloadVariant {
-    case .getChannelRequest?: try {
-      guard case .getChannelRequest(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 1)
-    }()
-    case .getChannelResponse?: try {
-      guard case .getChannelResponse(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
-    }()
-    case .getOwnerRequest?: try {
-      guard case .getOwnerRequest(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularBoolField(value: v, fieldNumber: 3)
-    }()
-    case .getOwnerResponse?: try {
-      guard case .getOwnerResponse(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
-    }()
-    case .getConfigRequest?: try {
-      guard case .getConfigRequest(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularEnumField(value: v, fieldNumber: 5)
-    }()
-    case .getConfigResponse?: try {
-      guard case .getConfigResponse(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
-    }()
-    case .getModuleConfigRequest?: try {
-      guard case .getModuleConfigRequest(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularEnumField(value: v, fieldNumber: 7)
-    }()
-    case .getModuleConfigResponse?: try {
-      guard case .getModuleConfigResponse(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
-    }()
-    case .getCannedMessageModuleMessagesRequest?: try {
-      guard case .getCannedMessageModuleMessagesRequest(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularBoolField(value: v, fieldNumber: 10)
-    }()
-    case .getCannedMessageModuleMessagesResponse?: try {
-      guard case .getCannedMessageModuleMessagesResponse(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularStringField(value: v, fieldNumber: 11)
-    }()
-    case .getDeviceMetadataRequest?: try {
-      guard case .getDeviceMetadataRequest(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularBoolField(value: v, fieldNumber: 12)
-    }()
-    case .getDeviceMetadataResponse?: try {
-      guard case .getDeviceMetadataResponse(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
-    }()
-    case .getRingtoneRequest?: try {
-      guard case .getRingtoneRequest(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularBoolField(value: v, fieldNumber: 14)
-    }()
-    case .getRingtoneResponse?: try {
-      guard case .getRingtoneResponse(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularStringField(value: v, fieldNumber: 15)
-    }()
-    case .getDeviceConnectionStatusRequest?: try {
-      guard case .getDeviceConnectionStatusRequest(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularBoolField(value: v, fieldNumber: 16)
-    }()
-    case .getDeviceConnectionStatusResponse?: try {
-      guard case .getDeviceConnectionStatusResponse(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 17)
-    }()
-    case .setHamMode?: try {
-      guard case .setHamMode(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 18)
-    }()
-    case .getNodeRemoteHardwarePinsRequest?: try {
-      guard case .getNodeRemoteHardwarePinsRequest(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularBoolField(value: v, fieldNumber: 19)
-    }()
-    case .getNodeRemoteHardwarePinsResponse?: try {
-      guard case .getNodeRemoteHardwarePinsResponse(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 20)
-    }()
-    case .enterDfuModeRequest?: try {
-      guard case .enterDfuModeRequest(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularBoolField(value: v, fieldNumber: 21)
-    }()
-    case .deleteFileRequest?: try {
-      guard case .deleteFileRequest(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularStringField(value: v, fieldNumber: 22)
-    }()
-    case .setScale?: try {
-      guard case .setScale(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 23)
-    }()
-    case .backupPreferences?: try {
-      guard case .backupPreferences(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularEnumField(value: v, fieldNumber: 24)
-    }()
-    case .restorePreferences?: try {
-      guard case .restorePreferences(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularEnumField(value: v, fieldNumber: 25)
-    }()
-    case .removeBackupPreferences?: try {
-      guard case .removeBackupPreferences(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularEnumField(value: v, fieldNumber: 26)
-    }()
-    case .sendInputEvent?: try {
-      guard case .sendInputEvent(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 27)
-    }()
-    case .setOwner?: try {
-      guard case .setOwner(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 32)
-    }()
-    case .setChannel?: try {
-      guard case .setChannel(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 33)
-    }()
-    case .setConfig?: try {
-      guard case .setConfig(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 34)
-    }()
-    case .setModuleConfig?: try {
-      guard case .setModuleConfig(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 35)
-    }()
-    case .setCannedMessageModuleMessages?: try {
-      guard case .setCannedMessageModuleMessages(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularStringField(value: v, fieldNumber: 36)
-    }()
-    case .setRingtoneMessage?: try {
-      guard case .setRingtoneMessage(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularStringField(value: v, fieldNumber: 37)
-    }()
-    case .removeByNodenum?: try {
-      guard case .removeByNodenum(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 38)
-    }()
-    case .setFavoriteNode?: try {
-      guard case .setFavoriteNode(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 39)
-    }()
-    case .removeFavoriteNode?: try {
-      guard case .removeFavoriteNode(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 40)
-    }()
-    case .setFixedPosition?: try {
-      guard case .setFixedPosition(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 41)
-    }()
-    case .removeFixedPosition?: try {
-      guard case .removeFixedPosition(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularBoolField(value: v, fieldNumber: 42)
-    }()
-    case .setTimeOnly?: try {
-      guard case .setTimeOnly(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularFixed32Field(value: v, fieldNumber: 43)
-    }()
-    case .getUiConfigRequest?: try {
-      guard case .getUiConfigRequest(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularBoolField(value: v, fieldNumber: 44)
-    }()
-    case .getUiConfigResponse?: try {
-      guard case .getUiConfigResponse(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 45)
-    }()
-    case .storeUiConfig?: try {
-      guard case .storeUiConfig(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 46)
-    }()
-    case .setIgnoredNode?: try {
-      guard case .setIgnoredNode(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 47)
-    }()
-    case .removeIgnoredNode?: try {
-      guard case .removeIgnoredNode(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 48)
-    }()
-    case .toggleMutedNode?: try {
-      guard case .toggleMutedNode(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 49)
-    }()
-    case .beginEditSettings?: try {
-      guard case .beginEditSettings(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularBoolField(value: v, fieldNumber: 64)
-    }()
-    case .commitEditSettings?: try {
-      guard case .commitEditSettings(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularBoolField(value: v, fieldNumber: 65)
-    }()
-    case .addContact?: try {
-      guard case .addContact(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 66)
-    }()
-    case .keyVerification?: try {
-      guard case .keyVerification(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 67)
-    }()
-    case .factoryResetDevice?: try {
-      guard case .factoryResetDevice(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularInt32Field(value: v, fieldNumber: 94)
-    }()
-    case .rebootOtaSeconds?: try {
-      guard case .rebootOtaSeconds(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularInt32Field(value: v, fieldNumber: 95)
-    }()
-    case .exitSimulator?: try {
-      guard case .exitSimulator(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularBoolField(value: v, fieldNumber: 96)
-    }()
-    case .rebootSeconds?: try {
-      guard case .rebootSeconds(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularInt32Field(value: v, fieldNumber: 97)
-    }()
-    case .shutdownSeconds?: try {
-      guard case .shutdownSeconds(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularInt32Field(value: v, fieldNumber: 98)
-    }()
-    case .factoryResetConfig?: try {
-      guard case .factoryResetConfig(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularInt32Field(value: v, fieldNumber: 99)
-    }()
-    case .nodedbReset?: try {
-      guard case .nodedbReset(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularBoolField(value: v, fieldNumber: 100)
-    }()
-    default: break
-    }
-    if !self.sessionPasskey.isEmpty {
-      try visitor.visitSingularBytesField(value: self.sessionPasskey, fieldNumber: 101)
-    }
-    switch self.payloadVariant {
-    case .otaRequest?: try {
-      guard case .otaRequest(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 102)
-    }()
-    case .sensorConfig?: try {
-      guard case .sensorConfig(let v)? = self.payloadVariant else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 103)
-    }()
-    default: break
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      switch _storage._payloadVariant {
+      case .getChannelRequest?: try {
+        guard case .getChannelRequest(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularUInt32Field(value: v, fieldNumber: 1)
+      }()
+      case .getChannelResponse?: try {
+        guard case .getChannelResponse(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+      }()
+      case .getOwnerRequest?: try {
+        guard case .getOwnerRequest(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 3)
+      }()
+      case .getOwnerResponse?: try {
+        guard case .getOwnerResponse(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+      }()
+      case .getConfigRequest?: try {
+        guard case .getConfigRequest(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularEnumField(value: v, fieldNumber: 5)
+      }()
+      case .getConfigResponse?: try {
+        guard case .getConfigResponse(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+      }()
+      case .getModuleConfigRequest?: try {
+        guard case .getModuleConfigRequest(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularEnumField(value: v, fieldNumber: 7)
+      }()
+      case .getModuleConfigResponse?: try {
+        guard case .getModuleConfigResponse(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+      }()
+      case .getCannedMessageModuleMessagesRequest?: try {
+        guard case .getCannedMessageModuleMessagesRequest(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 10)
+      }()
+      case .getCannedMessageModuleMessagesResponse?: try {
+        guard case .getCannedMessageModuleMessagesResponse(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularStringField(value: v, fieldNumber: 11)
+      }()
+      case .getDeviceMetadataRequest?: try {
+        guard case .getDeviceMetadataRequest(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 12)
+      }()
+      case .getDeviceMetadataResponse?: try {
+        guard case .getDeviceMetadataResponse(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
+      }()
+      case .getRingtoneRequest?: try {
+        guard case .getRingtoneRequest(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 14)
+      }()
+      case .getRingtoneResponse?: try {
+        guard case .getRingtoneResponse(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularStringField(value: v, fieldNumber: 15)
+      }()
+      case .getDeviceConnectionStatusRequest?: try {
+        guard case .getDeviceConnectionStatusRequest(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 16)
+      }()
+      case .getDeviceConnectionStatusResponse?: try {
+        guard case .getDeviceConnectionStatusResponse(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 17)
+      }()
+      case .setHamMode?: try {
+        guard case .setHamMode(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 18)
+      }()
+      case .getNodeRemoteHardwarePinsRequest?: try {
+        guard case .getNodeRemoteHardwarePinsRequest(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 19)
+      }()
+      case .getNodeRemoteHardwarePinsResponse?: try {
+        guard case .getNodeRemoteHardwarePinsResponse(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 20)
+      }()
+      case .enterDfuModeRequest?: try {
+        guard case .enterDfuModeRequest(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 21)
+      }()
+      case .deleteFileRequest?: try {
+        guard case .deleteFileRequest(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularStringField(value: v, fieldNumber: 22)
+      }()
+      case .setScale?: try {
+        guard case .setScale(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularUInt32Field(value: v, fieldNumber: 23)
+      }()
+      case .backupPreferences?: try {
+        guard case .backupPreferences(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularEnumField(value: v, fieldNumber: 24)
+      }()
+      case .restorePreferences?: try {
+        guard case .restorePreferences(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularEnumField(value: v, fieldNumber: 25)
+      }()
+      case .removeBackupPreferences?: try {
+        guard case .removeBackupPreferences(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularEnumField(value: v, fieldNumber: 26)
+      }()
+      case .sendInputEvent?: try {
+        guard case .sendInputEvent(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 27)
+      }()
+      case .setOwner?: try {
+        guard case .setOwner(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 32)
+      }()
+      case .setChannel?: try {
+        guard case .setChannel(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 33)
+      }()
+      case .setConfig?: try {
+        guard case .setConfig(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 34)
+      }()
+      case .setModuleConfig?: try {
+        guard case .setModuleConfig(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 35)
+      }()
+      case .setCannedMessageModuleMessages?: try {
+        guard case .setCannedMessageModuleMessages(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularStringField(value: v, fieldNumber: 36)
+      }()
+      case .setRingtoneMessage?: try {
+        guard case .setRingtoneMessage(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularStringField(value: v, fieldNumber: 37)
+      }()
+      case .removeByNodenum?: try {
+        guard case .removeByNodenum(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularUInt32Field(value: v, fieldNumber: 38)
+      }()
+      case .setFavoriteNode?: try {
+        guard case .setFavoriteNode(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularUInt32Field(value: v, fieldNumber: 39)
+      }()
+      case .removeFavoriteNode?: try {
+        guard case .removeFavoriteNode(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularUInt32Field(value: v, fieldNumber: 40)
+      }()
+      case .setFixedPosition?: try {
+        guard case .setFixedPosition(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 41)
+      }()
+      case .removeFixedPosition?: try {
+        guard case .removeFixedPosition(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 42)
+      }()
+      case .setTimeOnly?: try {
+        guard case .setTimeOnly(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularFixed32Field(value: v, fieldNumber: 43)
+      }()
+      case .getUiConfigRequest?: try {
+        guard case .getUiConfigRequest(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 44)
+      }()
+      case .getUiConfigResponse?: try {
+        guard case .getUiConfigResponse(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 45)
+      }()
+      case .storeUiConfig?: try {
+        guard case .storeUiConfig(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 46)
+      }()
+      case .setIgnoredNode?: try {
+        guard case .setIgnoredNode(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularUInt32Field(value: v, fieldNumber: 47)
+      }()
+      case .removeIgnoredNode?: try {
+        guard case .removeIgnoredNode(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularUInt32Field(value: v, fieldNumber: 48)
+      }()
+      case .toggleMutedNode?: try {
+        guard case .toggleMutedNode(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularUInt32Field(value: v, fieldNumber: 49)
+      }()
+      case .getDisplayFrameRequest?: try {
+        guard case .getDisplayFrameRequest(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 50)
+      }()
+      case .setDisplayMirror?: try {
+        guard case .setDisplayMirror(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 51)
+      }()
+      case .beginEditSettings?: try {
+        guard case .beginEditSettings(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 64)
+      }()
+      case .commitEditSettings?: try {
+        guard case .commitEditSettings(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 65)
+      }()
+      case .addContact?: try {
+        guard case .addContact(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 66)
+      }()
+      case .keyVerification?: try {
+        guard case .keyVerification(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 67)
+      }()
+      case .factoryResetDevice?: try {
+        guard case .factoryResetDevice(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularInt32Field(value: v, fieldNumber: 94)
+      }()
+      case .rebootOtaSeconds?: try {
+        guard case .rebootOtaSeconds(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularInt32Field(value: v, fieldNumber: 95)
+      }()
+      case .exitSimulator?: try {
+        guard case .exitSimulator(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 96)
+      }()
+      case .rebootSeconds?: try {
+        guard case .rebootSeconds(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularInt32Field(value: v, fieldNumber: 97)
+      }()
+      case .shutdownSeconds?: try {
+        guard case .shutdownSeconds(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularInt32Field(value: v, fieldNumber: 98)
+      }()
+      case .factoryResetConfig?: try {
+        guard case .factoryResetConfig(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularInt32Field(value: v, fieldNumber: 99)
+      }()
+      case .nodedbReset?: try {
+        guard case .nodedbReset(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 100)
+      }()
+      default: break
+      }
+      if !_storage._sessionPasskey.isEmpty {
+        try visitor.visitSingularBytesField(value: _storage._sessionPasskey, fieldNumber: 101)
+      }
+      switch _storage._payloadVariant {
+      case .otaRequest?: try {
+        guard case .otaRequest(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 102)
+      }()
+      case .sensorConfig?: try {
+        guard case .sensorConfig(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 103)
+      }()
+      case .lockdownAuth?: try {
+        guard case .lockdownAuth(let v)? = _storage._payloadVariant else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 104)
+      }()
+      default: break
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Meshtastic_AdminMessage, rhs: Meshtastic_AdminMessage) -> Bool {
-    if lhs.sessionPasskey != rhs.sessionPasskey {return false}
-    if lhs.payloadVariant != rhs.payloadVariant {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._sessionPasskey != rhs_storage._sessionPasskey {return false}
+        if _storage._payloadVariant != rhs_storage._payloadVariant {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
-extension Meshtastic_AdminMessage.ConfigType: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_AdminMessage.ConfigType: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DEVICE_CONFIG\0\u{1}POSITION_CONFIG\0\u{1}POWER_CONFIG\0\u{1}NETWORK_CONFIG\0\u{1}DISPLAY_CONFIG\0\u{1}LORA_CONFIG\0\u{1}BLUETOOTH_CONFIG\0\u{1}SECURITY_CONFIG\0\u{1}SESSIONKEY_CONFIG\0\u{1}DEVICEUI_CONFIG\0")
 }
 
-extension Meshtastic_AdminMessage.ModuleConfigType: SwiftProtobuf._ProtoNameProviding {
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0MQTT_CONFIG\0\u{1}SERIAL_CONFIG\0\u{1}EXTNOTIF_CONFIG\0\u{1}STOREFORWARD_CONFIG\0\u{1}RANGETEST_CONFIG\0\u{1}TELEMETRY_CONFIG\0\u{1}CANNEDMSG_CONFIG\0\u{1}AUDIO_CONFIG\0\u{1}REMOTEHARDWARE_CONFIG\0\u{1}NEIGHBORINFO_CONFIG\0\u{1}AMBIENTLIGHTING_CONFIG\0\u{1}DETECTIONSENSOR_CONFIG\0\u{1}PAXCOUNTER_CONFIG\0\u{1}STATUSMESSAGE_CONFIG\0\u{1}TRAFFICMANAGEMENT_CONFIG\0\u{1}TAK_CONFIG\0")
+nonisolated extension Meshtastic_AdminMessage.ModuleConfigType: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0MQTT_CONFIG\0\u{1}SERIAL_CONFIG\0\u{1}EXTNOTIF_CONFIG\0\u{1}STOREFORWARD_CONFIG\0\u{1}RANGETEST_CONFIG\0\u{1}TELEMETRY_CONFIG\0\u{1}CANNEDMSG_CONFIG\0\u{1}AUDIO_CONFIG\0\u{1}REMOTEHARDWARE_CONFIG\0\u{1}NEIGHBORINFO_CONFIG\0\u{1}AMBIENTLIGHTING_CONFIG\0\u{1}DETECTIONSENSOR_CONFIG\0\u{1}PAXCOUNTER_CONFIG\0\u{1}STATUSMESSAGE_CONFIG\0\u{1}TRAFFICMANAGEMENT_CONFIG\0\u{1}TAK_CONFIG\0\u{1}MESHBEACON_CONFIG\0")
 }
 
-extension Meshtastic_AdminMessage.BackupLocation: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_AdminMessage.BackupLocation: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0FLASH\0\u{1}SD\0")
 }
 
-extension Meshtastic_AdminMessage.InputEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_AdminMessage.InputEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_AdminMessage.protoMessageName + ".InputEvent"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}event_code\0\u{3}kb_char\0\u{3}touch_x\0\u{3}touch_y\0")
 
@@ -2522,7 +3042,7 @@ extension Meshtastic_AdminMessage.InputEvent: SwiftProtobuf.Message, SwiftProtob
   }
 }
 
-extension Meshtastic_AdminMessage.OTAEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_AdminMessage.OTAEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_AdminMessage.protoMessageName + ".OTAEvent"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}reboot_ota_mode\0\u{3}ota_hash\0")
 
@@ -2557,9 +3077,64 @@ extension Meshtastic_AdminMessage.OTAEvent: SwiftProtobuf.Message, SwiftProtobuf
   }
 }
 
-extension Meshtastic_HamParameters: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_LockdownAuth: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".LockdownAuth"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}passphrase\0\u{3}boots_remaining\0\u{3}valid_until_epoch\0\u{3}lock_now\0\u{3}max_session_seconds\0\u{1}disable\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBytesField(value: &self.passphrase) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.bootsRemaining) }()
+      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.validUntilEpoch) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.lockNow) }()
+      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.maxSessionSeconds) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.disable) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.passphrase.isEmpty {
+      try visitor.visitSingularBytesField(value: self.passphrase, fieldNumber: 1)
+    }
+    if self.bootsRemaining != 0 {
+      try visitor.visitSingularUInt32Field(value: self.bootsRemaining, fieldNumber: 2)
+    }
+    if self.validUntilEpoch != 0 {
+      try visitor.visitSingularUInt32Field(value: self.validUntilEpoch, fieldNumber: 3)
+    }
+    if self.lockNow != false {
+      try visitor.visitSingularBoolField(value: self.lockNow, fieldNumber: 4)
+    }
+    if self.maxSessionSeconds != 0 {
+      try visitor.visitSingularUInt32Field(value: self.maxSessionSeconds, fieldNumber: 5)
+    }
+    if self.disable != false {
+      try visitor.visitSingularBoolField(value: self.disable, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Meshtastic_LockdownAuth, rhs: Meshtastic_LockdownAuth) -> Bool {
+    if lhs.passphrase != rhs.passphrase {return false}
+    if lhs.bootsRemaining != rhs.bootsRemaining {return false}
+    if lhs.validUntilEpoch != rhs.validUntilEpoch {return false}
+    if lhs.lockNow != rhs.lockNow {return false}
+    if lhs.maxSessionSeconds != rhs.maxSessionSeconds {return false}
+    if lhs.disable != rhs.disable {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Meshtastic_HamParameters: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".HamParameters"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}call_sign\0\u{3}tx_power\0\u{1}frequency\0\u{3}short_name\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}call_sign\0\u{3}tx_power\0\u{1}frequency\0\u{3}short_name\0\u{3}long_name\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2571,6 +3146,7 @@ extension Meshtastic_HamParameters: SwiftProtobuf.Message, SwiftProtobuf._Messag
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.txPower) }()
       case 3: try { try decoder.decodeSingularFloatField(value: &self.frequency) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.shortName) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.longName) }()
       default: break
       }
     }
@@ -2589,6 +3165,9 @@ extension Meshtastic_HamParameters: SwiftProtobuf.Message, SwiftProtobuf._Messag
     if !self.shortName.isEmpty {
       try visitor.visitSingularStringField(value: self.shortName, fieldNumber: 4)
     }
+    if !self.longName.isEmpty {
+      try visitor.visitSingularStringField(value: self.longName, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2597,12 +3176,13 @@ extension Meshtastic_HamParameters: SwiftProtobuf.Message, SwiftProtobuf._Messag
     if lhs.txPower != rhs.txPower {return false}
     if lhs.frequency != rhs.frequency {return false}
     if lhs.shortName != rhs.shortName {return false}
+    if lhs.longName != rhs.longName {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
-extension Meshtastic_NodeRemoteHardwarePinsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_NodeRemoteHardwarePinsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".NodeRemoteHardwarePinsResponse"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}node_remote_hardware_pins\0")
 
@@ -2632,7 +3212,7 @@ extension Meshtastic_NodeRemoteHardwarePinsResponse: SwiftProtobuf.Message, Swif
   }
 }
 
-extension Meshtastic_SharedContact: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_SharedContact: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".SharedContact"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}node_num\0\u{1}user\0\u{3}should_ignore\0\u{3}manually_verified\0")
 
@@ -2681,7 +3261,7 @@ extension Meshtastic_SharedContact: SwiftProtobuf.Message, SwiftProtobuf._Messag
   }
 }
 
-extension Meshtastic_KeyVerificationAdmin: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_KeyVerificationAdmin: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".KeyVerificationAdmin"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}message_type\0\u{3}remote_nodenum\0\u{1}nonce\0\u{3}security_number\0")
 
@@ -2730,55 +3310,123 @@ extension Meshtastic_KeyVerificationAdmin: SwiftProtobuf.Message, SwiftProtobuf.
   }
 }
 
-extension Meshtastic_KeyVerificationAdmin.MessageType: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_KeyVerificationAdmin.MessageType: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0INITIATE_VERIFICATION\0\u{1}PROVIDE_SECURITY_NUMBER\0\u{1}DO_VERIFY\0\u{1}DO_NOT_VERIFY\0")
 }
 
-extension Meshtastic_SensorConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_SensorConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".SensorConfig"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}scd4x_config\0\u{3}sen5x_config\0\u{3}scd30_config\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}scd4x_config\0\u{3}sen5x_config\0\u{3}scd30_config\0\u{3}shtxx_config\0\u{3}ds248x_config\0\u{3}sen6x_config\0\u{3}as3935_config\0")
+
+  fileprivate class _StorageClass {
+    var _scd4XConfig: Meshtastic_SCD4X_config? = nil
+    var _sen5XConfig: Meshtastic_SEN5X_config? = nil
+    var _scd30Config: Meshtastic_SCD30_config? = nil
+    var _shtxxConfig: Meshtastic_SHTXX_config? = nil
+    var _ds248XConfig: Meshtastic_DS248X_config? = nil
+    var _sen6XConfig: Meshtastic_SEN6X_config? = nil
+    var _as3935Config: Meshtastic_AS3935_config? = nil
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _scd4XConfig = source._scd4XConfig
+      _sen5XConfig = source._sen5XConfig
+      _scd30Config = source._scd30Config
+      _shtxxConfig = source._shtxxConfig
+      _ds248XConfig = source._ds248XConfig
+      _sen6XConfig = source._sen6XConfig
+      _as3935Config = source._as3935Config
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularMessageField(value: &self._scd4XConfig) }()
-      case 2: try { try decoder.decodeSingularMessageField(value: &self._sen5XConfig) }()
-      case 3: try { try decoder.decodeSingularMessageField(value: &self._scd30Config) }()
-      default: break
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularMessageField(value: &_storage._scd4XConfig) }()
+        case 2: try { try decoder.decodeSingularMessageField(value: &_storage._sen5XConfig) }()
+        case 3: try { try decoder.decodeSingularMessageField(value: &_storage._scd30Config) }()
+        case 4: try { try decoder.decodeSingularMessageField(value: &_storage._shtxxConfig) }()
+        case 5: try { try decoder.decodeSingularMessageField(value: &_storage._ds248XConfig) }()
+        case 6: try { try decoder.decodeSingularMessageField(value: &_storage._sen6XConfig) }()
+        case 7: try { try decoder.decodeSingularMessageField(value: &_storage._as3935Config) }()
+        default: break
+        }
       }
     }
   }
 
   func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    try { if let v = self._scd4XConfig {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
-    } }()
-    try { if let v = self._sen5XConfig {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
-    } }()
-    try { if let v = self._scd30Config {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
-    } }()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      try { if let v = _storage._scd4XConfig {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+      } }()
+      try { if let v = _storage._sen5XConfig {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+      } }()
+      try { if let v = _storage._scd30Config {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+      } }()
+      try { if let v = _storage._shtxxConfig {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+      } }()
+      try { if let v = _storage._ds248XConfig {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+      } }()
+      try { if let v = _storage._sen6XConfig {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+      } }()
+      try { if let v = _storage._as3935Config {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+      } }()
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Meshtastic_SensorConfig, rhs: Meshtastic_SensorConfig) -> Bool {
-    if lhs._scd4XConfig != rhs._scd4XConfig {return false}
-    if lhs._sen5XConfig != rhs._sen5XConfig {return false}
-    if lhs._scd30Config != rhs._scd30Config {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._scd4XConfig != rhs_storage._scd4XConfig {return false}
+        if _storage._sen5XConfig != rhs_storage._sen5XConfig {return false}
+        if _storage._scd30Config != rhs_storage._scd30Config {return false}
+        if _storage._shtxxConfig != rhs_storage._shtxxConfig {return false}
+        if _storage._ds248XConfig != rhs_storage._ds248XConfig {return false}
+        if _storage._sen6XConfig != rhs_storage._sen6XConfig {return false}
+        if _storage._as3935Config != rhs_storage._as3935Config {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
-extension Meshtastic_SCD4X_config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_SCD4X_config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".SCD4X_config"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}set_asc\0\u{3}set_target_co2_conc\0\u{3}set_temperature\0\u{3}set_altitude\0\u{3}set_ambient_pressure\0\u{3}factory_reset\0\u{3}set_power_mode\0")
 
@@ -2842,9 +3490,9 @@ extension Meshtastic_SCD4X_config: SwiftProtobuf.Message, SwiftProtobuf._Message
   }
 }
 
-extension Meshtastic_SEN5X_config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_SEN5X_config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".SEN5X_config"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}set_temperature\0\u{3}set_one_shot_mode\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}set_temperature\0\u{3}set_one_shot_mode\0\u{3}start_fan_cleaning\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2854,6 +3502,7 @@ extension Meshtastic_SEN5X_config: SwiftProtobuf.Message, SwiftProtobuf._Message
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularFloatField(value: &self._setTemperature) }()
       case 2: try { try decoder.decodeSingularBoolField(value: &self._setOneShotMode) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self._startFanCleaning) }()
       default: break
       }
     }
@@ -2870,18 +3519,91 @@ extension Meshtastic_SEN5X_config: SwiftProtobuf.Message, SwiftProtobuf._Message
     try { if let v = self._setOneShotMode {
       try visitor.visitSingularBoolField(value: v, fieldNumber: 2)
     } }()
+    try { if let v = self._startFanCleaning {
+      try visitor.visitSingularBoolField(value: v, fieldNumber: 3)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Meshtastic_SEN5X_config, rhs: Meshtastic_SEN5X_config) -> Bool {
     if lhs._setTemperature != rhs._setTemperature {return false}
     if lhs._setOneShotMode != rhs._setOneShotMode {return false}
+    if lhs._startFanCleaning != rhs._startFanCleaning {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
-extension Meshtastic_SCD30_config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_SEN6X_config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".SEN6X_config"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}set_temperature\0\u{3}set_one_shot_mode\0\u{3}start_fan_cleaning\0\u{3}set_asc\0\u{3}set_target_co2_conc\0\u{3}set_altitude\0\u{3}set_ambient_pressure\0\u{3}factory_reset\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularFloatField(value: &self._setTemperature) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self._setOneShotMode) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self._startFanCleaning) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self._setAsc) }()
+      case 5: try { try decoder.decodeSingularUInt32Field(value: &self._setTargetCo2Conc) }()
+      case 6: try { try decoder.decodeSingularUInt32Field(value: &self._setAltitude) }()
+      case 7: try { try decoder.decodeSingularUInt32Field(value: &self._setAmbientPressure) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self._factoryReset) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._setTemperature {
+      try visitor.visitSingularFloatField(value: v, fieldNumber: 1)
+    } }()
+    try { if let v = self._setOneShotMode {
+      try visitor.visitSingularBoolField(value: v, fieldNumber: 2)
+    } }()
+    try { if let v = self._startFanCleaning {
+      try visitor.visitSingularBoolField(value: v, fieldNumber: 3)
+    } }()
+    try { if let v = self._setAsc {
+      try visitor.visitSingularBoolField(value: v, fieldNumber: 4)
+    } }()
+    try { if let v = self._setTargetCo2Conc {
+      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 5)
+    } }()
+    try { if let v = self._setAltitude {
+      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 6)
+    } }()
+    try { if let v = self._setAmbientPressure {
+      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 7)
+    } }()
+    try { if let v = self._factoryReset {
+      try visitor.visitSingularBoolField(value: v, fieldNumber: 8)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Meshtastic_SEN6X_config, rhs: Meshtastic_SEN6X_config) -> Bool {
+    if lhs._setTemperature != rhs._setTemperature {return false}
+    if lhs._setOneShotMode != rhs._setOneShotMode {return false}
+    if lhs._startFanCleaning != rhs._startFanCleaning {return false}
+    if lhs._setAsc != rhs._setAsc {return false}
+    if lhs._setTargetCo2Conc != rhs._setTargetCo2Conc {return false}
+    if lhs._setAltitude != rhs._setAltitude {return false}
+    if lhs._setAmbientPressure != rhs._setAmbientPressure {return false}
+    if lhs._factoryReset != rhs._factoryReset {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Meshtastic_SCD30_config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".SCD30_config"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}set_asc\0\u{3}set_target_co2_conc\0\u{3}set_temperature\0\u{3}set_altitude\0\u{3}set_measurement_interval\0\u{3}soft_reset\0")
 
@@ -2935,6 +3657,108 @@ extension Meshtastic_SCD30_config: SwiftProtobuf.Message, SwiftProtobuf._Message
     if lhs._setAltitude != rhs._setAltitude {return false}
     if lhs._setMeasurementInterval != rhs._setMeasurementInterval {return false}
     if lhs._softReset != rhs._softReset {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Meshtastic_SHTXX_config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".SHTXX_config"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}set_accuracy\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self._setAccuracy) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._setAccuracy {
+      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 1)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Meshtastic_SHTXX_config, rhs: Meshtastic_SHTXX_config) -> Bool {
+    if lhs._setAccuracy != rhs._setAccuracy {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Meshtastic_DS248X_config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".DS248X_config"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}main_temperature_channel\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self._mainTemperatureChannel) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._mainTemperatureChannel {
+      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 1)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Meshtastic_DS248X_config, rhs: Meshtastic_DS248X_config) -> Bool {
+    if lhs._mainTemperatureChannel != rhs._mainTemperatureChannel {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Meshtastic_AS3935_config: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".AS3935_config"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}set_tuning_cap_pf\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self._setTuningCapPf) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._setTuningCapPf {
+      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 1)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Meshtastic_AS3935_config, rhs: Meshtastic_AS3935_config) -> Bool {
+    if lhs._setTuningCapPf != rhs._setTuningCapPf {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

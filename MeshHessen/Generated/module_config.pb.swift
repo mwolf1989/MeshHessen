@@ -15,12 +15,12 @@ import SwiftProtobuf
 // incompatible with the version of SwiftProtobuf to which you are linking.
 // Please ensure that you are building against the same version of the API
 // that was used to generate this file.
-fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAPIVersionCheck {
+fileprivate nonisolated struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAPIVersionCheck {
   struct _2: SwiftProtobuf.ProtobufAPIVersion_2 {}
   typealias Version = _2
 }
 
-enum Meshtastic_RemoteHardwarePinType: SwiftProtobuf.Enum, Swift.CaseIterable {
+nonisolated enum Meshtastic_RemoteHardwarePinType: SwiftProtobuf.Enum, Swift.CaseIterable {
   typealias RawValue = Int
 
   ///
@@ -69,7 +69,7 @@ enum Meshtastic_RemoteHardwarePinType: SwiftProtobuf.Enum, Swift.CaseIterable {
 
 ///
 /// Module Config
-struct Meshtastic_ModuleConfig: Sendable {
+nonisolated struct Meshtastic_ModuleConfig: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -238,11 +238,21 @@ struct Meshtastic_ModuleConfig: Sendable {
     set {payloadVariant = .tak(newValue)}
   }
 
+  ///
+  /// MeshBeacon module config
+  var meshBeacon: Meshtastic_ModuleConfig.MeshBeaconConfig {
+    get {
+      if case .meshBeacon(let v)? = payloadVariant {return v}
+      return Meshtastic_ModuleConfig.MeshBeaconConfig()
+    }
+    set {payloadVariant = .meshBeacon(newValue)}
+  }
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   ///
   /// TODO: REPLACE
-  enum OneOf_PayloadVariant: Equatable, Sendable {
+  nonisolated enum OneOf_PayloadVariant: Equatable, Sendable {
     ///
     /// TODO: REPLACE
     case mqtt(Meshtastic_ModuleConfig.MQTTConfig)
@@ -291,12 +301,15 @@ struct Meshtastic_ModuleConfig: Sendable {
     ///
     /// TAK team/role configuration for TAK_TRACKER
     case tak(Meshtastic_ModuleConfig.TAKConfig)
+    ///
+    /// MeshBeacon module config
+    case meshBeacon(Meshtastic_ModuleConfig.MeshBeaconConfig)
 
   }
 
   ///
   /// MQTT Client Config
-  struct MQTTConfig: Sendable {
+  nonisolated struct MQTTConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -331,7 +344,9 @@ struct Meshtastic_ModuleConfig: Sendable {
     var encryptionEnabled: Bool = false
 
     ///
-    /// Whether to send / consume json packets on MQTT
+    /// Deprecated: JSON packet support on MQTT was removed, and this field is ignored.
+    ///
+    /// NOTE: This field was marked as deprecated in the .proto file.
     var jsonEnabled: Bool = false
 
     ///
@@ -371,7 +386,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
   ///
   /// Settings for reporting unencrypted information about our node to a map via MQTT
-  struct MapReportSettings: Sendable {
+  nonisolated struct MapReportSettings: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -395,7 +410,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
   ///
   /// RemoteHardwareModule Config
-  struct RemoteHardwareConfig: Sendable {
+  nonisolated struct RemoteHardwareConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -419,7 +434,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
   ///
   /// NeighborInfoModule Config
-  struct NeighborInfoConfig: Sendable {
+  nonisolated struct NeighborInfoConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -445,7 +460,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
   ///
   /// Detection Sensor Module Config
-  struct DetectionSensorConfig: Sendable {
+  nonisolated struct DetectionSensorConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -492,7 +507,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
     var unknownFields = SwiftProtobuf.UnknownStorage()
 
-    enum TriggerType: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum TriggerType: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       /// Event is triggered if pin is low
@@ -561,7 +576,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
   ///
   /// Audio Config for codec2 voice
-  struct AudioConfig: Sendable {
+  nonisolated struct AudioConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -575,7 +590,7 @@ struct Meshtastic_ModuleConfig: Sendable {
     var pttPin: UInt32 = 0
 
     ///
-    /// The audio sample rate to use for codec2
+    /// The codec2 bitrate to encode at. Sample rate is always 8 kHz.
     var bitrate: Meshtastic_ModuleConfig.AudioConfig.Audio_Baud = .codec2Default
 
     ///
@@ -598,7 +613,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
     ///
     /// Baudrate for codec2 voice
-    enum Audio_Baud: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum Audio_Baud: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
       case codec2Default // = 0
       case codec23200 // = 1
@@ -607,8 +622,24 @@ struct Meshtastic_ModuleConfig: Sendable {
       case codec21400 // = 4
       case codec21300 // = 5
       case codec21200 // = 6
+
+      ///
+      /// Removed from libcodec2 upstream. A device configured to one of these
+      /// falls back to CODEC2_700C.
+      ///
+      /// NOTE: This enum value was marked as deprecated in the .proto file
       case codec2700 // = 7
+
+      /// NOTE: This enum value was marked as deprecated in the .proto file
       case codec2700B // = 8
+
+      ///
+      /// Replaces CODEC2_700. Default for new configurations.
+      case codec2700C // = 9
+
+      ///
+      /// Lowest rate, and the only one usable on slower modem presets.
+      case codec2450 // = 10
       case UNRECOGNIZED(Int)
 
       init() {
@@ -626,6 +657,8 @@ struct Meshtastic_ModuleConfig: Sendable {
         case 6: self = .codec21200
         case 7: self = .codec2700
         case 8: self = .codec2700B
+        case 9: self = .codec2700C
+        case 10: self = .codec2450
         default: self = .UNRECOGNIZED(rawValue)
         }
       }
@@ -641,6 +674,8 @@ struct Meshtastic_ModuleConfig: Sendable {
         case .codec21200: return 6
         case .codec2700: return 7
         case .codec2700B: return 8
+        case .codec2700C: return 9
+        case .codec2450: return 10
         case .UNRECOGNIZED(let i): return i
         }
       }
@@ -656,6 +691,8 @@ struct Meshtastic_ModuleConfig: Sendable {
         .codec21200,
         .codec2700,
         .codec2700B,
+        .codec2700C,
+        .codec2450,
       ]
 
     }
@@ -665,7 +702,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
   ///
   /// Config for the Paxcounter Module
-  struct PaxcounterConfig: Sendable {
+  nonisolated struct PaxcounterConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -691,67 +728,42 @@ struct Meshtastic_ModuleConfig: Sendable {
 
   ///
   /// Config for the Traffic Management module.
-  /// Provides packet inspection and traffic shaping to help reduce channel utilization
-  struct TrafficManagementConfig: Sendable {
+  /// Provides packet inspection and traffic shaping to help reduce channel utilization.
+  /// Every field uses the proto3 zero value to mean "disabled"; there is no
+  /// "use the firmware default" sentinel. Firmware installs its own defaults when it
+  /// first creates this config, and a client that writes 0 turns that feature off.
+  nonisolated struct TrafficManagementConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
 
     ///
-    /// Master enable for traffic management module
-    var enabled: Bool = false
-
-    ///
-    /// Enable position deduplication to drop redundant position broadcasts
-    var positionDedupEnabled: Bool = false
-
-    ///
-    /// Number of bits of precision for position deduplication (0-32)
-    var positionPrecisionBits: UInt32 = 0
-
-    ///
-    /// Minimum interval in seconds between position updates from the same node
+    /// Minimum interval in seconds between position updates from the same node.
+    /// A non-zero value implicitly enables the suppression window; 0 disables it.
+    /// Firmware default: 18000 (5 hours), installed when this config is first created.
     var positionMinIntervalSecs: UInt32 = 0
 
     ///
-    /// Enable direct response to NodeInfo requests from local cache
-    var nodeinfoDirectResponse: Bool = false
-
-    ///
-    /// Minimum hop distance from requestor before responding to NodeInfo requests
+    /// Maximum hop distance from the requestor at which direct NodeInfo responses
+    /// are served from the local cache. A non-zero value implicitly enables direct
+    /// response; 0 disables it.
     var nodeinfoDirectResponseMaxHops: UInt32 = 0
 
     ///
-    /// Enable per-node rate limiting to throttle chatty nodes
-    var rateLimitEnabled: Bool = false
-
-    ///
-    /// Time window in seconds for rate limiting calculations
+    /// Time window in seconds for per-node rate limiting.
+    /// A non-zero value implicitly enables rate limiting; 0 disables it.
     var rateLimitWindowSecs: UInt32 = 0
 
     ///
-    /// Maximum packets allowed per node within the rate limit window
+    /// Maximum packets allowed per node within the rate limit window.
+    /// A non-zero value implicitly enables rate limiting; 0 disables it.
     var rateLimitMaxPackets: UInt32 = 0
 
     ///
-    /// Enable dropping of unknown/undecryptable packets per rate_limit_window_secs
-    var dropUnknownEnabled: Bool = false
-
-    ///
-    /// Number of unknown packets before dropping from a node
+    /// Maximum unknown/undecryptable packets per 5 minutes before the source
+    /// is dropped. A non-zero value implicitly enables unknown-packet filtering;
+    /// 0 disables it.
     var unknownPacketThreshold: UInt32 = 0
-
-    ///
-    /// Set hop_limit to 0 for relayed telemetry broadcasts (own packets unaffected)
-    var exhaustHopTelemetry: Bool = false
-
-    ///
-    /// Set hop_limit to 0 for relayed position broadcasts (own packets unaffected)
-    var exhaustHopPosition: Bool = false
-
-    ///
-    /// Preserve hop_limit for router-to-router traffic
-    var routerPreserveHops: Bool = false
 
     var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -760,7 +772,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
   ///
   /// Serial Config
-  struct SerialConfig: Sendable {
+  nonisolated struct SerialConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -803,7 +815,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
     ///
     /// TODO: REPLACE
-    enum Serial_Baud: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum Serial_Baud: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
       case baudDefault // = 0
       case baud110 // = 1
@@ -895,7 +907,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
     ///
     /// TODO: REPLACE
-    enum Serial_Mode: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum Serial_Mode: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
       case `default` // = 0
       case simple // = 1
@@ -922,6 +934,9 @@ struct Meshtastic_ModuleConfig: Sendable {
 
       /// only text (channel & DM)
       case logtext // = 10
+
+      /// Modbus-RTU master, polls an RS485 sensor and sends telemetry
+      case modbus // = 11
       case UNRECOGNIZED(Int)
 
       init() {
@@ -941,6 +956,7 @@ struct Meshtastic_ModuleConfig: Sendable {
         case 8: self = .msConfig
         case 9: self = .log
         case 10: self = .logtext
+        case 11: self = .modbus
         default: self = .UNRECOGNIZED(rawValue)
         }
       }
@@ -958,6 +974,7 @@ struct Meshtastic_ModuleConfig: Sendable {
         case .msConfig: return 8
         case .log: return 9
         case .logtext: return 10
+        case .modbus: return 11
         case .UNRECOGNIZED(let i): return i
         }
       }
@@ -975,6 +992,7 @@ struct Meshtastic_ModuleConfig: Sendable {
         .msConfig,
         .log,
         .logtext,
+        .modbus,
       ]
 
     }
@@ -984,7 +1002,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
   ///
   /// External Notifications Config
-  struct ExternalNotificationConfig: Sendable {
+  nonisolated struct ExternalNotificationConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1067,7 +1085,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
   ///
   /// Store and Forward Module Config
-  struct StoreForwardConfig: Sendable {
+  nonisolated struct StoreForwardConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1103,7 +1121,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
   ///
   /// Preferences for the RangeTestModule
-  struct RangeTestConfig: Sendable {
+  nonisolated struct RangeTestConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1133,7 +1151,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
   ///
   /// Configuration for both device and environment metrics
-  struct TelemetryConfig: Sendable {
+  nonisolated struct TelemetryConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1211,7 +1229,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
   ///
   /// Canned Messages Module Config
-  struct CannedMessageConfig: Sendable {
+  nonisolated struct CannedMessageConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1270,7 +1288,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
     ///
     /// TODO: REPLACE
-    enum InputEventChar: SwiftProtobuf.Enum, Swift.CaseIterable {
+    nonisolated enum InputEventChar: SwiftProtobuf.Enum, Swift.CaseIterable {
       typealias RawValue = Int
 
       ///
@@ -1358,7 +1376,7 @@ struct Meshtastic_ModuleConfig: Sendable {
   ///
   ///Ambient Lighting Module - Settings for control of onboard LEDs to allow users to adjust the brightness levels and respective color levels.
   ///Initially created for the RAK14001 RGB LED module.
-  struct AmbientLightingConfig: Sendable {
+  nonisolated struct AmbientLightingConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1390,7 +1408,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
   ///
   /// StatusMessage config - Allows setting a status message for a node to periodically rebroadcast
-  struct StatusMessageConfig: Sendable {
+  nonisolated struct StatusMessageConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1405,8 +1423,212 @@ struct Meshtastic_ModuleConfig: Sendable {
   }
 
   ///
+  /// MeshBeacon module config
+  nonisolated struct MeshBeaconConfig: Sendable {
+    // SwiftProtobuf.Message conformance is added in an extension below. See the
+    // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+    // methods supported on all messages.
+
+    ///
+    /// Bitwise-OR of Flags values (listen / broadcast / legacy-split toggles).
+    var flags: UInt32 = 0
+
+    ///
+    /// Frequency slot to advertise, 1-based, matching Config.LoRaConfig.channel_num.
+    /// Unset means the receiver derives it from the advertised region, channel name and
+    /// preset, which covers a region that mandates a slot and a mesh on the default hash.
+    /// Set it only where the mesh deliberately pins a non-default slot. Do not send 0.
+    var broadcastOfferFrequencySlot: UInt32 {
+      get {_broadcastOfferFrequencySlot ?? 0}
+      set {_broadcastOfferFrequencySlot = newValue}
+    }
+    /// Returns true if `broadcastOfferFrequencySlot` has been explicitly set.
+    var hasBroadcastOfferFrequencySlot: Bool {self._broadcastOfferFrequencySlot != nil}
+    /// Clears the value of `broadcastOfferFrequencySlot`. Subsequent reads from it will return its default value.
+    mutating func clearBroadcastOfferFrequencySlot() {self._broadcastOfferFrequencySlot = nil}
+
+    ///
+    /// Message to include in each beacon broadcast.
+    /// Every beacon copy carries this on the air, so it is the largest single cost in both
+    /// this config and the packet it produces. Held to 60 bytes for that reason. The nanopb
+    /// max_size is 61 because it counts the terminator, which is what leaves a client a
+    /// round 60.
+    var broadcastMessage: String = String()
+
+    ///
+    /// Optional channel (name + PSK) to advertise in the MeshBeacon offer_channel field.
+    var broadcastOfferChannel: Meshtastic_ChannelSettings {
+      get {_broadcastOfferChannel ?? Meshtastic_ChannelSettings()}
+      set {_broadcastOfferChannel = newValue}
+    }
+    /// Returns true if `broadcastOfferChannel` has been explicitly set.
+    var hasBroadcastOfferChannel: Bool {self._broadcastOfferChannel != nil}
+    /// Clears the value of `broadcastOfferChannel`. Subsequent reads from it will return its default value.
+    mutating func clearBroadcastOfferChannel() {self._broadcastOfferChannel = nil}
+
+    ///
+    /// Optional region to advertise in the MeshBeacon offer_region field.
+    var broadcastOfferRegion: Meshtastic_Config.LoRaConfig.RegionCode = .unset
+
+    ///
+    /// Optional modem preset to advertise in the MeshBeacon offer_preset field.
+    var broadcastOfferPreset: Meshtastic_Config.LoRaConfig.ModemPreset {
+      get {_broadcastOfferPreset ?? .longFast}
+      set {_broadcastOfferPreset = newValue}
+    }
+    /// Returns true if `broadcastOfferPreset` has been explicitly set.
+    var hasBroadcastOfferPreset: Bool {self._broadcastOfferPreset != nil}
+    /// Clears the value of `broadcastOfferPreset`. Subsequent reads from it will return its default value.
+    mutating func clearBroadcastOfferPreset() {self._broadcastOfferPreset = nil}
+
+    ///
+    /// How often to broadcast, in seconds. Min 3600 (1 h), default 3600.
+    var broadcastIntervalSecs: UInt32 = 0
+
+    ///
+    /// Broadcast destination list.
+    /// The broadcaster sends one beacon copy per distinct destination, in sequence, temporarily
+    /// switching the radio to that entry's preset/region/channel for each.
+    /// When empty, a single beacon is sent on the node's running preset and region over the
+    /// primary channel.
+    /// Entries that resolve to the same effective preset, region and channel are deduplicated, so
+    /// a duplicate entry does not produce a second transmission.
+    var broadcastTargets: [Meshtastic_ModuleConfig.MeshBeaconConfig.BroadcastTarget] = []
+
+    var unknownFields = SwiftProtobuf.UnknownStorage()
+
+    ///
+    /// Boolean options for the beacon module, packed into the `flags` bitfield below.
+    /// OR the FLAG_* values together; a flag is on when its bit is set.
+    nonisolated enum Flags: SwiftProtobuf.Enum, Swift.CaseIterable {
+      typealias RawValue = Int
+
+      ///
+      /// No options enabled.
+      case flagNone // = 0
+
+      ///
+      /// Enable receiving MESH_BEACON_APP packets from other nodes.
+      /// The text portion is delivered to the local message inbox.
+      /// Offered channel/preset are stored for the client app to act on.
+      case flagListenEnabled // = 1
+
+      ///
+      /// Enable periodically broadcasting MESH_BEACON_APP packets from this node.
+      case flagBroadcastEnabled // = 2
+
+      ///
+      /// When both text and offer content are present, split the beacon into a separate
+      /// MESH_BEACON_APP (offer only) and TEXT_MESSAGE_APP (text only) packet, so firmware
+      /// that only decodes TEXT_MESSAGE_APP still receives the human-readable text.
+      case flagLegacySplit // = 4
+      case UNRECOGNIZED(Int)
+
+      init() {
+        self = .flagNone
+      }
+
+      init?(rawValue: Int) {
+        switch rawValue {
+        case 0: self = .flagNone
+        case 1: self = .flagListenEnabled
+        case 2: self = .flagBroadcastEnabled
+        case 4: self = .flagLegacySplit
+        default: self = .UNRECOGNIZED(rawValue)
+        }
+      }
+
+      var rawValue: Int {
+        switch self {
+        case .flagNone: return 0
+        case .flagListenEnabled: return 1
+        case .flagBroadcastEnabled: return 2
+        case .flagLegacySplit: return 4
+        case .UNRECOGNIZED(let i): return i
+        }
+      }
+
+      // The compiler won't synthesize support with the UNRECOGNIZED case.
+      static let allCases: [Meshtastic_ModuleConfig.MeshBeaconConfig.Flags] = [
+        .flagNone,
+        .flagListenEnabled,
+        .flagBroadcastEnabled,
+        .flagLegacySplit,
+      ]
+
+    }
+
+    ///
+    /// One entry in the broadcast destination list.
+    /// Each entry names one set of radio settings to send a beacon copy on.
+    nonisolated struct BroadcastTarget: Sendable {
+      // SwiftProtobuf.Message conformance is added in an extension below. See the
+      // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+      // methods supported on all messages.
+
+      ///
+      /// Modem preset to use for this target.
+      /// Falls back to the running config preset if unset.
+      var preset: Meshtastic_Config.LoRaConfig.ModemPreset {
+        get {_preset ?? .longFast}
+        set {_preset = newValue}
+      }
+      /// Returns true if `preset` has been explicitly set.
+      var hasPreset: Bool {self._preset != nil}
+      /// Clears the value of `preset`. Subsequent reads from it will return its default value.
+      mutating func clearPreset() {self._preset = nil}
+
+      ///
+      /// Region to use for this target. UNSET means use the running config region.
+      var region: Meshtastic_Config.LoRaConfig.RegionCode = .unset
+
+      ///
+      /// Index into the device's channel table (0..MAX_NUM_CHANNELS-1) of the channel to
+      /// transmit this target's beacon on. The referenced channel must already be configured
+      /// on the node (its key is needed to encrypt). If unset, the default channel for the
+      /// preset is used.
+      var channelIndex: UInt32 {
+        get {_channelIndex ?? 0}
+        set {_channelIndex = newValue}
+      }
+      /// Returns true if `channelIndex` has been explicitly set.
+      var hasChannelIndex: Bool {self._channelIndex != nil}
+      /// Clears the value of `channelIndex`. Subsequent reads from it will return its default value.
+      mutating func clearChannelIndex() {self._channelIndex = nil}
+
+      ///
+      /// Frequency slot to transmit this target's beacon on, 1-based, matching
+      /// Config.LoRaConfig.channel_num. Unset means derive it the way any node on this
+      /// channel would: the region's override slot if it has one, otherwise the hash of the
+      /// target channel's name. Do not send 0 - it is the same as unset.
+      var frequencySlot: UInt32 {
+        get {_frequencySlot ?? 0}
+        set {_frequencySlot = newValue}
+      }
+      /// Returns true if `frequencySlot` has been explicitly set.
+      var hasFrequencySlot: Bool {self._frequencySlot != nil}
+      /// Clears the value of `frequencySlot`. Subsequent reads from it will return its default value.
+      mutating func clearFrequencySlot() {self._frequencySlot = nil}
+
+      var unknownFields = SwiftProtobuf.UnknownStorage()
+
+      init() {}
+
+      fileprivate var _preset: Meshtastic_Config.LoRaConfig.ModemPreset? = nil
+      fileprivate var _channelIndex: UInt32? = nil
+      fileprivate var _frequencySlot: UInt32? = nil
+    }
+
+    init() {}
+
+    fileprivate var _broadcastOfferFrequencySlot: UInt32? = nil
+    fileprivate var _broadcastOfferChannel: Meshtastic_ChannelSettings? = nil
+    fileprivate var _broadcastOfferPreset: Meshtastic_Config.LoRaConfig.ModemPreset? = nil
+  }
+
+  ///
   /// TAK team/role configuration
-  struct TAKConfig: Sendable {
+  nonisolated struct TAKConfig: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1431,7 +1653,7 @@ struct Meshtastic_ModuleConfig: Sendable {
 
 ///
 /// A GPIO pin definition for remote hardware module
-struct Meshtastic_RemoteHardwarePin: Sendable {
+nonisolated struct Meshtastic_RemoteHardwarePin: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1455,15 +1677,15 @@ struct Meshtastic_RemoteHardwarePin: Sendable {
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
-fileprivate let _protobuf_package = "meshtastic"
+fileprivate nonisolated let _protobuf_package = "meshtastic"
 
-extension Meshtastic_RemoteHardwarePinType: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_RemoteHardwarePinType: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0UNKNOWN\0\u{1}DIGITAL_READ\0\u{1}DIGITAL_WRITE\0")
 }
 
-extension Meshtastic_ModuleConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ModuleConfig"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mqtt\0\u{1}serial\0\u{3}external_notification\0\u{3}store_forward\0\u{3}range_test\0\u{1}telemetry\0\u{3}canned_message\0\u{1}audio\0\u{3}remote_hardware\0\u{3}neighbor_info\0\u{3}ambient_lighting\0\u{3}detection_sensor\0\u{1}paxcounter\0\u{1}statusmessage\0\u{3}traffic_management\0\u{1}tak\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mqtt\0\u{1}serial\0\u{3}external_notification\0\u{3}store_forward\0\u{3}range_test\0\u{1}telemetry\0\u{3}canned_message\0\u{1}audio\0\u{3}remote_hardware\0\u{3}neighbor_info\0\u{3}ambient_lighting\0\u{3}detection_sensor\0\u{1}paxcounter\0\u{1}statusmessage\0\u{3}traffic_management\0\u{1}tak\0\u{3}mesh_beacon\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1679,6 +1901,19 @@ extension Meshtastic_ModuleConfig: SwiftProtobuf.Message, SwiftProtobuf._Message
           self.payloadVariant = .tak(v)
         }
       }()
+      case 17: try {
+        var v: Meshtastic_ModuleConfig.MeshBeaconConfig?
+        var hadOneofValue = false
+        if let current = self.payloadVariant {
+          hadOneofValue = true
+          if case .meshBeacon(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.payloadVariant = .meshBeacon(v)
+        }
+      }()
       default: break
       }
     }
@@ -1754,6 +1989,10 @@ extension Meshtastic_ModuleConfig: SwiftProtobuf.Message, SwiftProtobuf._Message
       guard case .tak(let v)? = self.payloadVariant else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 16)
     }()
+    case .meshBeacon?: try {
+      guard case .meshBeacon(let v)? = self.payloadVariant else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 17)
+    }()
     case nil: break
     }
     try unknownFields.traverse(visitor: &visitor)
@@ -1766,7 +2005,7 @@ extension Meshtastic_ModuleConfig: SwiftProtobuf.Message, SwiftProtobuf._Message
   }
 }
 
-extension Meshtastic_ModuleConfig.MQTTConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.MQTTConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".MQTTConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{1}address\0\u{1}username\0\u{1}password\0\u{3}encryption_enabled\0\u{3}json_enabled\0\u{3}tls_enabled\0\u{1}root\0\u{3}proxy_to_client_enabled\0\u{3}map_reporting_enabled\0\u{3}map_report_settings\0")
 
@@ -1850,7 +2089,7 @@ extension Meshtastic_ModuleConfig.MQTTConfig: SwiftProtobuf.Message, SwiftProtob
   }
 }
 
-extension Meshtastic_ModuleConfig.MapReportSettings: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.MapReportSettings: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".MapReportSettings"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}publish_interval_secs\0\u{3}position_precision\0\u{3}should_report_location\0")
 
@@ -1890,7 +2129,7 @@ extension Meshtastic_ModuleConfig.MapReportSettings: SwiftProtobuf.Message, Swif
   }
 }
 
-extension Meshtastic_ModuleConfig.RemoteHardwareConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.RemoteHardwareConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".RemoteHardwareConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{3}allow_undefined_pin_access\0\u{3}available_pins\0")
 
@@ -1930,7 +2169,7 @@ extension Meshtastic_ModuleConfig.RemoteHardwareConfig: SwiftProtobuf.Message, S
   }
 }
 
-extension Meshtastic_ModuleConfig.NeighborInfoConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.NeighborInfoConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".NeighborInfoConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{3}update_interval\0\u{3}transmit_over_lora\0")
 
@@ -1970,7 +2209,7 @@ extension Meshtastic_ModuleConfig.NeighborInfoConfig: SwiftProtobuf.Message, Swi
   }
 }
 
-extension Meshtastic_ModuleConfig.DetectionSensorConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.DetectionSensorConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".DetectionSensorConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{3}minimum_broadcast_secs\0\u{3}state_broadcast_secs\0\u{3}send_bell\0\u{1}name\0\u{3}monitor_pin\0\u{3}detection_trigger_type\0\u{3}use_pullup\0")
 
@@ -2035,11 +2274,11 @@ extension Meshtastic_ModuleConfig.DetectionSensorConfig: SwiftProtobuf.Message, 
   }
 }
 
-extension Meshtastic_ModuleConfig.DetectionSensorConfig.TriggerType: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.DetectionSensorConfig.TriggerType: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0LOGIC_LOW\0\u{1}LOGIC_HIGH\0\u{1}FALLING_EDGE\0\u{1}RISING_EDGE\0\u{1}EITHER_EDGE_ACTIVE_LOW\0\u{1}EITHER_EDGE_ACTIVE_HIGH\0")
 }
 
-extension Meshtastic_ModuleConfig.AudioConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.AudioConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".AudioConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}codec2_enabled\0\u{3}ptt_pin\0\u{1}bitrate\0\u{3}i2s_ws\0\u{3}i2s_sd\0\u{3}i2s_din\0\u{3}i2s_sck\0")
 
@@ -2099,11 +2338,11 @@ extension Meshtastic_ModuleConfig.AudioConfig: SwiftProtobuf.Message, SwiftProto
   }
 }
 
-extension Meshtastic_ModuleConfig.AudioConfig.Audio_Baud: SwiftProtobuf._ProtoNameProviding {
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CODEC2_DEFAULT\0\u{1}CODEC2_3200\0\u{1}CODEC2_2400\0\u{1}CODEC2_1600\0\u{1}CODEC2_1400\0\u{1}CODEC2_1300\0\u{1}CODEC2_1200\0\u{1}CODEC2_700\0\u{1}CODEC2_700B\0")
+nonisolated extension Meshtastic_ModuleConfig.AudioConfig.Audio_Baud: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CODEC2_DEFAULT\0\u{1}CODEC2_3200\0\u{1}CODEC2_2400\0\u{1}CODEC2_1600\0\u{1}CODEC2_1400\0\u{1}CODEC2_1300\0\u{1}CODEC2_1200\0\u{1}CODEC2_700\0\u{1}CODEC2_700B\0\u{1}CODEC2_700C\0\u{1}CODEC2_450\0")
 }
 
-extension Meshtastic_ModuleConfig.PaxcounterConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.PaxcounterConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".PaxcounterConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{3}paxcounter_update_interval\0\u{3}wifi_threshold\0\u{3}ble_threshold\0")
 
@@ -2148,9 +2387,9 @@ extension Meshtastic_ModuleConfig.PaxcounterConfig: SwiftProtobuf.Message, Swift
   }
 }
 
-extension Meshtastic_ModuleConfig.TrafficManagementConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.TrafficManagementConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".TrafficManagementConfig"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{3}position_dedup_enabled\0\u{3}position_precision_bits\0\u{3}position_min_interval_secs\0\u{3}nodeinfo_direct_response\0\u{3}nodeinfo_direct_response_max_hops\0\u{3}rate_limit_enabled\0\u{3}rate_limit_window_secs\0\u{3}rate_limit_max_packets\0\u{3}drop_unknown_enabled\0\u{3}unknown_packet_threshold\0\u{3}exhaust_hop_telemetry\0\u{3}exhaust_hop_position\0\u{3}router_preserve_hops\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{4}\u{4}position_min_interval_secs\0\u{4}\u{2}nodeinfo_direct_response_max_hops\0\u{4}\u{2}rate_limit_window_secs\0\u{3}rate_limit_max_packets\0\u{4}\u{2}unknown_packet_threshold\0\u{b}enabled\0\u{b}position_dedup_enabled\0\u{b}position_precision_bits\0\u{b}nodeinfo_direct_response\0\u{b}rate_limit_enabled\0\u{b}drop_unknown_enabled\0\u{b}exhaust_hop_telemetry\0\u{b}exhaust_hop_position\0\u{b}router_preserve_hops\0\u{c}\u{1}\u{1}\u{c}\u{2}\u{1}\u{c}\u{3}\u{1}\u{c}\u{5}\u{1}\u{c}\u{7}\u{1}\u{c}\u{a}\u{1}\u{c}\u{c}\u{1}\u{c}\u{d}\u{1}\u{c}\u{e}\u{1}")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2158,46 +2397,22 @@ extension Meshtastic_ModuleConfig.TrafficManagementConfig: SwiftProtobuf.Message
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
-      case 2: try { try decoder.decodeSingularBoolField(value: &self.positionDedupEnabled) }()
-      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.positionPrecisionBits) }()
       case 4: try { try decoder.decodeSingularUInt32Field(value: &self.positionMinIntervalSecs) }()
-      case 5: try { try decoder.decodeSingularBoolField(value: &self.nodeinfoDirectResponse) }()
       case 6: try { try decoder.decodeSingularUInt32Field(value: &self.nodeinfoDirectResponseMaxHops) }()
-      case 7: try { try decoder.decodeSingularBoolField(value: &self.rateLimitEnabled) }()
       case 8: try { try decoder.decodeSingularUInt32Field(value: &self.rateLimitWindowSecs) }()
       case 9: try { try decoder.decodeSingularUInt32Field(value: &self.rateLimitMaxPackets) }()
-      case 10: try { try decoder.decodeSingularBoolField(value: &self.dropUnknownEnabled) }()
       case 11: try { try decoder.decodeSingularUInt32Field(value: &self.unknownPacketThreshold) }()
-      case 12: try { try decoder.decodeSingularBoolField(value: &self.exhaustHopTelemetry) }()
-      case 13: try { try decoder.decodeSingularBoolField(value: &self.exhaustHopPosition) }()
-      case 14: try { try decoder.decodeSingularBoolField(value: &self.routerPreserveHops) }()
       default: break
       }
     }
   }
 
   func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.enabled != false {
-      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 1)
-    }
-    if self.positionDedupEnabled != false {
-      try visitor.visitSingularBoolField(value: self.positionDedupEnabled, fieldNumber: 2)
-    }
-    if self.positionPrecisionBits != 0 {
-      try visitor.visitSingularUInt32Field(value: self.positionPrecisionBits, fieldNumber: 3)
-    }
     if self.positionMinIntervalSecs != 0 {
       try visitor.visitSingularUInt32Field(value: self.positionMinIntervalSecs, fieldNumber: 4)
     }
-    if self.nodeinfoDirectResponse != false {
-      try visitor.visitSingularBoolField(value: self.nodeinfoDirectResponse, fieldNumber: 5)
-    }
     if self.nodeinfoDirectResponseMaxHops != 0 {
       try visitor.visitSingularUInt32Field(value: self.nodeinfoDirectResponseMaxHops, fieldNumber: 6)
-    }
-    if self.rateLimitEnabled != false {
-      try visitor.visitSingularBoolField(value: self.rateLimitEnabled, fieldNumber: 7)
     }
     if self.rateLimitWindowSecs != 0 {
       try visitor.visitSingularUInt32Field(value: self.rateLimitWindowSecs, fieldNumber: 8)
@@ -2205,45 +2420,24 @@ extension Meshtastic_ModuleConfig.TrafficManagementConfig: SwiftProtobuf.Message
     if self.rateLimitMaxPackets != 0 {
       try visitor.visitSingularUInt32Field(value: self.rateLimitMaxPackets, fieldNumber: 9)
     }
-    if self.dropUnknownEnabled != false {
-      try visitor.visitSingularBoolField(value: self.dropUnknownEnabled, fieldNumber: 10)
-    }
     if self.unknownPacketThreshold != 0 {
       try visitor.visitSingularUInt32Field(value: self.unknownPacketThreshold, fieldNumber: 11)
-    }
-    if self.exhaustHopTelemetry != false {
-      try visitor.visitSingularBoolField(value: self.exhaustHopTelemetry, fieldNumber: 12)
-    }
-    if self.exhaustHopPosition != false {
-      try visitor.visitSingularBoolField(value: self.exhaustHopPosition, fieldNumber: 13)
-    }
-    if self.routerPreserveHops != false {
-      try visitor.visitSingularBoolField(value: self.routerPreserveHops, fieldNumber: 14)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Meshtastic_ModuleConfig.TrafficManagementConfig, rhs: Meshtastic_ModuleConfig.TrafficManagementConfig) -> Bool {
-    if lhs.enabled != rhs.enabled {return false}
-    if lhs.positionDedupEnabled != rhs.positionDedupEnabled {return false}
-    if lhs.positionPrecisionBits != rhs.positionPrecisionBits {return false}
     if lhs.positionMinIntervalSecs != rhs.positionMinIntervalSecs {return false}
-    if lhs.nodeinfoDirectResponse != rhs.nodeinfoDirectResponse {return false}
     if lhs.nodeinfoDirectResponseMaxHops != rhs.nodeinfoDirectResponseMaxHops {return false}
-    if lhs.rateLimitEnabled != rhs.rateLimitEnabled {return false}
     if lhs.rateLimitWindowSecs != rhs.rateLimitWindowSecs {return false}
     if lhs.rateLimitMaxPackets != rhs.rateLimitMaxPackets {return false}
-    if lhs.dropUnknownEnabled != rhs.dropUnknownEnabled {return false}
     if lhs.unknownPacketThreshold != rhs.unknownPacketThreshold {return false}
-    if lhs.exhaustHopTelemetry != rhs.exhaustHopTelemetry {return false}
-    if lhs.exhaustHopPosition != rhs.exhaustHopPosition {return false}
-    if lhs.routerPreserveHops != rhs.routerPreserveHops {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
-extension Meshtastic_ModuleConfig.SerialConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.SerialConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".SerialConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{1}echo\0\u{1}rxd\0\u{1}txd\0\u{1}baud\0\u{1}timeout\0\u{1}mode\0\u{3}override_console_serial_port\0")
 
@@ -2308,15 +2502,15 @@ extension Meshtastic_ModuleConfig.SerialConfig: SwiftProtobuf.Message, SwiftProt
   }
 }
 
-extension Meshtastic_ModuleConfig.SerialConfig.Serial_Baud: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.SerialConfig.Serial_Baud: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0BAUD_DEFAULT\0\u{1}BAUD_110\0\u{1}BAUD_300\0\u{1}BAUD_600\0\u{1}BAUD_1200\0\u{1}BAUD_2400\0\u{1}BAUD_4800\0\u{1}BAUD_9600\0\u{1}BAUD_19200\0\u{1}BAUD_38400\0\u{1}BAUD_57600\0\u{1}BAUD_115200\0\u{1}BAUD_230400\0\u{1}BAUD_460800\0\u{1}BAUD_576000\0\u{1}BAUD_921600\0")
 }
 
-extension Meshtastic_ModuleConfig.SerialConfig.Serial_Mode: SwiftProtobuf._ProtoNameProviding {
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DEFAULT\0\u{1}SIMPLE\0\u{1}PROTO\0\u{1}TEXTMSG\0\u{1}NMEA\0\u{1}CALTOPO\0\u{1}WS85\0\u{1}VE_DIRECT\0\u{1}MS_CONFIG\0\u{1}LOG\0\u{1}LOGTEXT\0")
+nonisolated extension Meshtastic_ModuleConfig.SerialConfig.Serial_Mode: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DEFAULT\0\u{1}SIMPLE\0\u{1}PROTO\0\u{1}TEXTMSG\0\u{1}NMEA\0\u{1}CALTOPO\0\u{1}WS85\0\u{1}VE_DIRECT\0\u{1}MS_CONFIG\0\u{1}LOG\0\u{1}LOGTEXT\0\u{1}MODBUS\0")
 }
 
-extension Meshtastic_ModuleConfig.ExternalNotificationConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.ExternalNotificationConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".ExternalNotificationConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{3}output_ms\0\u{1}output\0\u{1}active\0\u{3}alert_message\0\u{3}alert_bell\0\u{3}use_pwm\0\u{3}output_vibra\0\u{3}output_buzzer\0\u{3}alert_message_vibra\0\u{3}alert_message_buzzer\0\u{3}alert_bell_vibra\0\u{3}alert_bell_buzzer\0\u{3}nag_timeout\0\u{3}use_i2s_as_buzzer\0")
 
@@ -2416,7 +2610,7 @@ extension Meshtastic_ModuleConfig.ExternalNotificationConfig: SwiftProtobuf.Mess
   }
 }
 
-extension Meshtastic_ModuleConfig.StoreForwardConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.StoreForwardConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".StoreForwardConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{1}heartbeat\0\u{1}records\0\u{3}history_return_max\0\u{3}history_return_window\0\u{3}is_server\0")
 
@@ -2471,7 +2665,7 @@ extension Meshtastic_ModuleConfig.StoreForwardConfig: SwiftProtobuf.Message, Swi
   }
 }
 
-extension Meshtastic_ModuleConfig.RangeTestConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.RangeTestConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".RangeTestConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{1}sender\0\u{1}save\0\u{3}clear_on_reboot\0")
 
@@ -2516,7 +2710,7 @@ extension Meshtastic_ModuleConfig.RangeTestConfig: SwiftProtobuf.Message, SwiftP
   }
 }
 
-extension Meshtastic_ModuleConfig.TelemetryConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.TelemetryConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".TelemetryConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}device_update_interval\0\u{3}environment_update_interval\0\u{3}environment_measurement_enabled\0\u{3}environment_screen_enabled\0\u{3}environment_display_fahrenheit\0\u{3}air_quality_enabled\0\u{3}air_quality_interval\0\u{3}power_measurement_enabled\0\u{3}power_update_interval\0\u{3}power_screen_enabled\0\u{3}health_measurement_enabled\0\u{3}health_update_interval\0\u{3}health_screen_enabled\0\u{3}device_telemetry_enabled\0\u{3}air_quality_screen_enabled\0")
 
@@ -2616,7 +2810,7 @@ extension Meshtastic_ModuleConfig.TelemetryConfig: SwiftProtobuf.Message, SwiftP
   }
 }
 
-extension Meshtastic_ModuleConfig.CannedMessageConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.CannedMessageConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".CannedMessageConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}rotary1_enabled\0\u{3}inputbroker_pin_a\0\u{3}inputbroker_pin_b\0\u{3}inputbroker_pin_press\0\u{3}inputbroker_event_cw\0\u{3}inputbroker_event_ccw\0\u{3}inputbroker_event_press\0\u{3}updown1_enabled\0\u{1}enabled\0\u{3}allow_input_source\0\u{3}send_bell\0")
 
@@ -2696,11 +2890,11 @@ extension Meshtastic_ModuleConfig.CannedMessageConfig: SwiftProtobuf.Message, Sw
   }
 }
 
-extension Meshtastic_ModuleConfig.CannedMessageConfig.InputEventChar: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.CannedMessageConfig.InputEventChar: SwiftProtobuf._ProtoNameProviding {
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0NONE\0\u{2}\u{a}SELECT\0\u{2}\u{7}UP\0\u{1}DOWN\0\u{1}LEFT\0\u{1}RIGHT\0\u{2}\u{4}CANCEL\0\u{2}\u{3}BACK\0")
 }
 
-extension Meshtastic_ModuleConfig.AmbientLightingConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.AmbientLightingConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".AmbientLightingConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}led_state\0\u{1}current\0\u{1}red\0\u{1}green\0\u{1}blue\0")
 
@@ -2750,7 +2944,7 @@ extension Meshtastic_ModuleConfig.AmbientLightingConfig: SwiftProtobuf.Message, 
   }
 }
 
-extension Meshtastic_ModuleConfig.StatusMessageConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.StatusMessageConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".StatusMessageConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}node_status\0")
 
@@ -2780,7 +2974,129 @@ extension Meshtastic_ModuleConfig.StatusMessageConfig: SwiftProtobuf.Message, Sw
   }
 }
 
-extension Meshtastic_ModuleConfig.TAKConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_ModuleConfig.MeshBeaconConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".MeshBeaconConfig"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}flags\0\u{3}broadcast_offer_frequency_slot\0\u{4}\u{2}broadcast_message\0\u{3}broadcast_offer_channel\0\u{3}broadcast_offer_region\0\u{3}broadcast_offer_preset\0\u{4}\u{4}broadcast_interval_secs\0\u{4}\u{2}broadcast_targets\0\u{b}broadcast_send_as_node\0\u{b}broadcast_on_channel\0\u{b}broadcast_on_region\0\u{b}broadcast_on_preset\0\u{c}\u{3}\u{1}\u{c}\u{8}\u{1}\u{c}\u{9}\u{1}\u{c}\u{a}\u{1}")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.flags) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self._broadcastOfferFrequencySlot) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.broadcastMessage) }()
+      case 5: try { try decoder.decodeSingularMessageField(value: &self._broadcastOfferChannel) }()
+      case 6: try { try decoder.decodeSingularEnumField(value: &self.broadcastOfferRegion) }()
+      case 7: try { try decoder.decodeSingularEnumField(value: &self._broadcastOfferPreset) }()
+      case 11: try { try decoder.decodeSingularUInt32Field(value: &self.broadcastIntervalSecs) }()
+      case 13: try { try decoder.decodeRepeatedMessageField(value: &self.broadcastTargets) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if self.flags != 0 {
+      try visitor.visitSingularUInt32Field(value: self.flags, fieldNumber: 1)
+    }
+    try { if let v = self._broadcastOfferFrequencySlot {
+      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 2)
+    } }()
+    if !self.broadcastMessage.isEmpty {
+      try visitor.visitSingularStringField(value: self.broadcastMessage, fieldNumber: 4)
+    }
+    try { if let v = self._broadcastOfferChannel {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    } }()
+    if self.broadcastOfferRegion != .unset {
+      try visitor.visitSingularEnumField(value: self.broadcastOfferRegion, fieldNumber: 6)
+    }
+    try { if let v = self._broadcastOfferPreset {
+      try visitor.visitSingularEnumField(value: v, fieldNumber: 7)
+    } }()
+    if self.broadcastIntervalSecs != 0 {
+      try visitor.visitSingularUInt32Field(value: self.broadcastIntervalSecs, fieldNumber: 11)
+    }
+    if !self.broadcastTargets.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.broadcastTargets, fieldNumber: 13)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Meshtastic_ModuleConfig.MeshBeaconConfig, rhs: Meshtastic_ModuleConfig.MeshBeaconConfig) -> Bool {
+    if lhs.flags != rhs.flags {return false}
+    if lhs._broadcastOfferFrequencySlot != rhs._broadcastOfferFrequencySlot {return false}
+    if lhs.broadcastMessage != rhs.broadcastMessage {return false}
+    if lhs._broadcastOfferChannel != rhs._broadcastOfferChannel {return false}
+    if lhs.broadcastOfferRegion != rhs.broadcastOfferRegion {return false}
+    if lhs._broadcastOfferPreset != rhs._broadcastOfferPreset {return false}
+    if lhs.broadcastIntervalSecs != rhs.broadcastIntervalSecs {return false}
+    if lhs.broadcastTargets != rhs.broadcastTargets {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Meshtastic_ModuleConfig.MeshBeaconConfig.Flags: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0FLAG_NONE\0\u{1}FLAG_LISTEN_ENABLED\0\u{1}FLAG_BROADCAST_ENABLED\0\u{2}\u{2}FLAG_LEGACY_SPLIT\0")
+}
+
+nonisolated extension Meshtastic_ModuleConfig.MeshBeaconConfig.BroadcastTarget: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = Meshtastic_ModuleConfig.MeshBeaconConfig.protoMessageName + ".BroadcastTarget"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}preset\0\u{1}region\0\u{4}\u{2}channel_index\0\u{3}frequency_slot\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self._preset) }()
+      case 2: try { try decoder.decodeSingularEnumField(value: &self.region) }()
+      case 4: try { try decoder.decodeSingularUInt32Field(value: &self._channelIndex) }()
+      case 5: try { try decoder.decodeSingularUInt32Field(value: &self._frequencySlot) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._preset {
+      try visitor.visitSingularEnumField(value: v, fieldNumber: 1)
+    } }()
+    if self.region != .unset {
+      try visitor.visitSingularEnumField(value: self.region, fieldNumber: 2)
+    }
+    try { if let v = self._channelIndex {
+      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 4)
+    } }()
+    try { if let v = self._frequencySlot {
+      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 5)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Meshtastic_ModuleConfig.MeshBeaconConfig.BroadcastTarget, rhs: Meshtastic_ModuleConfig.MeshBeaconConfig.BroadcastTarget) -> Bool {
+    if lhs._preset != rhs._preset {return false}
+    if lhs.region != rhs.region {return false}
+    if lhs._channelIndex != rhs._channelIndex {return false}
+    if lhs._frequencySlot != rhs._frequencySlot {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Meshtastic_ModuleConfig.TAKConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = Meshtastic_ModuleConfig.protoMessageName + ".TAKConfig"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}team\0\u{1}role\0")
 
@@ -2815,7 +3131,7 @@ extension Meshtastic_ModuleConfig.TAKConfig: SwiftProtobuf.Message, SwiftProtobu
   }
 }
 
-extension Meshtastic_RemoteHardwarePin: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Meshtastic_RemoteHardwarePin: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".RemoteHardwarePin"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}gpio_pin\0\u{1}name\0\u{1}type\0")
 
