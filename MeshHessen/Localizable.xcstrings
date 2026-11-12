@@ -8690,18 +8690,12 @@
     "Meshtastic apps can connect to this Mac on the configured TCP port. Configuration replay, bidirectional forwarding, multiple clients and kiosk admin blocking are supported." : {
 
     },
-    "Meshtastic limits the long name to 39 characters and the short name to 4 characters." : {
+    "Meshtastic limits the long name to %lld bytes and the short name to 4 bytes (UTF-8; umlauts use 2 bytes, emoji up to 4)." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Meshtastic begrenzt den Langnamen auf 39 und den Kurznamen auf 4 Zeichen."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Meshtastic limits the long name to 39 characters and the short name to 4 characters."
+            "value" : "Meshtastic begrenzt den Langnamen auf %lld und den Kurznamen auf 4 Bytes (UTF-8; Umlaute belegen 2 Bytes, Emojis bis zu 4)."
           }
         }
       }

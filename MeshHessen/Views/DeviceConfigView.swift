@@ -322,12 +322,22 @@ private struct NodeAdministrationView: View {
                 Toggle("Licensed amateur radio", isOn: $draft.owner.isLicensed)
                 Toggle("Cannot receive messages", isOn: $draft.owner.isUnmessagable)
             }
-            Text("Meshtastic limits the long name to 39 characters and the short name to 4 characters.")
+            Text("Meshtastic limits the long name to \(longNameByteLimit) bytes and the short name to 4 bytes (UTF-8; umlauts use 2 bytes, emoji up to 4).")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
         .disabled(!draft.ownerLoaded)
+    }
+
+    /// Long-name byte limit of the node being configured: loaded metadata
+    /// first, then the local node's firmware, else the legacy limit.
+    private var longNameByteLimit: Int {
+        let loadedVersion = draft.metadata?.firmwareVersion
+        let firmwareVersion = loadedVersion?.isEmpty == false
+            ? loadedVersion
+            : (target.isRemote ? nil : appState.myNodeInfo?.firmwareVersion)
+        return UTF8Limits.longNameBytes(firmwareVersion: firmwareVersion)
     }
 
     private var fixedPositionEditor: some View {
@@ -690,8 +700,8 @@ private struct NodeAdministrationView: View {
             statusMessage = String(localized: "Correct the invalid channel PSK before reviewing changes.")
             return
         }
-        draft.owner.longName = String(draft.owner.longName.prefix(39))
-        draft.owner.shortName = String(draft.owner.shortName.prefix(4))
+        draft.owner.longName = UTF8Limits.clamp(draft.owner.longName, maxBytes: longNameByteLimit)
+        draft.owner.shortName = UTF8Limits.clamp(draft.owner.shortName, maxBytes: UTF8Limits.shortNameBytes)
         let diff = MeshConfigurationDiff.between(draft, and: original)
         guard !diff.isEmpty else {
             statusMessage = String(localized: "No changes")
@@ -2325,7 +2335,13 @@ private struct ChannelConfigurationCard: View {
                 }
                 GridRow {
                     Text("Name")
-                    TextField("Channel name", text: $channel.settings.name)
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField("Channel name", text: channelNameDraft)
+                        Text("\(channel.settings.name.utf8.count)/\(UTF8Limits.channelNameBytes) Bytes")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
                 }
                 GridRow {
                     Text("PSK (Base64)")
@@ -2359,5 +2375,12 @@ private struct ChannelConfigurationCard: View {
         } label: {
             Label("Channel \(channel.index)", systemImage: "dot.radiowaves.left.and.right")
         }
+    }
+
+    private var channelNameDraft: Binding<String> {
+        Binding(
+            get: { channel.settings.name },
+            set: { channel.settings.name = UTF8Limits.clamp($0, maxBytes: UTF8Limits.channelNameBytes) }
+        )
     }
 }
