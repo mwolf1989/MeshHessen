@@ -139,6 +139,8 @@ final class MeshtasticProtocolService {
     // whenever `appState.myNodeInfo` is (re)created.
     private var lastDeviceMetadata: Meshtastic_DeviceMetadata?
     private var lastPioEnv = ""
+    /// Raw `MyNodeInfo` of this session, written into configuration backups.
+    private var lastMyInfo: Meshtastic_MyNodeInfo?
 
     // Device config storage (populated by admin getConfigResponse / getModuleConfigResponse)
     enum ConfigCategory: String {
@@ -628,6 +630,7 @@ final class MeshtasticProtocolService {
         case .myInfo(let info):
             myNodeId = info.myNodeNum
             lastPioEnv = info.pioEnv
+            lastMyInfo = info
             if !info.pioEnv.isEmpty, appState?.myNodeInfo?.nodeId == myNodeId {
                 appState?.myNodeInfo?.pioEnv = info.pioEnv
             }
@@ -1720,6 +1723,7 @@ final class MeshtasticProtocolService {
     private func clearDeviceInfoCache() {
         lastDeviceMetadata = nil
         lastPioEnv = ""
+        lastMyInfo = nil
     }
 
     private func requestDeviceMetadata() async {
@@ -2589,6 +2593,68 @@ final class MeshtasticProtocolService {
         return diff
     }
 
+    // MARK: - Configuration backup / restore (local node)
+
+    /// Reads the local node's complete configuration into a backup file.
+    func exportConfigurationBackup(
+        timeout: Duration = .seconds(30),
+        now: Date = Date(),
+        progress: ((AdminConfigurationLoadProgress) -> Void)? = nil
+    ) async throws -> ConfigBackupFile {
+        let snapshot = try await requestCompleteConfiguration(
+            from: .local,
+            timeout: timeout,
+            progress: progress
+        )
+        return ConfigBackupFile(
+            snapshot: snapshot,
+            nodeId: myNodeId,
+            firmwareVersion: localFirmwareVersion(fallback: snapshot.metadata) ?? "",
+            myInfo: lastMyInfo,
+            now: now
+        )
+    }
+
+    /// Lays `file` over the device's current configuration and writes the
+    /// difference in one edit transaction. The security config is kept when the
+    /// backup belongs to another node.
+    @discardableResult
+    func restoreConfigurationBackup(
+        _ file: ConfigBackupFile,
+        timeout: Duration = .seconds(30),
+        progress: ((AdminConfigurationLoadProgress) -> Void)? = nil,
+        willWrite: (() -> Void)? = nil
+    ) async throws -> MeshConfigurationDiff {
+        let original = try await requestCompleteConfiguration(
+            from: .local,
+            timeout: timeout,
+            progress: progress
+        )
+        let updated = file.apply(
+            to: original,
+            connectedNodeId: myNodeId,
+            connectedFirmware: localFirmwareVersion(fallback: original.metadata)
+        )
+        if !MeshConfigurationDiff.between(updated, and: original).isEmpty {
+            willWrite?()
+        }
+        let diff = try await saveCompleteConfiguration(updated, replacing: original, to: .local, timeout: timeout)
+        AppLogger.shared.log(
+            "[Backup] Restored \(diff.labels.count) sections from backup of \(ConfigBackupFile.formatNodeId(file.nodeId))"
+        )
+        return diff
+    }
+
+    /// The local firmware version from MyNodeInfo or DeviceMetadata, nil if unknown.
+    func localFirmwareVersion(fallback metadata: Meshtastic_DeviceMetadata? = nil) -> String? {
+        let candidates = [
+            appState?.myNodeInfo?.firmwareVersion,
+            lastDeviceMetadata?.firmwareVersion,
+            metadata?.firmwareVersion,
+        ]
+        return candidates.compactMap { $0 }.first { !$0.isEmpty }
+    }
+
     @discardableResult
     func performAdminAction(
         _ action: AdminNodeAction,
@@ -2811,10 +2877,10 @@ final class MeshtasticProtocolService {
         switch message.payloadVariant {
         case .getOwnerResponse: return .owner
         case .getConfigResponse(let config):
-            guard let category = configCategory(for: config) else { return nil }
+            guard let category = MeshConfigCategory(config: config) else { return nil }
             return .config(category)
         case .getModuleConfigResponse(let config):
-            guard let category = moduleCategory(for: config) else { return nil }
+            guard let category = MeshModuleConfigCategory(moduleConfig: config) else { return nil }
             return .module(category)
         case .getChannelResponse(let channel): return .channel(Int(channel.index))
         case .getDeviceMetadataResponse: return .metadata
@@ -2857,45 +2923,6 @@ final class MeshtasticProtocolService {
             snapshot.ringtoneLoaded = true
         default:
             break
-        }
-    }
-
-    private func configCategory(for config: Meshtastic_Config) -> MeshConfigCategory? {
-        switch config.payloadVariant {
-        case .device: return .device
-        case .position: return .position
-        case .power: return .power
-        case .network: return .network
-        case .display: return .display
-        case .lora: return .lora
-        case .bluetooth: return .bluetooth
-        case .security: return .security
-        case .sessionkey: return .session
-        case .deviceUi: return .deviceUI
-        case nil: return nil
-        }
-    }
-
-    private func moduleCategory(for config: Meshtastic_ModuleConfig) -> MeshModuleConfigCategory? {
-        switch config.payloadVariant {
-        case .mqtt: return .mqtt
-        case .serial: return .serial
-        case .externalNotification: return .externalNotification
-        case .storeForward: return .storeForward
-        case .rangeTest: return .rangeTest
-        case .telemetry: return .telemetry
-        case .cannedMessage: return .cannedMessage
-        case .audio: return .audio
-        case .remoteHardware: return .remoteHardware
-        case .neighborInfo: return .neighborInfo
-        case .ambientLighting: return .ambientLighting
-        case .detectionSensor: return .detectionSensor
-        case .paxcounter: return .paxcounter
-        case .statusmessage: return .statusMessage
-        case .trafficManagement: return .trafficManagement
-        case .tak: return .tak
-        case .meshBeacon: return .meshBeacon
-        case nil: return nil
         }
     }
 
