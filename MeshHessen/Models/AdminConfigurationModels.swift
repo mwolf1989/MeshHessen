@@ -15,6 +15,23 @@ enum MeshConfigCategory: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    /// The category of a `Config` by its populated oneof (nil when empty).
+    init?(config: Meshtastic_Config) {
+        switch config.payloadVariant {
+        case .device: self = .device
+        case .position: self = .position
+        case .power: self = .power
+        case .network: self = .network
+        case .display: self = .display
+        case .lora: self = .lora
+        case .bluetooth: self = .bluetooth
+        case .security: self = .security
+        case .sessionkey: self = .session
+        case .deviceUi: self = .deviceUI
+        case nil: return nil
+        }
+    }
+
     var title: String {
         switch self {
         case .device: return String(localized: "Device")
@@ -82,6 +99,30 @@ enum MeshModuleConfigCategory: String, CaseIterable, Identifiable, Sendable {
     case meshBeacon
 
     var id: String { rawValue }
+
+    /// The category of a `ModuleConfig` by its populated oneof (nil when empty).
+    init?(moduleConfig: Meshtastic_ModuleConfig) {
+        switch moduleConfig.payloadVariant {
+        case .mqtt: self = .mqtt
+        case .serial: self = .serial
+        case .externalNotification: self = .externalNotification
+        case .storeForward: self = .storeForward
+        case .rangeTest: self = .rangeTest
+        case .telemetry: self = .telemetry
+        case .cannedMessage: self = .cannedMessage
+        case .audio: self = .audio
+        case .remoteHardware: self = .remoteHardware
+        case .neighborInfo: self = .neighborInfo
+        case .ambientLighting: self = .ambientLighting
+        case .detectionSensor: self = .detectionSensor
+        case .paxcounter: self = .paxcounter
+        case .statusmessage: self = .statusMessage
+        case .trafficManagement: self = .trafficManagement
+        case .tak: self = .tak
+        case .meshBeacon: self = .meshBeacon
+        case nil: return nil
+        }
+    }
 
     var title: String {
         switch self {
