@@ -20360,6 +20360,296 @@
           }
         }
       }
+    },
+    "No firmware file found for %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Firmware-Datei für %@ gefunden."
+          }
+        }
+      }
+    },
+    "Downloaded firmware %@ failed the integrity check." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die heruntergeladene Firmware %@ hat die Integritätsprüfung nicht bestanden."
+          }
+        }
+      }
+    },
+    "Firmware download failed: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware-Download fehlgeschlagen: %@"
+          }
+        }
+      }
+    },
+    "The DFU package cannot be read: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das DFU-Paket kann nicht gelesen werden: %@"
+          }
+        }
+      }
+    },
+    "manifest.json not found in the DFU package." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "manifest.json fehlt im DFU-Paket."
+          }
+        }
+      }
+    },
+    "manifest.json is invalid: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "manifest.json ist ungültig: %@"
+          }
+        }
+      }
+    },
+    "The DFU package contains no application image (found “%@”). SoftDevice or bootloader packages must not be flashed as an application." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das DFU-Paket enthält kein Anwendungs-Image (gefunden: „%@“). SoftDevice- oder Bootloader-Pakete dürfen nicht als Anwendung geflasht werden."
+          }
+        }
+      }
+    },
+    "The DFU package contains no firmware image." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das DFU-Paket enthält kein Firmware-Image."
+          }
+        }
+      }
+    },
+    "“%@” is missing from the DFU package." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„%@“ fehlt im DFU-Paket."
+          }
+        }
+      }
+    },
+    "Wrong file type: a %@ file is required." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falscher Dateityp: Es wird eine %@-Datei benötigt."
+          }
+        }
+      }
+    },
+    "This is a factory image (full flash). Only the application image may be used for an update." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dies ist ein Factory-Image (kompletter Flash). Für ein Update darf nur das Anwendungs-Image verwendet werden."
+          }
+        }
+      }
+    },
+    "“%@” is not a firmware application image." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„%@“ ist kein Firmware-Anwendungs-Image."
+          }
+        }
+      }
+    },
+    "A %@ file cannot be used for a %@ device." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine %1$@-Datei kann nicht für ein %2$@-Gerät verwendet werden."
+          }
+        }
+      }
+    },
+    "The device's build target is unknown; the file name cannot be checked." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Build-Target des Geräts ist unbekannt; der Dateiname kann nicht geprüft werden."
+          }
+        }
+      }
+    },
+    "The file name does not match the device target “%@”." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Dateiname passt nicht zum Geräte-Target „%@“."
+          }
+        }
+      }
+    },
+    "File name matches the device target “%@”." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Dateiname passt zum Geräte-Target „%@“."
+          }
+        }
+      }
+    },
+    "The file cannot be read: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Datei kann nicht gelesen werden: %@"
+          }
+        }
+      }
+    },
+    "The file is not an ESP32 firmware image." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Datei ist kein ESP32-Firmware-Image."
+          }
+        }
+      }
+    },
+    "The file is a bootloader or factory image, not an application image." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Datei ist ein Bootloader- oder Factory-Image, kein Anwendungs-Image."
+          }
+        }
+      }
+    },
+    "Image is for %@; the device's chip could not be verified." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Image ist für %@; der Chip des Geräts konnte nicht geprüft werden."
+          }
+        }
+      }
+    },
+    "Image is for %@, but the device has %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Image ist für %1$@, das Gerät hat aber %2$@."
+          }
+        }
+      }
+    },
+    "Image chip matches the device (%@)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Chip des Images passt zum Gerät (%@)."
+          }
+        }
+      }
+    },
+    "Embedded version %@ (%@)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eingebettete Version %1$@ (%2$@)."
+          }
+        }
+      }
+    },
+    "The file is not a UF2 image." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Datei ist kein UF2-Image."
+          }
+        }
+      }
+    },
+    "The UF2 file declares no chip family; it cannot be verified." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die UF2-Datei gibt keine Chip-Familie an; sie kann nicht geprüft werden."
+          }
+        }
+      }
+    },
+    "DFU package OK: %@, %lld bytes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DFU-Paket OK: %1$@, %2$lld Bytes."
+          }
+        }
+      }
+    },
+    "The DFU package uses a signed (Secure DFU) init packet." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das DFU-Paket verwendet ein signiertes Init-Paket (Secure DFU)."
+          }
+        }
+      }
+    },
+    "Invalid DFU package: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ungültiges DFU-Paket: %@"
+          }
+        }
+      }
+    },
+    "This looks like a self-built image; the file content matches the device." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das scheint ein selbst gebautes Image zu sein; der Dateiinhalt passt zum Gerät."
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
