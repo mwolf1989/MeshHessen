@@ -18096,6 +18096,76 @@
           }
         }
       }
+    },
+    "Device Display" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geräteanzeige"
+          }
+        }
+      }
+    },
+    "Mirror Device Display…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geräteanzeige spiegeln…"
+          }
+        }
+      }
+    },
+    "Panel" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anzeige"
+          }
+        }
+      }
+    },
+    "Shows a live copy of the connected device's screen. Mirroring runs only while the window is open." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeigt eine Live-Kopie des Bildschirms des verbundenen Geräts. Die Spiegelung läuft nur, solange das Fenster geöffnet ist."
+          }
+        }
+      }
+    },
+    "Waiting for the first frame from the device…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warte auf das erste Bild vom Gerät…"
+          }
+        }
+      }
+    },
+    "Not Connected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht verbunden"
+          }
+        }
+      }
+    },
+    "Connect to a device with a display to mirror its screen." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbinde dich mit einem Gerät mit Display, um dessen Bildschirm zu spiegeln."
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

@@ -81,6 +81,9 @@ final class MeshtasticProtocolService {
     /// Firmware-originated notices (`FromRadio.clientNotification`), e.g. rejected
     /// sends, duty-cycle limits or key-verification prompts.
     var onClientNotification: ((Meshtastic_ClientNotification) -> Void)?
+    /// Raw display-mirror chunks (firmware 2.8); reassembly lives in `DisplayMirrorAssembler`.
+    var onDisplayFrame: ((Meshtastic_DisplayFrame) -> Void)?
+    var onDisplayPalette: ((Meshtastic_DisplayPalette) -> Void)?
 
     /// Waypoints and direct contacts are observable protocol state so map views can
     /// consume them without performing I/O themselves.
@@ -91,6 +94,13 @@ final class MeshtasticProtocolService {
 
     /// Last `DeviceMetadata` of the local device in this session (nil until received).
     var deviceMetadata: Meshtastic_DeviceMetadata? { lastDeviceMetadata }
+
+    /// The local device's display, or nil when it reports none (display-less build
+    /// or firmware before 2.8). Gates the display-mirror tool.
+    var displayInfo: Meshtastic_DisplayInfo? {
+        guard let meta = lastDeviceMetadata, meta.hasDisplay else { return nil }
+        return meta.display
+    }
 
     /// Read-only view of the link watchdog (diagnostics and tests).
     var linkWatchdogState: LinkWatchdog { linkWatchdog }
@@ -642,6 +652,10 @@ final class MeshtasticProtocolService {
         case .clientNotification(let note):
             AppLogger.shared.log("[Protocol] ClientNotification: \(note.message)")
             onClientNotification?(note)
+        case .displayFrame(let frame):
+            onDisplayFrame?(frame)
+        case .displayPalette(let palette):
+            onDisplayPalette?(palette)
         default:
             break
         }
@@ -1661,6 +1675,32 @@ final class MeshtasticProtocolService {
         admin.sessionPasskey = sessionPasskey
         await sendAdminMessage(admin)
         AppLogger.shared.log("[Protocol] Requested DeviceMetadata", debug: SettingsService.shared.debugDevice)
+    }
+
+    // MARK: - Display mirror (firmware 2.8, local connection only)
+
+    /// Starts or stops continuous display mirroring. Unlike most admin bool verbs,
+    /// `false` is meaningful here: it stops the stream.
+    func setDisplayMirror(_ enabled: Bool) async {
+        await ensureSessionKey()
+        guard !sessionPasskey.isEmpty else { return }
+        var admin = Meshtastic_AdminMessage()
+        admin.setDisplayMirror = enabled
+        admin.sessionPasskey = sessionPasskey
+        await sendAdminMessage(admin)
+        AppLogger.shared.log("[DisplayMirror] set_display_mirror(\(enabled)) sent")
+    }
+
+    /// Requests a single framebuffer frame. There is no AdminMessage response; the
+    /// frame arrives as `FromRadio.displayFrame` chunks.
+    func requestDisplayFrame() async {
+        await ensureSessionKey()
+        guard !sessionPasskey.isEmpty else { return }
+        var admin = Meshtastic_AdminMessage()
+        admin.getDisplayFrameRequest = true
+        admin.sessionPasskey = sessionPasskey
+        await sendAdminMessage(admin)
+        AppLogger.shared.log("[DisplayMirror] get_display_frame_request sent", debug: true)
     }
 
     private func requestSecurityConfig() async {
