@@ -298,16 +298,41 @@ struct TelemetrySampleBatch: Sendable {
 final class TelemetryAlarmService {
     static let shared = TelemetryAlarmService(dashboardStore: .shared)
 
+    /// Widgets with identical node, metric and bounds share one rule, so the same
+    /// zone change on several dashboards notifies once.
     private struct Rule: Hashable {
         let nodeID: UInt32
         let metric: TelemetrySeriesMetric
-        let minimum: Double?
-        let maximum: Double?
+        let warnMinimum: Double?
+        let warnMaximum: Double?
+        let alarmMinimum: Double?
+        let alarmMaximum: Double?
 
         var persistenceKey: String {
-            let minimumKey = minimum.map { String($0.bitPattern, radix: 16) } ?? "none"
-            let maximumKey = maximum.map { String($0.bitPattern, radix: 16) } ?? "none"
-            return "\(nodeID):\(metric.rawValue):\(minimumKey):\(maximumKey)"
+            let bounds = [warnMinimum, warnMaximum, alarmMinimum, alarmMaximum].map { bound in
+                bound.map { String($0.bitPattern, radix: 16) } ?? "none"
+            }
+            return "\(nodeID):\(metric.rawValue):\(bounds.joined(separator: ":"))"
+        }
+
+        func zone(for value: Double) -> TelemetryZone {
+            TelemetryAlarmEvaluator.zone(
+                value: value,
+                warnMinimum: warnMinimum,
+                warnMaximum: warnMaximum,
+                alarmMinimum: alarmMinimum,
+                alarmMaximum: alarmMaximum
+            )
+        }
+
+        func bound(for zone: TelemetryZone) -> Double? {
+            switch zone {
+            case .ok: return nil
+            case .warnLow: return warnMinimum
+            case .warnHigh: return warnMaximum
+            case .alarmLow: return alarmMinimum
+            case .alarmHigh: return alarmMaximum
+            }
         }
     }
 
@@ -316,12 +341,12 @@ final class TelemetryAlarmService {
     private let stateStorageKey: String
     private let notifications: any SystemNotificationDelivering
     private let radiationInSievert: () -> Bool
-    private var states: [String: TelemetryAlarmState]
+    private var states: [String: TelemetryZone]
 
     init(
         dashboardStore: TelemetryDashboardStore,
         defaults: UserDefaults = .standard,
-        stateStorageKey: String = "telemetryAlarmStates.v1",
+        stateStorageKey: String = "telemetryAlarmZones.v2",
         notifications: any SystemNotificationDelivering = SystemNotificationService.shared,
         radiationInSievert: @escaping () -> Bool = { SettingsService.shared.radiationInSievert }
     ) {
@@ -332,7 +357,7 @@ final class TelemetryAlarmService {
         self.notifications = notifications
         if let data = defaults.data(forKey: stateStorageKey),
            let decoded = try? JSONDecoder().decode(
-               [String: TelemetryAlarmState].self,
+               [String: TelemetryZone].self,
                from: data
            ) {
             self.states = decoded
@@ -348,14 +373,11 @@ final class TelemetryAlarmService {
             // Alarm bounds are entered in the displayed unit.
             let value = metric.displayValue(storedValue, radiationInSievert: inSievert)
             let rules = rules(nodeID: batch.nodeID, metric: metric)
-            for rule in rules {
+            for (rule, title) in rules.sorted(by: { $0.key.persistenceKey < $1.key.persistenceKey }) {
                 let key = rule.persistenceKey
-                let previous = states[key] ?? .normal
-                let current = TelemetryAlarmEvaluator.state(
-                    value: value,
-                    minimum: rule.minimum,
-                    maximum: rule.maximum
-                )
+                // Unknown rules start as ok, so a first ok reading after launch is silent.
+                let previous = states[key] ?? .ok
+                let current = rule.zone(for: value)
                 guard previous != current else { continue }
                 states[key] = current
                 didChange = true
@@ -363,7 +385,8 @@ final class TelemetryAlarmService {
                 if TelemetryAlarmEvaluator.shouldNotify(previous: previous, current: current) {
                     await notifications.deliver(notification(
                         for: rule,
-                        state: current,
+                        widgetTitle: title,
+                        zone: current,
                         value: value,
                         unit: metric.displayUnit(radiationInSievert: inSievert),
                         timestamp: batch.timestamp
@@ -378,21 +401,27 @@ final class TelemetryAlarmService {
         }
     }
 
-    private func rules(nodeID: UInt32, metric: TelemetrySeriesMetric) -> Set<Rule> {
-        Set(dashboardStore.dashboards.flatMap(\.widgets).compactMap { widget in
+    /// Active rules for a sample, each with the title of the first widget that defines it.
+    private func rules(nodeID: UInt32, metric: TelemetrySeriesMetric) -> [Rule: String] {
+        var result: [Rule: String] = [:]
+        for widget in dashboardStore.dashboards.flatMap(\.widgets) {
             guard widget.type.usesMetric,
                   widget.metric == metric,
-                  widget.hasAlarm,
+                  widget.hasZones,
                   matches(widget: widget, nodeID: nodeID) else {
-                return nil
+                continue
             }
-            return Rule(
+            let rule = Rule(
                 nodeID: nodeID,
                 metric: metric,
-                minimum: widget.alarmMinimum,
-                maximum: widget.alarmMaximum
+                warnMinimum: widget.warnMinimum,
+                warnMaximum: widget.warnMaximum,
+                alarmMinimum: widget.alarmMinimum,
+                alarmMaximum: widget.alarmMaximum
             )
-        })
+            if result[rule] == nil { result[rule] = widget.effectiveTitle }
+        }
+        return result
     }
 
     private func matches(widget: TelemetryDashboardWidget, nodeID: UInt32) -> Bool {
@@ -402,27 +431,44 @@ final class TelemetryAlarmService {
 
     private func notification(
         for rule: Rule,
-        state: TelemetryAlarmState,
+        widgetTitle: String,
+        zone: TelemetryZone,
         value: Double,
         unit: String,
         timestamp: Date
     ) -> AppNotification {
         let nodeName = TelemetryDashboardNode.fallbackName(for: rule.nodeID)
+        let valueText = Self.formatted(value)
+        let boundText = rule.bound(for: zone).map(Self.formatted) ?? valueText
+        let title: String
         let condition: String
-        switch state {
-        case .belowMinimum:
-            condition = String(localized: "below the minimum of \(rule.minimum ?? value)")
-        case .aboveMaximum:
-            condition = String(localized: "above the maximum of \(rule.maximum ?? value)")
-        case .normal:
+        switch zone {
+        case .ok:
+            title = String(localized: "✅ \(widgetTitle): back to normal")
             condition = String(localized: "within the normal range")
+        case .warnLow:
+            title = String(localized: "⚠ \(widgetTitle): \(valueText) \(unit)")
+            condition = String(localized: "at or below the warning limit of \(boundText)")
+        case .warnHigh:
+            title = String(localized: "⚠ \(widgetTitle): \(valueText) \(unit)")
+            condition = String(localized: "at or above the warning limit of \(boundText)")
+        case .alarmLow:
+            title = String(localized: "🚨 \(widgetTitle): \(valueText) \(unit)")
+            condition = String(localized: "at or below the alarm limit of \(boundText)")
+        case .alarmHigh:
+            title = String(localized: "🚨 \(widgetTitle): \(valueText) \(unit)")
+            condition = String(localized: "at or above the alarm limit of \(boundText)")
         }
         return AppNotification(
             identifier: "telemetry-\(rule.persistenceKey)-\(timestamp.timeIntervalSince1970)",
-            title: String(localized: "Telemetry alarm: \(rule.metric.displayName)"),
-            body: String(localized: "\(nodeName): \(value) \(unit), \(condition)"),
+            title: title,
+            body: String(localized: "\(nodeName): \(valueText) \(unit), \(condition)"),
             categoryIdentifier: "TELEMETRY_ALARM"
         )
+    }
+
+    private static func formatted(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0...2)))
     }
 
     private func persistStates() {
