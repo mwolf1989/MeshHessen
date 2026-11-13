@@ -7,6 +7,8 @@ struct TelemetryDashboardSnapshot: Sendable {
     var candles: [TelemetryCandlePoint] = []
     var health: TelemetryMeshHealthSummary?
     var healthByNode: [UInt32: TelemetryMeshHealthSummary] = [:]
+    /// Whether radiation values in this snapshot are converted to µSv/h.
+    var radiationInSievert = false
 
     var valuesByNode: [UInt32: [TelemetrySeriesPoint]] {
         Dictionary(grouping: series, by: \.nodeId)
@@ -19,12 +21,53 @@ struct TelemetryDashboardSnapshot: Sendable {
     }
 }
 
+extension TelemetryDashboardSnapshot {
+    mutating func convertForDisplay(metric: TelemetrySeriesMetric, radiationInSievert: Bool) {
+        self.radiationInSievert = radiationInSievert
+        guard metric == .radiation, radiationInSievert else { return }
+        func convert(_ value: Double) -> Double {
+            metric.displayValue(value, radiationInSievert: radiationInSievert)
+        }
+        series = series.map {
+            TelemetrySeriesPoint(
+                id: $0.id,
+                nodeId: $0.nodeId,
+                timestamp: $0.timestamp,
+                value: convert($0.value),
+                isDay: $0.isDay
+            )
+        }
+        heatmap = heatmap.map {
+            TelemetryHeatmapCell(dayIndex: $0.dayIndex, hour: $0.hour, value: convert($0.value))
+        }
+        histogram = histogram.map {
+            TelemetryHistogramBin(
+                lowerBound: convert($0.lowerBound),
+                upperBound: convert($0.upperBound),
+                count: $0.count
+            )
+        }
+        candles = candles.map {
+            TelemetryCandlePoint(
+                date: $0.date,
+                open: convert($0.open),
+                high: convert($0.high),
+                low: convert($0.low),
+                close: convert($0.close)
+            )
+        }
+    }
+}
+
 struct TelemetryDashboardDataLoader: Sendable {
     let database: TelemetryDatabaseService
 
+    /// Loads stored values and converts them into the displayed unit, so charts,
+    /// stats, gauges and alarm checks all work in the unit the user sees.
     func load(
         widget: TelemetryDashboardWidget,
-        fallbackNodeIds: [UInt32]
+        fallbackNodeIds: [UInt32],
+        radiationInSievert: Bool = false
     ) async -> TelemetryDashboardSnapshot {
         let database = database
         return await Task.detached(priority: .utility) {
@@ -102,6 +145,9 @@ struct TelemetryDashboardDataLoader: Sendable {
                     days: widget.effectiveDays
                 )
             }
+            if widget.type != .stateline {
+                snapshot.convertForDisplay(metric: widget.metric, radiationInSievert: radiationInSievert)
+            }
             return snapshot
         }.value
     }
@@ -123,7 +169,9 @@ struct TelemetryDashboardDataLoader: Sendable {
                 formatter.string(from: point.timestamp),
                 widget.metric.rawValue,
                 String(format: "%.6f", point.value),
-                Self.escapeCSV(widget.metric.unit),
+                Self.escapeCSV(
+                    widget.metric.displayUnit(radiationInSievert: snapshot.radiationInSievert)
+                ),
             ].joined(separator: ","))
         }
         return rows.joined(separator: "\n") + "\n"

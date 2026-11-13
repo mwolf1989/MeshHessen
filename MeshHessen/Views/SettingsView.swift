@@ -471,6 +471,7 @@ private struct DataSettingsPane: View {
                     value: $settings.antennaAnalysisWindowDays,
                     in: 1...365
                 )
+                Toggle("Show radiation in µSv/h", isOn: $settings.radiationInSievert)
 
                 Divider()
 

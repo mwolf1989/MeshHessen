@@ -315,15 +315,18 @@ final class TelemetryAlarmService {
     private let defaults: UserDefaults
     private let stateStorageKey: String
     private let notifications: any SystemNotificationDelivering
+    private let radiationInSievert: () -> Bool
     private var states: [String: TelemetryAlarmState]
 
     init(
         dashboardStore: TelemetryDashboardStore,
         defaults: UserDefaults = .standard,
         stateStorageKey: String = "telemetryAlarmStates.v1",
-        notifications: any SystemNotificationDelivering = SystemNotificationService.shared
+        notifications: any SystemNotificationDelivering = SystemNotificationService.shared,
+        radiationInSievert: @escaping () -> Bool = { SettingsService.shared.radiationInSievert }
     ) {
         self.dashboardStore = dashboardStore
+        self.radiationInSievert = radiationInSievert
         self.defaults = defaults
         self.stateStorageKey = stateStorageKey
         self.notifications = notifications
@@ -340,7 +343,10 @@ final class TelemetryAlarmService {
 
     func process(_ batch: TelemetrySampleBatch) async {
         var didChange = false
-        for (metric, value) in batch.values where value.isFinite {
+        let inSievert = radiationInSievert()
+        for (metric, storedValue) in batch.values where storedValue.isFinite {
+            // Alarm bounds are entered in the displayed unit.
+            let value = metric.displayValue(storedValue, radiationInSievert: inSievert)
             let rules = rules(nodeID: batch.nodeID, metric: metric)
             for rule in rules {
                 let key = rule.persistenceKey
@@ -359,6 +365,7 @@ final class TelemetryAlarmService {
                         for: rule,
                         state: current,
                         value: value,
+                        unit: metric.displayUnit(radiationInSievert: inSievert),
                         timestamp: batch.timestamp
                     ))
                 }
@@ -397,6 +404,7 @@ final class TelemetryAlarmService {
         for rule: Rule,
         state: TelemetryAlarmState,
         value: Double,
+        unit: String,
         timestamp: Date
     ) -> AppNotification {
         let nodeName = TelemetryDashboardNode.fallbackName(for: rule.nodeID)
@@ -412,7 +420,7 @@ final class TelemetryAlarmService {
         return AppNotification(
             identifier: "telemetry-\(rule.persistenceKey)-\(timestamp.timeIntervalSince1970)",
             title: String(localized: "Telemetry alarm: \(rule.metric.displayName)"),
-            body: String(localized: "\(nodeName): \(value) \(rule.metric.unit), \(condition)"),
+            body: String(localized: "\(nodeName): \(value) \(unit), \(condition)"),
             categoryIdentifier: "TELEMETRY_ALARM"
         )
     }
