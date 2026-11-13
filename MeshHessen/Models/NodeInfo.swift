@@ -130,6 +130,9 @@ final class NodeInfo: Identifiable {
     var isOwnNode: Bool = false
     var lastTracerouteHopCount: Int = 0
 
+    /// Free-text node status (port 36, firmware 2.7.20+). Empty = no status.
+    var status: String = ""
+
     // Device metadata
     var hardwareModel: String = ""
     var firmwareVersion: String = ""

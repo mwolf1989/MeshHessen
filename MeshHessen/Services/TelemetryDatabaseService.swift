@@ -333,6 +333,12 @@ final class TelemetryDatabaseService: @unchecked Sendable {
             );
             CREATE INDEX IF NOT EXISTS idx_node_positions_node_ts
                 ON node_positions (node_id, timestamp DESC);
+
+            CREATE TABLE IF NOT EXISTS node_status (
+                node_id INTEGER PRIMARY KEY,
+                status TEXT NOT NULL,
+                timestamp REAL NOT NULL
+            );
             """
         execute(schema, on: db)
 
@@ -1123,6 +1129,60 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                     )
                 }
                 continuation.resume(returning: positions)
+            }
+        }
+    }
+
+    // MARK: - Node Status
+
+    /// Remembers the latest status (port 36) of a node; an empty status
+    /// removes the row. One row per node, so no retention is needed.
+    func upsertNodeStatus(nodeId: UInt32, status: String, timestamp: Date) {
+        let ts = timestamp.timeIntervalSince1970
+        enqueueWrite { service, db in
+            if status.isEmpty {
+                service.run(
+                    "DELETE FROM node_status WHERE node_id = ?",
+                    bindings: [.integer(Int64(nodeId))],
+                    on: db
+                )
+            } else {
+                service.run(
+                    "INSERT OR REPLACE INTO node_status (node_id, status, timestamp) VALUES (?, ?, ?)",
+                    bindings: [.integer(Int64(nodeId)), .text(status), .double(ts)],
+                    on: db
+                )
+            }
+        }
+    }
+
+    /// Stored statuses not older than `maxAgeDays`.
+    func nodeStatuses(maxAgeDays: Int = 7) async -> [UInt32: String] {
+        let cutoff = clock().addingTimeInterval(-Double(maxAgeDays) * 86_400).timeIntervalSince1970
+        return await withCheckedContinuation { continuation in
+            queue.async { [weak self] in
+                guard let self, let db = self.db else {
+                    continuation.resume(returning: [:])
+                    return
+                }
+                let sql = "SELECT node_id, status FROM node_status WHERE timestamp >= ?"
+                var statement: OpaquePointer?
+                guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK,
+                      let statement else {
+                    self.logPrepareError(sql: sql, on: db)
+                    continuation.resume(returning: [:])
+                    return
+                }
+                defer { sqlite3_finalize(statement) }
+                sqlite3_bind_double(statement, 1, cutoff)
+
+                var statuses: [UInt32: String] = [:]
+                while sqlite3_step(statement) == SQLITE_ROW {
+                    guard let text = sqlite3_column_text(statement, 1) else { continue }
+                    let nodeID = UInt32(clamping: sqlite3_column_int64(statement, 0))
+                    statuses[nodeID] = String(cString: text)
+                }
+                continuation.resume(returning: statuses)
             }
         }
     }
