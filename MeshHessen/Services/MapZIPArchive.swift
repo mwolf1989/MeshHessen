@@ -194,6 +194,71 @@ enum MapZIPArchive {
         return ExtractionResult(paths: paths, totalBytes: totalBytes)
     }
 
+    /// Reads file entries into memory without touching the disk. Entries larger than
+    /// `maximumEntrySize` (uncompressed), directories, unsafe paths and entries `include` rejects are
+    /// skipped; a corrupt archive or a CRC mismatch throws. Used for small archives such as Nordic DFU
+    /// packages.
+    static func readEntries(
+        from archive: Data,
+        maximumEntrySize: Int,
+        include: (String) -> Bool = { _ in true }
+    ) throws -> [String: Data] {
+        let endOffset = try findEndRecord(in: archive)
+        let entryCount = Int(try archive.readUInt16(at: endOffset + 10))
+        let centralOffset = Int(try archive.readUInt32(at: endOffset + 16))
+        guard centralOffset >= 0, centralOffset < archive.count else {
+            throw OfflineMapError.invalidPackage
+        }
+
+        var cursor = centralOffset
+        var entries: [String: Data] = [:]
+        for _ in 0..<entryCount {
+            guard try archive.readUInt32(at: cursor) == centralHeaderSignature else {
+                throw OfflineMapError.invalidPackage
+            }
+            let compression = try archive.readUInt16(at: cursor + 10)
+            let checksum = try archive.readUInt32(at: cursor + 16)
+            let compressedSize = Int(try archive.readUInt32(at: cursor + 20))
+            let uncompressedSize = Int(try archive.readUInt32(at: cursor + 24))
+            let nameLength = Int(try archive.readUInt16(at: cursor + 28))
+            let extraLength = Int(try archive.readUInt16(at: cursor + 30))
+            let commentLength = Int(try archive.readUInt16(at: cursor + 32))
+            let localOffset = Int(try archive.readUInt32(at: cursor + 42))
+            let nameData = try archive.slice(at: cursor + 46, count: nameLength)
+            guard let path = String(data: nameData, encoding: .utf8) else {
+                throw OfflineMapError.invalidPackage
+            }
+            cursor += 46 + nameLength + extraLength + commentLength
+
+            guard !path.hasSuffix("/"),
+                  isSafeArchivePath(path),
+                  uncompressedSize <= maximumEntrySize,
+                  include(path) else { continue }
+            guard try archive.readUInt32(at: localOffset) == localHeaderSignature else {
+                throw OfflineMapError.invalidPackage
+            }
+            let localNameLength = Int(try archive.readUInt16(at: localOffset + 26))
+            let localExtraLength = Int(try archive.readUInt16(at: localOffset + 28))
+            let dataOffset = localOffset + 30 + localNameLength + localExtraLength
+            let compressed = try archive.slice(at: dataOffset, count: compressedSize)
+
+            let payload: Data
+            switch compression {
+            case 0:
+                payload = compressed
+            case 8:
+                payload = try inflateRaw(compressed, expectedSize: uncompressedSize)
+            default:
+                throw OfflineMapError.unsupportedArchiveCompression(compression)
+            }
+            guard payload.count == uncompressedSize, crc32(for: payload) == checksum else {
+                throw OfflineMapError.invalidPackage
+            }
+            entries[path] = payload
+        }
+        return entries
+    }
+
     // MARK: - Helpers
 
     private struct CentralEntry {
