@@ -832,6 +832,10 @@ final class FirmwareUpdateSession {
         if facts.isConnected {
             setPhase(.enteringBootloader)
             guard await host.sendFirmwareEnterDfu() else { throw FirmwareUpdateError.dfuRequestNotSent }
+            // The device is now rebooting into its bootloader. From here on a cancel must not end
+            // update mode (that would re-enable auto-reconnect against the rebooting device); it
+            // ends with the reconnect or when the assistant closes, as after a release.
+            linkReleased = true
             try await Task.sleep(for: Uf2VolumeFlasher.dfuSettleDelay)
             setPhase(.disconnecting)
             await releaseLink()
