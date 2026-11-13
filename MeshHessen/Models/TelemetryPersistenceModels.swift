@@ -110,6 +110,12 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
     case localHeapFreeBytes = "local_heap_free_bytes"
     case localTxDropped = "local_tx_dropped"
     case localNoiseFloor = "local_noise_floor"
+    /// Per-hour rates derived from the cumulative LocalStats counters.
+    case localRxPerHour = "local_rx_pph"
+    case localTxPerHour = "local_tx_pph"
+    case localRxBadPerHour = "local_rx_bad_pph"
+    case localRxDupePerHour = "local_rx_dupe_pph"
+    case localTxRelayPerHour = "local_tx_relay_pph"
 
     case hostUptimeSeconds = "host_uptime_seconds"
     case hostFreeMemoryBytes = "host_free_memory_bytes"
@@ -241,6 +247,11 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
         case .localHeapFreeBytes: return String(localized: "Free Heap")
         case .localTxDropped: return String(localized: "Dropped TX Packets")
         case .localNoiseFloor: return String(localized: "Noise Floor")
+        case .localRxPerHour: return String(localized: "Packets Received per Hour")
+        case .localTxPerHour: return String(localized: "Packets Sent per Hour")
+        case .localRxBadPerHour: return String(localized: "Bad Packets per Hour")
+        case .localRxDupePerHour: return String(localized: "Duplicates per Hour")
+        case .localTxRelayPerHour: return String(localized: "Relayed Packets per Hour")
         case .hostUptimeSeconds: return String(localized: "Host Uptime")
         case .hostFreeMemoryBytes: return String(localized: "Free Host Memory")
         case .hostDisk1FreeBytes: return String(localized: "Free Host Disk 1")
@@ -304,7 +315,8 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
              .hostDisk3FreeBytes, .localHeapTotalBytes, .localHeapFreeBytes: return "Byte"
         case .hostLoad1, .hostLoad5, .hostLoad15: return ""
         case .healthHeartRate: return "bpm"
-        case .lightningStrikeCount1Hour: return "/h"
+        case .lightningStrikeCount1Hour, .localRxPerHour, .localTxPerHour, .localRxBadPerHour,
+             .localRxDupePerHour, .localTxRelayPerHour: return "/h"
         case .funkEcho: return String(localized: "requests/h")
         case .lightningDistance: return "km"
         case .soilPH, .waterPH: return "pH"
@@ -348,6 +360,18 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
         case .biochemicalOxygenDemand, .turbidity, .nitrate: return 0...100
         case .ammonium: return 0...50
         case .solarIrradiance: return 0...1_200
+        default: return nil
+        }
+    }
+
+    /// The cumulative LocalStats counter a per-hour rate metric is derived from.
+    var counterMetric: TelemetrySeriesMetric? {
+        switch self {
+        case .localRxPerHour: return .localPacketsRx
+        case .localTxPerHour: return .localPacketsTx
+        case .localRxBadPerHour: return .localPacketsRxBad
+        case .localRxDupePerHour: return .localRxDuplicates
+        case .localTxRelayPerHour: return .localTxRelays
         default: return nil
         }
     }

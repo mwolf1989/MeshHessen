@@ -1735,6 +1735,9 @@ final class TelemetryDatabaseService: @unchecked Sendable {
     ) -> [TelemetrySeriesPoint] {
         let uniqueNodeIds = Array(Set(nodeIds)).sorted()
         guard !uniqueNodeIds.isEmpty else { return [] }
+        if let counter = metric.counterMetric {
+            return counterRateSeries(nodeIds: uniqueNodeIds, counter: counter, days: days)
+        }
         let cutoff = cutoffTimestamp(days: days)
         return queue.sync { [weak self] in
             guard let self, let db = self.db else { return [] }
@@ -1801,6 +1804,47 @@ final class TelemetryDatabaseService: @unchecked Sendable {
             }
             return result
         }
+    }
+
+    /// Per-hour rate series of a cumulative counter, computed per node between
+    /// consecutive samples and stamped at the later sample.
+    private func counterRateSeries(
+        nodeIds: [UInt32],
+        counter: TelemetrySeriesMetric,
+        days: Int
+    ) -> [TelemetrySeriesPoint] {
+        let counterPoints = getTimeSeries(nodeIds: nodeIds, metric: counter, days: days)
+        var result: [TelemetrySeriesPoint] = []
+        for (nodeId, points) in Dictionary(grouping: counterPoints, by: \.nodeId) {
+            let isDay = Dictionary(points.map { ($0.timestamp, $0.isDay) }, uniquingKeysWith: { first, _ in first })
+            for (timestamp, rate) in Self.counterRates(points.map { ($0.timestamp, $0.value) }) {
+                result.append(TelemetrySeriesPoint(
+                    nodeId: nodeId,
+                    timestamp: timestamp,
+                    value: rate,
+                    isDay: isDay[timestamp] ?? true
+                ))
+            }
+        }
+        return result.sorted {
+            $0.timestamp != $1.timestamp ? $0.timestamp < $1.timestamp : $0.nodeId < $1.nodeId
+        }
+    }
+
+    /// Converts cumulative counter readings into per-hour rates: Δcounter / Δhours
+    /// between consecutive readings, stamped at the later one. Intervals shorter than
+    /// a minute or longer than 24 h are skipped, as are negative deltas (a reboot
+    /// resets the counters).
+    static func counterRates(_ samples: [(Date, Double)]) -> [(Date, Double)] {
+        let ordered = samples.sorted { $0.0 < $1.0 }
+        var rates: [(Date, Double)] = []
+        for (previous, current) in zip(ordered, ordered.dropFirst()) {
+            let hours = current.0.timeIntervalSince(previous.0) / 3_600
+            let delta = current.1 - previous.1
+            guard hours >= 1.0 / 60, hours <= 24, delta >= 0 else { continue }
+            rates.append((current.0, delta / hours))
+        }
+        return rates
     }
 
     func getLatestValues(
