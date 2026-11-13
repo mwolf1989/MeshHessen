@@ -16,6 +16,8 @@ final class AppCoordinator {
     let backgroundContext: NSManagedObjectContext
     @ObservationIgnored let virtualNodeService = VirtualNodeService()
     @ObservationIgnored let mqttProxyService = MqttProxyService()
+    /// Scheduled telemetry requests; runs only while the radio link is ready.
+    @ObservationIgnored let telemetryPolling = TelemetryPollingService()
     private var activeConnection: (any ConnectionService)?
 
     private(set) var virtualNodeClients: [VirtualNodeService.ClientInfo] = []
@@ -270,6 +272,7 @@ final class AppCoordinator {
         cancelReconnect()
         clearExpectedSettingsWriteDisconnect()
         cancelProtocolInitialization()
+        telemetryPolling.stop()
 
         protocol_.disconnect()
         await virtualNodeService.stop()
@@ -923,6 +926,9 @@ final class AppCoordinator {
                 }
 
                 self.loadMessageHistory()
+                self.telemetryPolling.start { [weak self] type, nodeId in
+                    await self?.protocol_.requestNodeInfo(type, from: nodeId) ?? false
+                }
                 await self.applyAuxiliaryServiceSettings()
                 if SettingsService.shared.autoTimeSyncOnConnect {
                     _ = await self.protocol_.synchronizeDeviceTime()
@@ -971,6 +977,7 @@ final class AppCoordinator {
 
     /// Called when the connection service reports an unexpected disconnect.
     private func handleUnexpectedDisconnect() {
+        telemetryPolling.stop()
         guard !userRequestedDisconnect else {
             appState.connectionState = .disconnected
             appState.protocolReady = false
@@ -1194,6 +1201,7 @@ final class AppCoordinator {
         let wasAutoReconnect = userRequestedDisconnect
         userRequestedDisconnect = true  // Suppress reconnect during teardown
         cancelProtocolInitialization()
+        telemetryPolling.stop()
         await virtualNodeService.stop()
         await mqttProxyService.stop()
         virtualNodeClients = []
