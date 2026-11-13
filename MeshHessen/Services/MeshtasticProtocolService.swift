@@ -159,6 +159,13 @@ final class MeshtasticProtocolService {
     var receivedConfigs: [ConfigCategory: Meshtastic_Config] = [:]
     var receivedModuleConfigs: [String: Meshtastic_ModuleConfig] = [:]
 
+    /// Modem preset of the local node; nil before the LoRa config arrived or when the
+    /// node uses custom modem parameters instead of a preset.
+    var currentModemPreset: Meshtastic_Config.LoRaConfig.ModemPreset? {
+        guard let lora = receivedConfigs[.lora]?.lora, lora.usePreset else { return nil }
+        return lora.modemPreset
+    }
+
     private struct AdminResponseRecord {
         let sequence: UInt64
         let sourceNodeID: UInt32
