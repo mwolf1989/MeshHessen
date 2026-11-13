@@ -71,6 +71,10 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         "node_positions",
     ]
 
+    /// Funk-Echo journal. Kept out of `telemetryTableNames` because it has no
+    /// `timestamp` column; retention and clearing handle it explicitly.
+    static let requestEchoTableName = "request_echo"
+
     private struct StoredPosition {
         let latitude: Double
         let longitude: Double
@@ -366,6 +370,23 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                 status TEXT NOT NULL,
                 timestamp REAL NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS request_echo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                node_id INTEGER NOT NULL,
+                req_type TEXT NOT NULL,
+                first_ts REAL NOT NULL,
+                last_ts REAL NOT NULL,
+                count INTEGER NOT NULL DEFAULT 1,
+                hops INTEGER,
+                via_mqtt INTEGER NOT NULL DEFAULT 0,
+                route TEXT,
+                detail TEXT,
+                expected TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_reqecho_ts ON request_echo (last_ts);
+            CREATE INDEX IF NOT EXISTS idx_reqecho_node
+                ON request_echo (node_id, req_type, last_ts);
             """
         execute(schema, on: db)
 
@@ -1258,6 +1279,179 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         }
     }
 
+    // MARK: - Funk-Echo
+
+    /// Requests from the same node with the same type and detail within this window
+    /// of the burst's last activity count up instead of creating a new journal row.
+    static let requestEchoBurstWindow: TimeInterval = 600
+
+    /// Inserts a request or bumps an existing burst of the same (node, type, detail).
+    func upsertRequestEcho(_ event: RequestEchoEvent, expected: String?) {
+        enqueueWrite { service, db in
+            let ts = event.timestamp.timeIntervalSince1970
+            let windowStart = ts - Self.requestEchoBurstWindow
+            let detail = event.detail.map(SQLiteBinding.text) ?? .null
+            let route = event.routeText.map(SQLiteBinding.text) ?? .null
+            let expectedBinding = expected.map(SQLiteBinding.text) ?? .null
+            let hops = event.hops.map { SQLiteBinding.integer(Int64($0)) } ?? .null
+            let existing = service.latestRequestEchoBurst(
+                nodeId: event.fromId,
+                type: event.type.rawValue,
+                detail: event.detail,
+                windowStart: windowStart,
+                on: db
+            )
+            if let existing {
+                service.run(
+                    """
+                    UPDATE request_echo
+                    SET last_ts = MAX(last_ts, ?), count = count + 1, hops = ?, via_mqtt = ?,
+                        route = COALESCE(?, route), expected = COALESCE(?, expected)
+                    WHERE id = ?
+                    """,
+                    bindings: [
+                        .double(ts), hops, .integer(event.viaMqtt ? 1 : 0),
+                        route, expectedBinding, .integer(existing),
+                    ],
+                    on: db
+                )
+            } else {
+                service.run(
+                    """
+                    INSERT INTO request_echo
+                        (node_id, req_type, first_ts, last_ts, count, hops, via_mqtt, route, detail, expected)
+                    VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+                    """,
+                    bindings: [
+                        .integer(Int64(event.fromId)), .text(event.type.rawValue), .double(ts), .double(ts),
+                        hops, .integer(event.viaMqtt ? 1 : 0), route, detail, expectedBinding,
+                    ],
+                    on: db
+                )
+            }
+        }
+    }
+
+    private func latestRequestEchoBurst(
+        nodeId: UInt32,
+        type: String,
+        detail: String?,
+        windowStart: Double,
+        on db: OpaquePointer
+    ) -> Int64? {
+        let sql = """
+            SELECT id FROM request_echo
+            WHERE node_id = ? AND req_type = ? AND COALESCE(detail, '') = ? AND last_ts >= ?
+            ORDER BY last_ts DESC LIMIT 1
+            """
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            logPrepareError(sql: sql, on: db)
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_int64(statement, 1, Int64(nodeId))
+        sqlite3_bind_text(statement, 2, type, -1, Self.transientDestructor)
+        sqlite3_bind_text(statement, 3, detail ?? "", -1, Self.transientDestructor)
+        sqlite3_bind_double(statement, 4, windowStart)
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        return sqlite3_column_int64(statement, 0)
+    }
+
+    /// Journal rows whose last activity is at or after `since`, newest first.
+    func requestEchoJournal(since: Date, limit: Int = 500) -> [RequestEchoRecord] {
+        queue.sync { [weak self] in
+            guard let self, let db = self.db else { return [] }
+            let sql = """
+                SELECT id, node_id, req_type, first_ts, last_ts, count, hops, via_mqtt, route, detail, expected
+                FROM request_echo WHERE last_ts >= ? ORDER BY last_ts DESC, id DESC LIMIT ?
+                """
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+                self.logPrepareError(sql: sql, on: db)
+                return []
+            }
+            defer { sqlite3_finalize(statement) }
+            sqlite3_bind_double(statement, 1, since.timeIntervalSince1970)
+            sqlite3_bind_int64(statement, 2, Int64(max(0, limit)))
+
+            func optionalText(_ column: Int32) -> String? {
+                guard let text = sqlite3_column_text(statement, column) else { return nil }
+                return String(cString: text)
+            }
+
+            var rows: [RequestEchoRecord] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                rows.append(RequestEchoRecord(
+                    id: sqlite3_column_int64(statement, 0),
+                    nodeId: UInt32(truncatingIfNeeded: sqlite3_column_int64(statement, 1)),
+                    typeRaw: optionalText(2) ?? "",
+                    firstSeen: Date(timeIntervalSince1970: sqlite3_column_double(statement, 3)),
+                    lastSeen: Date(timeIntervalSince1970: sqlite3_column_double(statement, 4)),
+                    count: Int(sqlite3_column_int64(statement, 5)),
+                    hops: sqlite3_column_type(statement, 6) == SQLITE_NULL
+                        ? nil : Int(sqlite3_column_int64(statement, 6)),
+                    viaMqtt: sqlite3_column_int(statement, 7) != 0,
+                    route: optionalText(8),
+                    detail: optionalText(9),
+                    expected: optionalText(10)
+                ))
+            }
+            return rows
+        }
+    }
+
+    /// Totals per type and telemetry detail, top-5 nodes and distinct stations for the
+    /// last `days` days (0 = everything).
+    func requestEchoStats(days: Int) -> RequestEchoStats {
+        let cutoff = cutoffTimestamp(days: days)
+        return queue.sync { [weak self] in
+            guard let self, let db = self.db else { return RequestEchoStats() }
+            var stats = RequestEchoStats()
+
+            func query(_ sql: String, row: (OpaquePointer) -> Void) {
+                var statement: OpaquePointer?
+                guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+                    self.logPrepareError(sql: sql, on: db)
+                    return
+                }
+                defer { sqlite3_finalize(statement) }
+                sqlite3_bind_double(statement, 1, cutoff)
+                while sqlite3_step(statement) == SQLITE_ROW { row(statement) }
+            }
+
+            func text(_ statement: OpaquePointer, _ column: Int32) -> String {
+                sqlite3_column_text(statement, column).map { String(cString: $0) } ?? ""
+            }
+
+            query("SELECT req_type, SUM(count) FROM request_echo WHERE last_ts >= ? GROUP BY req_type") {
+                let count = Int(sqlite3_column_int64($0, 1))
+                stats.perType[text($0, 0)] = count
+                stats.totalRequests += count
+            }
+            query("""
+                SELECT COALESCE(detail, ''), SUM(count) FROM request_echo
+                WHERE last_ts >= ? AND req_type = '\(RequestEchoType.telemetry.rawValue)'
+                GROUP BY COALESCE(detail, '')
+                """) {
+                stats.telemetryDetails[text($0, 0)] = Int(sqlite3_column_int64($0, 1))
+            }
+            query("""
+                SELECT node_id, SUM(count) AS c FROM request_echo
+                WHERE last_ts >= ? GROUP BY node_id ORDER BY c DESC, node_id LIMIT 5
+                """) {
+                stats.topNodes.append(RequestEchoTopNode(
+                    nodeId: UInt32(truncatingIfNeeded: sqlite3_column_int64($0, 0)),
+                    count: Int(sqlite3_column_int64($0, 1))
+                ))
+            }
+            query("SELECT COUNT(DISTINCT node_id) FROM request_echo WHERE last_ts >= ?") {
+                stats.stations = Int(sqlite3_column_int64($0, 0))
+            }
+            return stats
+        }
+    }
+
     // MARK: - Compatibility Statistics
 
     func getSignalStats(nodeId: UInt32, days: Int) -> SignalStats {
@@ -1376,8 +1570,20 @@ final class TelemetryDatabaseService: @unchecked Sendable {
             guard let self, let db = self.db else { return [] }
             let placeholders = Array(repeating: "?", count: uniqueNodeIds.count).joined(separator: ",")
             let isPacketCount = metric == .packetCount
+            let isFunkEcho = metric == .funkEcho
             let sql: String
-            if isPacketCount {
+            if isFunkEcho {
+                // Bursts span at most the aggregation window, so attributing a burst
+                // to the hour of its last activity is accurate enough.
+                sql = """
+                    SELECT node_id, CAST(last_ts / 3600 AS INTEGER) * 3600 AS hour,
+                           SUM(count), 1
+                    FROM request_echo
+                    WHERE node_id IN (\(placeholders)) AND last_ts >= ?
+                    GROUP BY node_id, hour
+                    ORDER BY hour, node_id
+                    """
+            } else if isPacketCount {
                 sql = """
                     SELECT node_id, CAST(timestamp / 3600 AS INTEGER) * 3600 AS hour,
                            SUM(value), MAX(is_day)
@@ -1403,7 +1609,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
             }
             defer { sqlite3_finalize(statement) }
             var bindIndex: Int32 = 1
-            if !isPacketCount {
+            if !isPacketCount && !isFunkEcho {
                 sqlite3_bind_text(statement, bindIndex, metric.rawValue, -1, Self.transientDestructor)
                 bindIndex += 1
             }
@@ -1662,7 +1868,13 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                     )
                     succeeded = deleted && succeeded
                 }
-                return succeeded
+                // Funk-Echo bursts are keyed by their last activity, not `timestamp`.
+                let deletedEchoes = service.run(
+                    "DELETE FROM \(Self.requestEchoTableName) WHERE last_ts < ?",
+                    bindings: [.double(cutoff)],
+                    on: db
+                )
+                return deletedEchoes && succeeded
             }
         }
     }
@@ -1685,7 +1897,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                 }
 
                 var deletedRows = 0
-                for table in Self.telemetryTableNames {
+                for table in Self.telemetryTableNames + [Self.requestEchoTableName] {
                     guard self.run("DELETE FROM \(table)", bindings: [], on: db) else {
                         let detail = String(cString: sqlite3_errmsg(db))
                         _ = self.execute("ROLLBACK", on: db)
