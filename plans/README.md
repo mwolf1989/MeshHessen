@@ -20,11 +20,11 @@ Generated on 2026-11-12 by a feature-gap audit of the Windows client against thi
 | [007](007-virtual-node-two-stage-config.md) | Virtual Node two-stage config nonces | P2 | S | LOW | — | DONE (reviewed) — merged into `main` from `fix/007-virtual-node-two-stage` |
 | [008](008-link-watchdog-and-handshake-metadata.md) | Link watchdog, heartbeat on BLE, metadata, ClientNotification | P1 | M | MED | — | DONE (reviewed) — merged into `main` from `fix/008-link-watchdog-metadata` |
 | [009](009-map-and-admin-polish.md) | Offline map source, NodeDB reset, admin hints, quick config | P2 | M | LOW–MED | — | DONE (reviewed) — merged into `main` from `fix/009-map-and-admin-polish` |
-| [010](010-firmware-2.8-small-features.md) | FW 2.8: signed ACKs, signature policy, heard flag, AEAD badge, presets | P2 | M | LOW | 002 | TODO |
-| [011](011-module-forms-and-mesh-beacon.md) | Six native module forms + Mesh Beacon | P2 | M–L | LOW–MED | 002, 001 | TODO |
-| [012](012-node-status.md) | Node status (port 36): show, remember, set | P2 | M | LOW | 001 | TODO |
-| [013](013-telemetry-new-sensors-and-sievert.md) | Lightning + soil/water telemetry, µSv/h option | P3 | M | LOW–MED | 002 | TODO |
-| [014](014-device-display-mirror.md) | Device display mirroring | P3 | M–L | LOW | 002, 008 | TODO |
+| [010](010-firmware-2.8-small-features.md) | FW 2.8: signed ACKs, signature policy, heard flag, AEAD badge, presets | P2 | M | LOW | 002 | DONE (reviewed) — merged into `main` from `feat/010-fw28-small-features` |
+| [011](011-module-forms-and-mesh-beacon.md) | Six native module forms + Mesh Beacon | P2 | M–L | LOW–MED | 002, 001 | DONE (reviewed) — merged into `main` from `feat/011-module-forms-mesh-beacon` |
+| [012](012-node-status.md) | Node status (port 36): show, remember, set | P2 | M | LOW | 001 | DONE (reviewed) — merged into `main` from `feat/012-node-status` |
+| [013](013-telemetry-new-sensors-and-sievert.md) | Lightning + soil/water telemetry, µSv/h option | P3 | M | LOW–MED | 002 | DONE (reviewed) — merged into `main` from `feat/013-telemetry-sensors-sievert` |
+| [014](014-device-display-mirror.md) | Device display mirroring | P3 | M–L | LOW | 002, 008 | DONE (reviewed) — merged into `main` from `feat/014-device-display-mirror` |
 | [015](015-channel-decryption-and-hf-only-traceroute.md) | Client-side channel decryption (PSK + AEAD), RF-only traceroute | P2 | L | MED | 003, 001, (002) | TODO |
 | [016](016-late-pki-decryption-and-unknown-senders.md) | Late PKI decryption, auto NodeInfo for unknown senders | P2 | L | MED | 003 | TODO |
 | [017](017-funk-echo-core.md) | Funk-Echo core: detection, journal, stats, indicator | P2 | L | LOW | 005 | TODO |
@@ -63,6 +63,16 @@ Learnings that affect later plans:
 - **008**: hooks for 014/024/025 are `protocol_.deviceMetadata`, `myNodeInfo.pioEnv/hardwareModelRaw/hasWifi/hasBluetooth` and `protocol_.onClientNotification` (not yet wired in `AppCoordinator`). Caches are cleared on `initialize()` and `disconnect()`. `myNodeInfo` can now exist with empty names. Heartbeat runs on all transports every 300 s and a stale link triggers an automatic reconnect — **plans 025/026 must suppress `onLinkStale` or stop the heartbeat while flashing.** Virtual Node frames do not feed the watchdog.
 - **009**: `meshHessenPSK`/`meshHessenChannelName` are now `nonisolated static`. Quick configuration verifies by re-reading LoRa + channels only. Old string-catalog keys are left in place and show as stale in Xcode. Windows' double LoRa write for the `ignore_mqtt` coercion was deliberately not ported. `SettingsService(defaults:)` with a UUID-named suite works in tests.
 - The first `swift build` in a fresh worktree took ~10 min (full clone of protocolbuffers/protobuf); the worktree guard rejects chained git commands, so executors should run git commands one per call.
+
+2026-11-13 (third wave) — plans 010–014 executed the same way and reviewed. Merged into `main` one at a time (`0b76112` 011, `a4b90f0` 012, `8ed9dc2` 010, `d20f685` 013, `dbd68b8` 014). Conflicts: `NodeListView.swift` (010's heard-on-LoRa icon vs 012's status icon — both kept) and `Localizable.xcstrings` (every branch appended keys at the end; resolved by adding each branch's new keys to `main`'s file as text). The combined result builds (`swift build`, `xcodebuild` Debug) and `swift test` passes with 389 tests in 52 suites. Nothing was verified on hardware or in the running app.
+
+Learnings that affect later plans:
+- **010**: `AppState.updateDeliveryState` takes `ackProof:`; `MeshtasticProtocolService.channelInfo(from:)` is `nonisolated static` (reuse in 015, with `ChannelInfo.useAead`). `ackProof`, `heardOnCurrentLora` and `useAead` are in memory only (channels from the store come back with `useAead == false`). `.displayLabel` helpers for enums live in `MeshEnums.swift`.
+- **011**: `requestCompleteConfiguration` takes `knownFirmwareVersion:` and drops firmware-2.8-only modules (TAK, Mesh Beacon) when the version is known to be older. `MeshModuleConfigCategory` has 17 cases. `typedModuleEditor` still has a `case .statusMessage, .trafficManagement:` placeholder. `broadcast_offer_region` is not editable yet. Numeric config fields take `String` titles, so their labels are not localised (pre-existing).
+- **012**: node status lives in the `node_status` table, deliberately **not** in `telemetryTableNames` (clear/retention leave it alone; 023 may want to back it up). Status is backfilled only for nodes known at handshake end. `nodeStatusMaxBytes = 79`.
+- **013**: telemetry table count is now 14 (022 must update it again). Alarm and display bounds are in the *displayed* unit — 019 should use `metric.displayValue` / `displaySuggestedRange`; `effectiveDisplayRange` is still in the stored unit. Small follow-up: the metric picker label in `TelemetryDashboardView.swift` still says "Radiation (µR/h)" and the widget editor's range/alarm fields show no unit. 027 can enumerate `SoilWaterTelemetrySample.metrics` plus the two lightning metrics.
+- **014**: `onDisplayFrame` / `onDisplayPalette` have a single owner (the open window); switch to fan-out if a second consumer appears. `ensureSessionKey`'s polling loop spins for up to 4 s inside a cancelled task (`try? Task.sleep` returns immediately).
+- The Xcode project uses folder-synchronised groups: new Swift files need no `project.pbxproj` change (only `Proto/` exceptions do). Executors should give scratchpad helper scripts unique names — concurrent agents overwrote each other's `xcstrings.py`.
 
 ## Suggested waves
 
