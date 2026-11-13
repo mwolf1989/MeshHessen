@@ -285,16 +285,20 @@ final class AppState {
     func updateDeliveryState(
         requestId: UInt32,
         state: MessageDeliveryState,
-        context: MessageStorageContext? = nil
+        context: MessageStorageContext? = nil,
+        ackProof: AckProof = .absent
     ) {
         if let allIdx = allMessages.firstIndex(where: {
             $0.packetId == requestId && (context == nil || context == .channel($0.channelIndex))
         }) {
             let mergedState = allMessages[allIdx].deliveryState.merging(state)
             allMessages[allIdx].deliveryState = mergedState
+            let mergedProof = Self.mergedAckProof(allMessages[allIdx].ackProof, incoming: ackProof, state: state)
+            allMessages[allIdx].ackProof = mergedProof
             let channelIndex = allMessages[allIdx].channelIndex
             if let channelMessageIndex = channelMessages[channelIndex]?.firstIndex(where: { $0.packetId == requestId }) {
                 channelMessages[channelIndex]?[channelMessageIndex].deliveryState = mergedState
+                channelMessages[channelIndex]?[channelMessageIndex].ackProof = mergedProof
             }
         }
 
@@ -304,7 +308,20 @@ final class AppState {
             }
             let currentState = dmConversations[key]?.messages[msgIndex].deliveryState ?? .none
             dmConversations[key]?.messages[msgIndex].deliveryState = currentState.merging(state)
+            let currentProof = dmConversations[key]?.messages[msgIndex].ackProof ?? .absent
+            dmConversations[key]?.messages[msgIndex].ackProof = Self.mergedAckProof(
+                currentProof,
+                incoming: ackProof,
+                state: state
+            )
         }
+    }
+
+    /// Only an acknowledgement carries a proof verdict, and an absent verdict
+    /// from a duplicate ACK never erases a verdict already recorded.
+    static func mergedAckProof(_ current: AckProof, incoming: AckProof, state: MessageDeliveryState) -> AckProof {
+        guard state == .acknowledged, incoming != .absent else { return current }
+        return incoming
     }
 
     private func mergeMessage(existing: MessageItem, incoming: MessageItem) -> MessageItem {
@@ -333,6 +350,9 @@ final class AppState {
 
         if incoming.deliveryState != .none {
             merged.deliveryState = incoming.deliveryState
+        }
+        if incoming.ackProof != .absent {
+            merged.ackProof = incoming.ackProof
         }
 
         for (emoji, senders) in incoming.reactionsByEmoji {

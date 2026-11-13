@@ -1000,6 +1000,11 @@ final class MeshtasticProtocolService {
 
     // MARK: - Routing / ACK
 
+    /// Maps the firmware 2.8 `ack_proof_status` of a routing packet to the app model.
+    nonisolated static func ackProof(from status: Meshtastic_MeshPacket.AckProofStatus) -> AckProof {
+        AckProof(rawValue: status.rawValue) ?? .absent
+    }
+
     private func handleRoutingPacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
         guard data.requestID != 0 else { return }
 
@@ -1063,7 +1068,8 @@ final class MeshtasticProtocolService {
         appState?.updateDeliveryState(
             requestId: data.requestID,
             state: deliveryState,
-            context: storageContext
+            context: storageContext,
+            ackProof: Self.ackProof(from: packet.ackProofStatus)
         )
         coreDataStore?.updateDeliveryState(
             requestId: data.requestID,
