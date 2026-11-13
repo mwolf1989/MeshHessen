@@ -69,11 +69,19 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         "telemetry_samples",
         "traceroute_hops",
         "node_positions",
+        "rf_link_obs",
     ]
 
     /// Funk-Echo journal. Kept out of `telemetryTableNames` because it has no
     /// `timestamp` column; retention and clearing handle it explicitly.
     static let requestEchoTableName = "request_echo"
+
+    /// Latest evidence per (observer, neighbor, source). Not subject to retention
+    /// (one row per link); clearing telemetry empties it explicitly.
+    static let rfLinksTableName = "rf_links"
+
+    /// `meta` key holding the time of the first `rf_links` insert.
+    private static let rfLinksStartedKey = "rf_links_started"
 
     private struct StoredPosition {
         let latitude: Double
@@ -387,6 +395,31 @@ final class TelemetryDatabaseService: @unchecked Sendable {
             CREATE INDEX IF NOT EXISTS idx_reqecho_ts ON request_echo (last_ts);
             CREATE INDEX IF NOT EXISTS idx_reqecho_node
                 ON request_echo (node_id, req_type, last_ts);
+
+            CREATE TABLE IF NOT EXISTS meta (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS rf_links (
+                observer INTEGER NOT NULL,
+                neighbor INTEGER NOT NULL,
+                snr REAL,
+                source TEXT NOT NULL,
+                last_seen REAL NOT NULL,
+                PRIMARY KEY (observer, neighbor, source)
+            );
+            CREATE INDEX IF NOT EXISTS idx_rflinks_neighbor ON rf_links (neighbor);
+
+            CREATE TABLE IF NOT EXISTS rf_link_obs (
+                observer INTEGER NOT NULL,
+                neighbor INTEGER NOT NULL,
+                snr REAL NOT NULL,
+                source TEXT NOT NULL,
+                timestamp REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_rflinkobs_pair
+                ON rf_link_obs (observer, neighbor, timestamp);
             """
         execute(schema, on: db)
 
@@ -1279,6 +1312,143 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         }
     }
 
+    // MARK: - RF Links
+
+    /// Records that `observer` heard `neighbor` directly over RF. One row per
+    /// (observer, neighbor, source); repeats refresh `last_seen` and the SNR.
+    /// SNR 0 means "not measured" (proto default / rx_snr of a non-RF reception):
+    /// the link is kept, the value is not and never overwrites a real one.
+    /// Traceroute and NeighborInfo measurements are also appended to `rf_link_obs`;
+    /// the history of own receptions (`rx`) already lives in `packet_rx`.
+    func upsertRfLink(
+        observer: UInt32,
+        neighbor: UInt32,
+        snr: Float?,
+        source: RfLinkSource,
+        timestamp: Date
+    ) {
+        guard observer != 0, neighbor != 0, observer != neighbor else { return }
+        let snr = snr == 0 ? nil : snr
+        let ts = timestamp.timeIntervalSince1970
+        enqueueWrite { service, db in
+            service.inTransaction(on: db) {
+                var succeeded = service.run(
+                    "INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)",
+                    bindings: [.text(Self.rfLinksStartedKey), .text(String(ts))],
+                    on: db
+                )
+                succeeded = service.run(
+                    """
+                    INSERT INTO rf_links (observer, neighbor, snr, source, last_seen)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT (observer, neighbor, source)
+                    DO UPDATE SET snr = COALESCE(excluded.snr, snr), last_seen = excluded.last_seen
+                    """,
+                    bindings: [
+                        .integer(Int64(observer)), .integer(Int64(neighbor)),
+                        .optionalDouble(snr.map(Double.init)), .text(source.rawValue), .double(ts),
+                    ],
+                    on: db
+                ) && succeeded
+                if let snr, source != .rx {
+                    succeeded = service.run(
+                        """
+                        INSERT INTO rf_link_obs (observer, neighbor, snr, source, timestamp)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        bindings: [
+                            .integer(Int64(observer)), .integer(Int64(neighbor)),
+                            .double(Double(snr)), .text(source.rawValue), .double(ts),
+                        ],
+                        on: db
+                    ) && succeeded
+                }
+                return succeeded
+            }
+        }
+    }
+
+    /// All direct-RF partners of `nodeId` in both directions, newest first.
+    /// `observer == nodeId` means the node heard the partner (`snrIn`), otherwise
+    /// the partner heard the node (`snrOut`). The newest row wins each SNR column.
+    func rfNeighbors(of nodeId: UInt32, since cutoff: Date? = nil) async -> [RfNeighbor] {
+        await read(default: []) { service, db in
+            let sql = """
+                SELECT observer, neighbor, snr, source, last_seen
+                FROM rf_links
+                WHERE (observer = ? OR neighbor = ?) AND last_seen >= ?
+                ORDER BY last_seen ASC
+                """
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK,
+                  let statement else {
+                service.logPrepareError(sql: sql, on: db)
+                return []
+            }
+            defer { sqlite3_finalize(statement) }
+            sqlite3_bind_int64(statement, 1, Int64(nodeId))
+            sqlite3_bind_int64(statement, 2, Int64(nodeId))
+            sqlite3_bind_double(statement, 3, cutoff?.timeIntervalSince1970 ?? 0)
+
+            var byPartner: [UInt32: RfNeighbor] = [:]
+            while sqlite3_step(statement) == SQLITE_ROW {
+                let observer = UInt32(truncatingIfNeeded: sqlite3_column_int64(statement, 0))
+                let neighbor = UInt32(truncatingIfNeeded: sqlite3_column_int64(statement, 1))
+                let snr = sqlite3_column_type(statement, 2) == SQLITE_NULL
+                    ? nil
+                    : Float(sqlite3_column_double(statement, 2))
+                guard let text = sqlite3_column_text(statement, 3),
+                      let source = RfLinkSource(rawValue: String(cString: text)) else { continue }
+                let lastSeen = Date(timeIntervalSince1970: sqlite3_column_double(statement, 4))
+
+                let partner = observer == nodeId ? neighbor : observer
+                var row = byPartner[partner] ?? RfNeighbor(neighborId: partner)
+                if let snr {
+                    if observer == nodeId { row.snrIn = snr } else { row.snrOut = snr }
+                }
+                if !row.sources.contains(source) { row.sources.append(source) }
+                row.lastSeen = max(row.lastSeen, lastSeen)
+                byPartner[partner] = row
+            }
+            return byPartner.values.sorted {
+                $0.lastSeen != $1.lastSeen ? $0.lastSeen > $1.lastSeen : $0.neighborId < $1.neighborId
+            }
+        }
+    }
+
+    /// When RF-link collection began (first ever `rf_links` insert), or nil.
+    func rfLinkCollectionStart() async -> Date? {
+        await read(default: nil) { _, db in
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(
+                db, "SELECT value FROM meta WHERE key = ?", -1, &statement, nil
+            ) == SQLITE_OK, let statement else { return nil }
+            defer { sqlite3_finalize(statement) }
+            sqlite3_bind_text(statement, 1, Self.rfLinksStartedKey, -1, Self.transientDestructor)
+            guard sqlite3_step(statement) == SQLITE_ROW,
+                  let text = sqlite3_column_text(statement, 0),
+                  let seconds = Double(String(cString: text)) else { return nil }
+            return Date(timeIntervalSince1970: seconds)
+        }
+    }
+
+    /// Earliest packet ever recorded from this node (survives restarts, unlike
+    /// the in-memory node list), or nil.
+    func firstSeen(nodeId: UInt32) async -> Date? {
+        await read(default: nil) { _, db in
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(
+                db, "SELECT MIN(timestamp) FROM packet_rx WHERE node_id = ?", -1, &statement, nil
+            ) == SQLITE_OK, let statement else { return nil }
+            defer { sqlite3_finalize(statement) }
+            sqlite3_bind_int64(statement, 1, Int64(nodeId))
+            guard sqlite3_step(statement) == SQLITE_ROW,
+                  sqlite3_column_type(statement, 0) != SQLITE_NULL else { return nil }
+            let seconds = sqlite3_column_double(statement, 0)
+            return seconds > 0 ? Date(timeIntervalSince1970: seconds) : nil
+        }
+    }
+
     // MARK: - Funk-Echo
 
     /// Requests from the same node with the same type and detail within this window
@@ -1565,6 +1735,9 @@ final class TelemetryDatabaseService: @unchecked Sendable {
     ) -> [TelemetrySeriesPoint] {
         let uniqueNodeIds = Array(Set(nodeIds)).sorted()
         guard !uniqueNodeIds.isEmpty else { return [] }
+        if let counter = metric.counterMetric {
+            return counterRateSeries(nodeIds: uniqueNodeIds, counter: counter, days: days)
+        }
         let cutoff = cutoffTimestamp(days: days)
         return queue.sync { [weak self] in
             guard let self, let db = self.db else { return [] }
@@ -1631,6 +1804,47 @@ final class TelemetryDatabaseService: @unchecked Sendable {
             }
             return result
         }
+    }
+
+    /// Per-hour rate series of a cumulative counter, computed per node between
+    /// consecutive samples and stamped at the later sample.
+    private func counterRateSeries(
+        nodeIds: [UInt32],
+        counter: TelemetrySeriesMetric,
+        days: Int
+    ) -> [TelemetrySeriesPoint] {
+        let counterPoints = getTimeSeries(nodeIds: nodeIds, metric: counter, days: days)
+        var result: [TelemetrySeriesPoint] = []
+        for (nodeId, points) in Dictionary(grouping: counterPoints, by: \.nodeId) {
+            let isDay = Dictionary(points.map { ($0.timestamp, $0.isDay) }, uniquingKeysWith: { first, _ in first })
+            for (timestamp, rate) in Self.counterRates(points.map { ($0.timestamp, $0.value) }) {
+                result.append(TelemetrySeriesPoint(
+                    nodeId: nodeId,
+                    timestamp: timestamp,
+                    value: rate,
+                    isDay: isDay[timestamp] ?? true
+                ))
+            }
+        }
+        return result.sorted {
+            $0.timestamp != $1.timestamp ? $0.timestamp < $1.timestamp : $0.nodeId < $1.nodeId
+        }
+    }
+
+    /// Converts cumulative counter readings into per-hour rates: Δcounter / Δhours
+    /// between consecutive readings, stamped at the later one. Intervals shorter than
+    /// a minute or longer than 24 h are skipped, as are negative deltas (a reboot
+    /// resets the counters).
+    static func counterRates(_ samples: [(Date, Double)]) -> [(Date, Double)] {
+        let ordered = samples.sorted { $0.0 < $1.0 }
+        var rates: [(Date, Double)] = []
+        for (previous, current) in zip(ordered, ordered.dropFirst()) {
+            let hours = current.0.timeIntervalSince(previous.0) / 3_600
+            let delta = current.1 - previous.1
+            guard hours >= 1.0 / 60, hours <= 24, delta >= 0 else { continue }
+            rates.append((current.0, delta / hours))
+        }
+        return rates
     }
 
     func getLatestValues(
@@ -1897,7 +2111,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                 }
 
                 var deletedRows = 0
-                for table in Self.telemetryTableNames + [Self.requestEchoTableName] {
+                for table in Self.telemetryTableNames + [Self.requestEchoTableName, Self.rfLinksTableName] {
                     guard self.run("DELETE FROM \(table)", bindings: [], on: db) else {
                         let detail = String(cString: sqlite3_errmsg(db))
                         _ = self.execute("ROLLBACK", on: db)
@@ -1907,6 +2121,17 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                         return
                     }
                     deletedRows += Int(sqlite3_changes(db))
+                }
+                // RF-link collection restarts with the next link (bookkeeping, not counted).
+                guard self.run(
+                    "DELETE FROM meta WHERE key = ?",
+                    bindings: [.text(Self.rfLinksStartedKey)],
+                    on: db
+                ) else {
+                    let detail = String(cString: sqlite3_errmsg(db))
+                    _ = self.execute("ROLLBACK", on: db)
+                    continuation.resume(throwing: TelemetryDatabaseError.clearFailed(detail))
+                    return
                 }
 
                 guard self.execute("COMMIT", on: db) else {
@@ -1961,7 +2186,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
     }
 
     func rowCount(in table: String) -> Int {
-        guard Self.telemetryTableNames.contains(table) else { return 0 }
+        guard Self.telemetryTableNames.contains(table) || table == Self.rfLinksTableName else { return 0 }
         return queue.sync { [weak self] in
             guard let self, let db = self.db else { return 0 }
             var statement: OpaquePointer?
@@ -1974,6 +2199,22 @@ final class TelemetryDatabaseService: @unchecked Sendable {
     }
 
     // MARK: - SQLite Helpers
+
+    /// Runs a read on the database queue without blocking the caller.
+    private func read<T: Sendable>(
+        default fallback: T,
+        _ operation: @escaping @Sendable (TelemetryDatabaseService, OpaquePointer) -> T
+    ) async -> T {
+        await withCheckedContinuation { continuation in
+            queue.async { [weak self] in
+                guard let self, let db = self.db else {
+                    continuation.resume(returning: fallback)
+                    return
+                }
+                continuation.resume(returning: operation(self, db))
+            }
+        }
+    }
 
     private func enqueueWrite(
         _ operation: @escaping @Sendable (TelemetryDatabaseService, OpaquePointer) -> Void

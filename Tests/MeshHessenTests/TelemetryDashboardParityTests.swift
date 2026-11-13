@@ -281,6 +281,13 @@ struct TelemetryDatabaseParityTests {
             groundTrack: 0,
             timestamp: timestamp
         )
+        database.upsertRfLink(
+            observer: nodeId,
+            neighbor: 0x77,
+            snr: 4.5,
+            source: .neighborInfo,
+            timestamp: timestamp
+        )
         database.waitForPendingWrites()
 
         var rowsBeforeClear = 0
@@ -289,12 +296,16 @@ struct TelemetryDatabaseParityTests {
             #expect(count > 0, "Expected populated table \(table)")
             rowsBeforeClear += count
         }
+        // rf_links is cleared too but is not a retention table.
+        let rfLinkRows = database.rowCount(in: TelemetryDatabaseService.rfLinksTableName)
+        #expect(rfLinkRows == 1)
         let deletedRows = try await database.clearAllTelemetry()
 
-        #expect(deletedRows == rowsBeforeClear)
+        #expect(deletedRows == rowsBeforeClear + rfLinkRows)
         for table in TelemetryDatabaseService.telemetryTableNames {
             #expect(database.rowCount(in: table) == 0, "Expected empty table \(table)")
         }
+        #expect(database.rowCount(in: TelemetryDatabaseService.rfLinksTableName) == 0)
         #expect(database.getKnownNodeIds().isEmpty)
         #expect(database.schemaTableNames() == schemaBefore)
 
@@ -333,7 +344,7 @@ struct TelemetryDatabaseParityTests {
 
         #expect(try await database.clearAllTelemetry() == 0)
         #expect(database.schemaTableNames() == schemaBefore)
-        #expect(TelemetryDatabaseService.telemetryTableNames.count == 14)
+        #expect(TelemetryDatabaseService.telemetryTableNames.count == 15)
     }
 
     @Test("Known node IDs include telemetry and traceroute-only nodes without duplicates")

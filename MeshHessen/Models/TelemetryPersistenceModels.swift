@@ -110,6 +110,12 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
     case localHeapFreeBytes = "local_heap_free_bytes"
     case localTxDropped = "local_tx_dropped"
     case localNoiseFloor = "local_noise_floor"
+    /// Per-hour rates derived from the cumulative LocalStats counters.
+    case localRxPerHour = "local_rx_pph"
+    case localTxPerHour = "local_tx_pph"
+    case localRxBadPerHour = "local_rx_bad_pph"
+    case localRxDupePerHour = "local_rx_dupe_pph"
+    case localTxRelayPerHour = "local_tx_relay_pph"
 
     case hostUptimeSeconds = "host_uptime_seconds"
     case hostFreeMemoryBytes = "host_free_memory_bytes"
@@ -241,6 +247,11 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
         case .localHeapFreeBytes: return String(localized: "Free Heap")
         case .localTxDropped: return String(localized: "Dropped TX Packets")
         case .localNoiseFloor: return String(localized: "Noise Floor")
+        case .localRxPerHour: return String(localized: "Packets Received per Hour")
+        case .localTxPerHour: return String(localized: "Packets Sent per Hour")
+        case .localRxBadPerHour: return String(localized: "Bad Packets per Hour")
+        case .localRxDupePerHour: return String(localized: "Duplicates per Hour")
+        case .localTxRelayPerHour: return String(localized: "Relayed Packets per Hour")
         case .hostUptimeSeconds: return String(localized: "Host Uptime")
         case .hostFreeMemoryBytes: return String(localized: "Free Host Memory")
         case .hostDisk1FreeBytes: return String(localized: "Free Host Disk 1")
@@ -304,7 +315,8 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
              .hostDisk3FreeBytes, .localHeapTotalBytes, .localHeapFreeBytes: return "Byte"
         case .hostLoad1, .hostLoad5, .hostLoad15: return ""
         case .healthHeartRate: return "bpm"
-        case .lightningStrikeCount1Hour: return "/h"
+        case .lightningStrikeCount1Hour, .localRxPerHour, .localTxPerHour, .localRxBadPerHour,
+             .localRxDupePerHour, .localTxRelayPerHour: return "/h"
         case .funkEcho: return String(localized: "requests/h")
         case .lightningDistance: return "km"
         case .soilPH, .waterPH: return "pH"
@@ -348,6 +360,18 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
         case .biochemicalOxygenDemand, .turbidity, .nitrate: return 0...100
         case .ammonium: return 0...50
         case .solarIrradiance: return 0...1_200
+        default: return nil
+        }
+    }
+
+    /// The cumulative LocalStats counter a per-hour rate metric is derived from.
+    var counterMetric: TelemetrySeriesMetric? {
+        switch self {
+        case .localRxPerHour: return .localPacketsRx
+        case .localTxPerHour: return .localPacketsTx
+        case .localRxBadPerHour: return .localPacketsRxBad
+        case .localRxDupePerHour: return .localRxDuplicates
+        case .localTxRelayPerHour: return .localTxRelays
         default: return nil
         }
     }
@@ -712,4 +736,54 @@ struct TelemetryHistogramBin: Identifiable, Hashable, Sendable {
     let lowerBound: Double
     let upperBound: Double
     let count: Int
+}
+
+// MARK: - RF Links
+
+/// Evidence that one node heard another directly over RF.
+enum RfLinkSource: String, CaseIterable, Codable, Hashable, Sendable {
+    /// Our own 0-hop, non-MQTT reception.
+    case rx
+    /// A node's own NEIGHBORINFO_APP report.
+    case neighborInfo = "neighborinfo"
+    /// Adjacent hop pair of a traceroute reply.
+    case traceroute
+
+    var displayName: String {
+        switch self {
+        case .rx: return String(localized: "Direct")
+        case .neighborInfo: return String(localized: "NeighborInfo")
+        case .traceroute: return String(localized: "Traceroute")
+        }
+    }
+}
+
+/// One directed RF observation: `observer` heard `neighbor` at `snr` dB.
+struct RfLinkObservation: Hashable, Sendable {
+    let observer: UInt32
+    let neighbor: UInt32
+    let snr: Float
+}
+
+/// A direct-RF partner of a node, merged over both directions and all sources.
+struct RfNeighbor: Identifiable, Hashable, Sendable {
+    var id: UInt32 { neighborId }
+    let neighborId: UInt32
+    /// The selected node heard the partner at this SNR.
+    var snrIn: Float?
+    /// The partner heard the selected node at this SNR.
+    var snrOut: Float?
+    var sources: [RfLinkSource] = []
+    var lastSeen: Date = .distantPast
+
+    /// Sparse link data (1–2 partners) is trusted only after collection has run this long.
+    static let sparseDataMinimumAge: TimeInterval = 7 * 86_400
+
+    /// Whether collected RF links replace the own-contact neighbour list: with at
+    /// least three partners, or one or two once collection has run for a week.
+    static func shouldUseRfLinks(linkCount: Int, collectionStart: Date?, now: Date) -> Bool {
+        if linkCount >= 3 { return true }
+        guard linkCount > 0, let collectionStart else { return false }
+        return now.timeIntervalSince(collectionStart) >= sparseDataMinimumAge
+    }
 }

@@ -20480,6 +20480,306 @@
           }
         }
       }
+    },
+    "NeighborInfo" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NeighborInfo"
+          }
+        }
+      }
+    },
+    "RF neighbors" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Funk-Nachbarn"
+          }
+        }
+      }
+    },
+    "RF Neighbors" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Funk-Nachbarn"
+          }
+        }
+      }
+    },
+    "In: this node heard the neighbor · Out: the neighbor heard this node" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein: dieser Knoten hörte den Nachbarn · Aus: der Nachbar hörte diesen Knoten"
+          }
+        }
+      }
+    },
+    "In %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein %@"
+          }
+        }
+      }
+    },
+    "Out %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus %@"
+          }
+        }
+      }
+    },
+    "This node heard the neighbor at this SNR" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Knoten hörte den Nachbarn mit diesem SNR"
+          }
+        }
+      }
+    },
+    "The neighbor heard this node at this SNR" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Nachbar hörte diesen Knoten mit diesem SNR"
+          }
+        }
+      }
+    },
+    "First Seen" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zuerst gesehen"
+          }
+        }
+      }
+    },
+    "Packets Received per Hour" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empfangene Pakete pro Stunde"
+          }
+        }
+      }
+    },
+    "Packets Sent per Hour" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gesendete Pakete pro Stunde"
+          }
+        }
+      }
+    },
+    "Bad Packets per Hour" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fehlerhafte Pakete pro Stunde"
+          }
+        }
+      }
+    },
+    "Duplicates per Hour" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplikate pro Stunde"
+          }
+        }
+      }
+    },
+    "Relayed Packets per Hour" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weitergeleitete Pakete pro Stunde"
+          }
+        }
+      }
+    },
+    "At most %lld nodes can be polled." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es können höchstens %lld Knoten abgefragt werden."
+          }
+        }
+      }
+    },
+    "Telemetry Polling" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telemetrie-Abfrage"
+          }
+        }
+      }
+    },
+    "Polling enabled" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abfrage aktiv"
+          }
+        }
+      }
+    },
+    "Requests are sent at most once a minute while connected. Up to %lld nodes; local statistics at most hourly, other telemetry at most every 30 minutes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anfragen werden bei bestehender Verbindung höchstens einmal pro Minute gesendet. Bis zu %lld Knoten; lokale Statistik höchstens stündlich, andere Telemetrie höchstens alle 30 Minuten."
+          }
+        }
+      }
+    },
+    "Polling" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abfrage"
+          }
+        }
+      }
+    },
+    "No Polling Entries" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Abfragen geplant"
+          }
+        }
+      }
+    },
+    "Add a node and a telemetry type below." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unten einen Knoten und eine Telemetrieart hinzufügen."
+          }
+        }
+      }
+    },
+    "Select node" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knoten wählen"
+          }
+        }
+      }
+    },
+    "%@ (%@)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$@)"
+          }
+        }
+      }
+    },
+    "Every" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle"
+          }
+        }
+      }
+    },
+    "%lld min" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld min"
+          }
+        }
+      }
+    },
+    "%lld h" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld h"
+          }
+        }
+      }
+    },
+    "every %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "alle %@"
+          }
+        }
+      }
+    },
+    "never" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nie"
+          }
+        }
+      }
+    },
+    "Remove" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entfernen"
+          }
+        }
+      }
+    },
+    "Poll selected nodes for telemetry on a schedule" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausgewählte Knoten regelmäßig nach Telemetrie abfragen"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

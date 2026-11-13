@@ -19,6 +19,7 @@ struct TelemetryDashboardView: View {
     @State private var dashboardPendingDeletion: TelemetryDashboard?
     @State private var exportDocument = TelemetryCSVDocument(text: "")
     @State private var isExporting = false
+    @State private var isShowingPolling = false
 
     init(database: TelemetryDatabaseService = .shared) {
         self.database = database
@@ -36,6 +37,9 @@ struct TelemetryDashboardView: View {
                 nodes: nodeCatalog,
                 onSave: saveWidget
             )
+        }
+        .sheet(isPresented: $isShowingPolling) {
+            TelemetryPollingSheet(nodes: nodeCatalog)
         }
         .alert(
             dashboardAction?.title ?? String(localized: "Dashboard"),
@@ -121,6 +125,11 @@ struct TelemetryDashboardView: View {
             Divider().frame(height: 22)
 
             Button("Widget hinzufügen", systemImage: "plus.rectangle.on.rectangle", action: beginAddWidget)
+
+            Button("Telemetry Polling", systemImage: "antenna.radiowaves.left.and.right") {
+                isShowingPolling = true
+            }
+            .help("Poll selected nodes for telemetry on a schedule")
 
             Spacer()
 

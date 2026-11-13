@@ -735,6 +735,16 @@ final class MeshtasticProtocolService {
                 latitude: senderNode?.latitude ?? 0,
                 longitude: senderNode?.longitude ?? 0
             )
+            // RF-link evidence: we heard this node directly (0 hops, not MQTT).
+            if isDirectRF && myNodeId != 0 {
+                telemetryDatabase.upsertRfLink(
+                    observer: myNodeId,
+                    neighbor: packet.from,
+                    snr: packet.rxSnr,
+                    source: .rx,
+                    timestamp: Date()
+                )
+            }
         }
 
         switch packet.payloadVariant {
@@ -2465,6 +2475,54 @@ final class MeshtasticProtocolService {
             hops: traceHops
         )
 
+        // RF-link evidence: adjacent nodes of a traceroute path heard each other.
+        if myNodeId != 0 {
+            let now = Date()
+            for link in Self.tracerouteLinks(source: myNodeId, destination: packet.from, route: route) {
+                telemetryDatabase.upsertRfLink(
+                    observer: link.observer,
+                    neighbor: link.neighbor,
+                    snr: link.snr,
+                    source: .traceroute,
+                    timestamp: now
+                )
+            }
+        }
+    }
+
+    /// Adjacent hop pairs of a traceroute reply as directed RF observations. The
+    /// forward path is `[source, route…, destination]` with `snrTowards`, the return
+    /// path `[destination, routeBack…, source]` with `snrBack`; `snr[i]` was measured
+    /// by the receiver `path[i + 1]` hearing `path[i]`. Segments without a real RF
+    /// measurement (raw ≤ -128 sentinel or 0 = MQTT/non-RF leg) and unknown hops are
+    /// skipped, which also keeps MQTT bridges out of the link table.
+    nonisolated static func tracerouteLinks(
+        source: UInt32,
+        destination: UInt32,
+        route: Meshtastic_RouteDiscovery
+    ) -> [RfLinkObservation] {
+        func links(_ path: [UInt32], _ snrs: [Int32]) -> [RfLinkObservation] {
+            var result: [RfLinkObservation] = []
+            for index in 0..<max(0, path.count - 1) where index < snrs.count {
+                let raw = snrs[index]
+                guard !isNonRfSnr(raw) else { continue }
+                let sender = path[index]
+                let receiver = path[index + 1]
+                guard sender != 0, receiver != 0, sender != receiver,
+                      sender != TracerouteHop.unknownNodeId,
+                      receiver != TracerouteHop.unknownNodeId else { continue }
+                result.append(RfLinkObservation(observer: receiver, neighbor: sender, snr: Float(raw) / 4))
+            }
+            return result
+        }
+        let forward = [source] + route.route + [destination]
+        let back = [destination] + route.routeBack + [source]
+        return links(forward, route.snrTowards) + links(back, route.snrBack)
+    }
+
+    /// Raw traceroute SNR (dB × 4) that carries no RF measurement.
+    nonisolated static func isNonRfSnr(_ raw: Int32) -> Bool {
+        raw <= -128 || raw == 0
     }
 
     private func storeTracerouteResult(_ result: TracerouteResult) {
@@ -3421,45 +3479,35 @@ final class MeshtasticProtocolService {
 
     // MARK: - NeighborInfo (portnum 71)
 
+    /// The reporting node lists every node it hears directly over RF, with SNR. The
+    /// packet itself may reach us over any route (relays, MQTT); its content still
+    /// describes genuine RF links at the reporter, so it feeds `rf_links`.
     private func handleNeighborInfoPacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
-        // NeighborInfo proto: field 1 (uint32): node_id, field 2 (repeated Neighbor): neighbors
-        // Neighbor: field 1 (uint32): node_id, field 2 (float): snr
-        // Since we don't have a generated NeighborInfo message, we log the raw info
-        let from = nodeDisplayName(packet.from)
+        let info: Meshtastic_NeighborInfo
+        do {
+            info = try Meshtastic_NeighborInfo(serializedBytes: data.payload)
+        } catch {
+            AppLogger.shared.log(
+                "[NeighborInfo] Parse failed from \(nodeDisplayName(packet.from)): \(error.localizedDescription)",
+                debug: SettingsService.shared.debugDevice
+            )
+            return
+        }
+        guard info.nodeID != 0 else { return }
 
-        // Parse neighbor count from the payload
-        // Each neighbor is a length-delimited sub-message (field 2, wire type 2)
-        var neighborCount = 0
-        var idx = data.payload.startIndex
-        while idx < data.payload.endIndex {
-            let (tag, tagBytes) = decodeVarint(data.payload, from: idx)
-            guard tagBytes > 0 else { break }
-            idx += tagBytes
-            let fieldNumber = tag >> 3
-            let wireType = tag & 0x07
-
-            if fieldNumber == 2 && wireType == 2 {
-                neighborCount += 1
-            }
-
-            // Skip field value
-            switch wireType {
-            case 0: // varint
-                let (_, vBytes) = decodeVarint(data.payload, from: idx)
-                guard vBytes > 0 else { return }
-                idx += vBytes
-            case 1: idx += 8
-            case 2:
-                let (length, lBytes) = decodeVarint(data.payload, from: idx)
-                guard lBytes > 0 else { return }
-                idx += lBytes + Int(length)
-            case 5: idx += 4
-            default: return
-            }
+        let now = Date()
+        for neighbor in info.neighbors where neighbor.nodeID != 0 {
+            telemetryDatabase.upsertRfLink(
+                observer: info.nodeID,
+                neighbor: neighbor.nodeID,
+                snr: neighbor.snr,
+                source: .neighborInfo,
+                timestamp: now
+            )
         }
 
         AppLogger.shared.log(
-            "[NeighborInfo] From \(from): \(neighborCount) neighbor(s) reported",
+            "[NeighborInfo] From \(nodeDisplayName(info.nodeID)): \(info.neighbors.count) neighbor(s) reported",
             debug: SettingsService.shared.debugDevice
         )
     }
