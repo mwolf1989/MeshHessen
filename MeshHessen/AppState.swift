@@ -62,6 +62,17 @@ final class AppState {
     var activeAlertBell: MessageItem?
     var showAlertBell: Bool = false
 
+    // MARK: - Funk-Echo
+    /// Requests from other stations since the journal was last opened.
+    var requestEchoUnread: Int = 0
+    /// Most recent request; views observe it to pulse the indicator.
+    var lastRequestEcho: RequestEchoEvent?
+
+    func registerRequestEcho(_ event: RequestEchoEvent) {
+        requestEchoUnread += 1
+        lastRequestEcho = event
+    }
+
     // MARK: - Map
     var showMap: Bool = false
     /// Set to a node ID to have MapView center on that node's position.

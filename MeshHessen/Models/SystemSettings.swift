@@ -164,6 +164,7 @@ struct KioskFeatureMask: OptionSet, Codable, Hashable, Identifiable, Sendable {
     static let dashboard = Self(rawValue: 1 << 8)
     static let sos = Self(rawValue: 1 << 9)
     static let quickConfiguration = Self(rawValue: 1 << 10)
+    static let funkEcho = Self(rawValue: 1 << 11)
 
     static let allCases: [Self] = [
         .nodes,
@@ -177,6 +178,7 @@ struct KioskFeatureMask: OptionSet, Codable, Hashable, Identifiable, Sendable {
         .dashboard,
         .sos,
         .quickConfiguration,
+        .funkEcho,
     ]
 
     static let all = Self(rawValue: allCases.reduce(0) { $0 | $1.rawValue })
@@ -194,6 +196,7 @@ struct KioskFeatureMask: OptionSet, Codable, Hashable, Identifiable, Sendable {
         case .dashboard: return String(localized: "Telemetry dashboard")
         case .sos: return String(localized: "SOS / alert bell")
         case .quickConfiguration: return String(localized: "Mesh Hessen quick configuration")
+        case .funkEcho: return String(localized: "Funk-Echo")
         default: return String(localized: "Unknown feature")
         }
     }

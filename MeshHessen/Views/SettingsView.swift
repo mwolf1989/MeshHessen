@@ -761,6 +761,29 @@ private struct NotificationSettingsPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section("Funk-Echo") {
+                Toggle(
+                    "📡 Show Funk-Echo (requests other stations send to your node)",
+                    isOn: $settings.funkEchoEnabled
+                )
+                Picker("Message style", selection: $settings.funkEchoTone) {
+                    ForEach(RequestEchoTone.allCases) { tone in
+                        Text(tone.displayName).tag(tone.rawValue)
+                    }
+                }
+                .disabled(!settings.funkEchoEnabled)
+                Toggle("System notification on new Funk-Echo requests", isOn: $settings.funkEchoNotifications)
+                    .disabled(!settings.funkEchoEnabled)
+                Toggle(
+                    "🔕 Quiet mode (no pulse, popover or notification; the journal keeps running)",
+                    isOn: $settings.funkEchoQuiet
+                )
+                .disabled(!settings.funkEchoEnabled)
+                Text("Only the request is visible to this app — whether and how your node replies cannot be observed.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding()
