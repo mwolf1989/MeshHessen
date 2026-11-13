@@ -146,23 +146,23 @@ struct ModelTests {
         #expect(node.name == "SH")
     }
 
-    @Test("NodeInfo name falls back to its formatted node ID when names are empty")
+    @Test("NodeInfo name falls back to the Meshtastic placeholder when names are empty")
     func nodeInfoNameFallsBackToNodeId() {
         let node = NodeInfo(id: 0x2A, nodeId: "", shortName: "", longName: "")
-        #expect(node.name == "!0000002a")
+        #expect(node.name == "Meshtastic 002a")
     }
 
     @Test("NodeInfo treats whitespace-only names as missing")
     func nodeInfoWhitespaceNameFallsBackToNodeId() {
         let node = NodeInfo(id: 0x2A, nodeId: "", shortName: "  ", longName: "\n")
-        #expect(node.name == "!0000002a")
+        #expect(node.name == "Meshtastic 002a")
     }
 
-    @Test("NodeInfo keeps the node ID fallback when assigned an empty display name")
+    @Test("NodeInfo keeps the placeholder fallback when assigned an empty display name")
     func nodeInfoRejectsEmptyDisplayName() {
         let node = NodeInfo(id: 0x1234, nodeId: "!00001234", shortName: "", longName: "")
         node.name = ""
-        #expect(node.name == "!00001234")
+        #expect(node.name == "Meshtastic 1234")
     }
 
     @Test("NodeInfo color returns nil when colorHex is empty")

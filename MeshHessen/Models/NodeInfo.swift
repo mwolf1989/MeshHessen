@@ -196,7 +196,23 @@ final class NodeInfo: Identifiable {
         let trimmedShortName = shortName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedShortName.isEmpty { return trimmedShortName }
 
-        return String(format: "!%08x", id)
+        return placeholderName(for: id)
+    }
+
+    /// Meshtastic-style name for a node without a user record: "Meshtastic abcd",
+    /// abcd = low 16 bits of the node number (Windows `NodeInfo.DefaultName`).
+    static func placeholderName(for id: UInt32) -> String {
+        String(format: "Meshtastic %04x", id & 0xFFFF)
+    }
+
+    /// Whether `name` is a fallback used before the node's NodeInfo was known:
+    /// the current placeholder, the former `!xxxxxxxx` fallback or an empty name.
+    static func isPlaceholderName(_ name: String, for id: UInt32) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty
+            || trimmed == placeholderName(for: id)
+            || trimmed == String(format: "!%08x", id)
+            || trimmed == "Node \(id)"
     }
 
     /// NSColor / Color from colorHex, or nil if not set
