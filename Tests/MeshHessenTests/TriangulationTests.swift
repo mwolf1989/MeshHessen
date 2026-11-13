@@ -441,3 +441,363 @@ struct TriangulationTests {
         #expect(Tri.signalDistanceKm(-100) > 2.0)
     }
 }
+
+/// Data side of the triangulation easter egg: database queries, anchor building,
+/// calibration samples, the terrain seam and the map layer.
+@Suite("Triangulation data provider")
+struct TriangulationDataProviderTests {
+    private static let now = Date(timeIntervalSince1970: 1_800_000_000)
+    private static let me: UInt32 = 0x100
+    private static let target: UInt32 = 0x200
+
+    private func makeDatabase() -> (TelemetryDatabaseService, URL) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MeshHessen-TriangulationTests-\(UUID().uuidString)", isDirectory: true)
+        let url = directory.appendingPathComponent("telemetry.sqlite")
+        return (
+            TelemetryDatabaseService(databaseURL: url, retentionDays: 0, clock: { Self.now }),
+            directory
+        )
+    }
+
+    private func rx(
+        _ db: TelemetryDatabaseService,
+        node: UInt32,
+        snr: Float,
+        rssi: Int32,
+        hops: Int = 0,
+        mqtt: Bool = false,
+        ago: TimeInterval = 60
+    ) {
+        db.insertPacketRx(
+            nodeId: node,
+            packetId: UInt32.random(in: 1...UInt32.max),
+            timestamp: Self.now.addingTimeInterval(-ago),
+            snr: snr,
+            rssi: rssi,
+            hopCount: hops,
+            viaMqtt: mqtt,
+            wantAck: false
+        )
+    }
+
+    // MARK: - Database queries
+
+    @Test("SNR samples combine link history with own direct receptions")
+    func snrSamplesCombineHistoryAndOwnReceptions() async {
+        let (db, directory) = makeDatabase()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cutoff = Self.now.addingTimeInterval(-30 * 86_400)
+
+        db.upsertRfLink(observer: Self.me, neighbor: Self.target, snr: 4, source: .traceroute, timestamp: Self.now)
+        db.upsertRfLink(observer: Self.me, neighbor: Self.target, snr: 6, source: .neighborInfo,
+                        timestamp: Self.now.addingTimeInterval(-40 * 86_400))
+        rx(db, node: Self.target, snr: 7.5, rssi: -100)
+        rx(db, node: Self.target, snr: 9, rssi: -90, hops: 2)
+        rx(db, node: Self.target, snr: 8, rssi: -95, mqtt: true)
+        rx(db, node: Self.target, snr: 0, rssi: -96)
+
+        let own = await db.rfLinkSnrSamples(observer: Self.me, neighbor: Self.target, myNodeId: Self.me, since: cutoff)
+        #expect(own.sorted() == [4, 7.5])
+
+        // Someone else as observer: only the link history counts.
+        let other = await db.rfLinkSnrSamples(observer: Self.me, neighbor: Self.target, myNodeId: 0x999, since: cutoff)
+        #expect(other == [4])
+    }
+
+    @Test("Direct RSSI samples are 0-hop, non-MQTT, measured receptions only")
+    func directRssiSamples() async {
+        let (db, directory) = makeDatabase()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        rx(db, node: Self.target, snr: 5, rssi: -100)
+        rx(db, node: Self.target, snr: 5, rssi: -104)
+        rx(db, node: Self.target, snr: 5, rssi: -80, hops: 1)
+        rx(db, node: Self.target, snr: 5, rssi: -81, mqtt: true)
+        rx(db, node: Self.target, snr: 5, rssi: 0)
+        rx(db, node: Self.target, snr: 5, rssi: -70, ago: 31 * 86_400)
+
+        let samples = await db.directRssiSamples(nodeId: Self.target, since: Self.now.addingTimeInterval(-30 * 86_400))
+        #expect(samples.sorted() == [-104, -100])
+    }
+
+    @Test("SNR rows skip unmeasured and stale links")
+    func snrRows() async {
+        let (db, directory) = makeDatabase()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        db.upsertRfLink(observer: 1, neighbor: 2, snr: 5, source: .rx, timestamp: Self.now)
+        db.upsertRfLink(observer: 1, neighbor: 3, snr: nil, source: .rx, timestamp: Self.now)
+        db.upsertRfLink(observer: 4, neighbor: 5, snr: 3, source: .neighborInfo,
+                        timestamp: Self.now.addingTimeInterval(-40 * 86_400))
+
+        let rows = await db.rfLinkSnrRows(since: Self.now.addingTimeInterval(-30 * 86_400))
+        #expect(rows == [RfLinkSnrRow(observer: 1, neighbor: 2, snr: 5)])
+    }
+
+    @Test("Latest noise floor per node ignores unreported values")
+    func latestNoiseFloors() async {
+        let (db, directory) = makeDatabase()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        db.insertLocalStatsTelemetry(nodeId: 1, timestamp: Self.now.addingTimeInterval(-600),
+                                     sample: LocalTelemetrySample(noiseFloor: -110))
+        db.insertLocalStatsTelemetry(nodeId: 1, timestamp: Self.now, sample: LocalTelemetrySample(noiseFloor: -98))
+        db.insertLocalStatsTelemetry(nodeId: 2, timestamp: Self.now, sample: LocalTelemetrySample(noiseFloor: 0))
+
+        let floors = await db.latestNoiseFloors()
+        #expect(floors == [1: -98])
+    }
+
+    @Test("Link loading uses trimmed medians and the own RSSI, and writes nothing")
+    func loadLinks() async throws {
+        let (db, directory) = makeDatabase()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let partner: UInt32 = 0x300
+
+        // Own node heard the target directly.
+        db.upsertRfLink(observer: Self.me, neighbor: Self.target, snr: 5, source: .rx, timestamp: Self.now)
+        rx(db, node: Self.target, snr: 5, rssi: -100)
+        rx(db, node: Self.target, snr: 6, rssi: -102)
+        rx(db, node: Self.target, snr: 7, rssi: -110)
+        // Partner heard the target (traceroute) three times; target heard partner once.
+        for snr in [2.0, 3.0, 10.0] as [Float] {
+            db.upsertRfLink(observer: partner, neighbor: Self.target, snr: snr, source: .traceroute, timestamp: Self.now)
+        }
+        db.upsertRfLink(observer: Self.target, neighbor: partner, snr: -4, source: .neighborInfo, timestamp: Self.now)
+
+        let links = await TriangulationDataProvider.loadLinks(
+            targetId: Self.target, myNodeId: Self.me, database: db, now: Self.now
+        )
+        let own = try #require(links.first { $0.partnerId == Self.me })
+        #expect(own.ownRssi == -102)
+        #expect(own.snrOut == 6)
+        let other = try #require(links.first { $0.partnerId == partner })
+        #expect(other.snrOut == 3)
+        #expect(other.snrIn == -4)
+        #expect(other.ownRssi == nil)
+        #expect(db.rowCount(in: "node_positions") == 0)
+    }
+
+    // MARK: - Anchors
+
+    private func input(links: [TriangulationLinkEvidence], targetPosition: TriangulationPosition? = nil) -> TriangulationInput {
+        var positions: [UInt32: TriangulationPosition] = [
+            Self.me: .init(latitude: 50.90, longitude: 9.10),
+            0x300: .init(latitude: 50.60, longitude: 9.20),
+            0x400: .init(latitude: 50.80, longitude: 9.55, errorKm: 1.2),
+        ]
+        positions[Self.target] = targetPosition
+        return TriangulationInput(
+            targetId: Self.target,
+            myNodeId: Self.me,
+            positions: positions,
+            links: links,
+            noiseFloors: [0x300: -100],
+            names: [Self.me: "Home", 0x300: "Hill"]
+        )
+    }
+
+    @Test("Anchors carry the evidence-dependent uncertainty")
+    func anchorsCarryEvidence() throws {
+        let links = [
+            TriangulationLinkEvidence(partnerId: Self.me, snrOut: 5, ownRssi: -100),
+            TriangulationLinkEvidence(partnerId: 0x300, snrIn: -2, snrOut: 3),
+            TriangulationLinkEvidence(partnerId: 0x400, snrOut: 1),
+            TriangulationLinkEvidence(partnerId: 0x500, snrOut: 1), // no position
+            TriangulationLinkEvidence(partnerId: 0x600),            // no signal
+        ]
+        let calibration = TriangulationService.Calibration.default
+        let factor = TriangulationService.distanceFactor(calibration)
+        let anchors = TriangulationDataProvider.anchors(
+            for: input(links: links), calibration: calibration, reportedPositionName: "reported"
+        )
+        #expect(anchors.count == 3)
+
+        let own = try #require(anchors.first { $0.nodeId == Self.me })
+        #expect(own.evidence == .rssi)
+        #expect(abs(own.distanceKm - TriangulationService.signalDistanceKm(-100)) < 1e-9)
+        #expect(abs(own.sigmaKm - (factor - 1) * own.distanceKm) < 1e-9)
+
+        // Both directions; the target's noise floor is unknown → default, +0.3.
+        let hill = try #require(anchors.first { $0.nodeId == 0x300 })
+        #expect(hill.evidence == .snrBothWays)
+        #expect(hill.noiseFloorDefaulted)
+        let expectedRssi = ((3 + -100) + (-2 + TriangulationDataProvider.defaultNoiseFloorDbm)) / 2
+        #expect(abs(hill.distanceKm - TriangulationService.signalDistanceKm(expectedRssi)) < 1e-9)
+        #expect(abs(hill.sigmaKm - (factor - 1) * hill.distanceKm * 1.6) < 1e-9)
+
+        let oneWay = try #require(anchors.first { $0.nodeId == 0x400 })
+        #expect(oneWay.evidence == .snrOneWay)
+        #expect(oneWay.name == "!00000400")
+        #expect(oneWay.positionErrorKm == 1.2)
+        #expect(abs(oneWay.sigmaKm - (factor - 1) * oneWay.distanceKm * 2.0) < 1e-9)
+    }
+
+    @Test("The target's own position becomes a weighted prior")
+    func reportedPositionPrior() throws {
+        let anchors = TriangulationDataProvider.anchors(
+            for: input(
+                links: [TriangulationLinkEvidence(partnerId: 0x300, snrOut: 3)],
+                targetPosition: .init(latitude: 50.75, longitude: 9.27)
+            ),
+            calibration: .default,
+            reportedPositionName: "reported"
+        )
+        let prior = try #require(anchors.last)
+        #expect(prior.isPrior)
+        #expect(prior.distanceKm == 0)
+        #expect(prior.weightScale == 5)
+        #expect(prior.positionErrorKm == 0.2)
+        #expect(prior.solverAnchor.sigmaKm == 0)
+    }
+
+    @Test("Overrides adjust the link budget and pin exact positions")
+    func overridesAreApplied() throws {
+        var data = input(links: [TriangulationLinkEvidence(partnerId: 0x400, snrOut: 1)])
+        data.overrides[Self.target] = TriangulationNodeOverride(txDbm: 30, antennaDbi: 3)
+        data.overrides[0x400] = TriangulationNodeOverride(positionIsExact: true)
+        let anchor = try #require(TriangulationDataProvider.anchors(
+            for: data, calibration: .default, reportedPositionName: "reported"
+        ).first)
+        #expect(anchor.positionErrorKm == 0)
+        let expected = TriangulationService.adjustedRssi(1 - 105, txDbm: 30, txAntennaDbi: 3, rxAntennaDbi: 1)
+        #expect(abs(anchor.distanceKm - TriangulationService.signalDistanceKm(expected)) < 1e-9)
+    }
+
+    @Test("Calibration samples use precise positions and the observer's noise floor")
+    func calibrationSamples() throws {
+        let positions: [UInt32: TriangulationPosition] = [
+            1: .init(latitude: 50.0, longitude: 9.0),
+            2: .init(latitude: 50.0, longitude: 9.1),
+            3: .init(latitude: 50.1, longitude: 9.0, errorKm: 2.9),
+        ]
+        let samples = TriangulationDataProvider.calibrationSamples(
+            rows: [
+                RfLinkSnrRow(observer: 1, neighbor: 2, snr: 4),
+                RfLinkSnrRow(observer: 2, neighbor: 1, snr: 2),
+                RfLinkSnrRow(observer: 1, neighbor: 3, snr: 4),
+                RfLinkSnrRow(observer: 1, neighbor: 9, snr: 4),
+            ],
+            positions: positions,
+            noiseFloors: [1: -110]
+        )
+        #expect(samples.count == 2)
+        let first = try #require(samples.first)
+        #expect(abs(first.distKm - 0.1 * 111.320 * cos(50 * Double.pi / 180)) < 1e-6)
+        #expect(first.rssi == -106)
+        #expect(samples.last?.rssi == -103)
+    }
+
+    @Test("Candidate targets need two positioned partners")
+    func candidateTargets() {
+        let positions: [UInt32: TriangulationPosition] = [
+            1: .init(latitude: 50, longitude: 9),
+            2: .init(latitude: 50, longitude: 9.1),
+        ]
+        let candidates = TriangulationDataProvider.candidateTargets(
+            rows: [
+                RfLinkSnrRow(observer: 1, neighbor: 7, snr: 1),
+                RfLinkSnrRow(observer: 7, neighbor: 2, snr: 1),
+                RfLinkSnrRow(observer: 8, neighbor: 1, snr: 1),
+            ],
+            positions: positions
+        )
+        #expect(candidates == [7])
+    }
+
+    @Test("The fitted model is recommended only for a usable, unclamped fit")
+    func recommendation() {
+        typealias Calibration = TriangulationService.Calibration
+        #expect(!TriangulationDataProvider.recommendsFitted(.default))
+        #expect(TriangulationDataProvider.recommendsFitted(Calibration(p1Km: -95, exponent: 3, samples: 9, r2: 0.5)))
+        #expect(!TriangulationDataProvider.recommendsFitted(Calibration(p1Km: -95, exponent: 3, samples: 9, r2: 0.1)))
+        #expect(!TriangulationDataProvider.recommendsFitted(
+            Calibration(p1Km: -95, exponent: 1.8, samples: 9, r2: 0.5, clamped: true)
+        ))
+    }
+
+    // MARK: - Solve and terrain seam
+
+    private struct StubTerrain: TriangulationTerrainSource {
+        func elevationSampler(
+            minLatitude: Double, minLongitude: Double, maxLatitude: Double, maxLongitude: Double
+        ) async -> TriangulationElevationSampler? {
+            { _, _ in 100 }
+        }
+    }
+
+    private func twoAnchors() -> [TriangulationAnchor] {
+        [(50.0, 9.0), (50.0, 9.3)].enumerated().map { index, position in
+            TriangulationAnchor(
+                nodeId: UInt32(index + 1), name: "A\(index)", latitude: position.0, longitude: position.1,
+                distanceKm: 10, positionErrorKm: 0, sigmaKm: 0, weightScale: 1, evidence: .rssi,
+                noiseFloorDefaulted: false, antennaHeightM: 2.5
+            )
+        }
+    }
+
+    @Test("Solving needs two RF anchors and uses terrain only when available")
+    func solveUsesTerrainSeam() async throws {
+        let anchors = twoAnchors()
+        #expect(await TriangulationDataProvider.solve(
+            targetId: Self.target, anchors: Array(anchors.prefix(1)), calibration: .default
+        ) == nil)
+
+        let flat = try #require(await TriangulationDataProvider.solve(
+            targetId: Self.target, anchors: anchors, calibration: .default
+        ))
+        #expect(!flat.usedTerrain)
+        #expect(flat.rfAnchorCount == 2)
+
+        let withTerrain = try #require(await TriangulationDataProvider.solve(
+            targetId: Self.target, anchors: anchors, calibration: .default, terrain: StubTerrain()
+        ))
+        #expect(withTerrain.usedTerrain)
+        // Flat terrain adds no excess loss: same estimate.
+        #expect(abs(withTerrain.estimate.lat - flat.estimate.lat) < 1e-9)
+        #expect(abs(withTerrain.estimate.lon - flat.estimate.lon) < 1e-9)
+    }
+
+    // MARK: - Map layer
+
+    @Test("Circles are closed and have the requested radius")
+    func circleGeometry() throws {
+        let points = TriangulationMapLayer.circle(latitude: 50, longitude: 9, radiusKm: 5)
+        #expect(points.count == 65)
+        let first = try #require(points.first)
+        let last = try #require(points.last)
+        #expect(first.latitude == last.latitude && first.longitude == last.longitude)
+        let kx = 111.320 * cos(50 * Double.pi / 180)
+        for point in points {
+            let dx = (point.longitude - 9) * kx, dy = (point.latitude - 50) * 110.574
+            #expect(abs(sqrt(dx * dx + dy * dy) - 5) < 1e-6)
+        }
+    }
+
+    @MainActor
+    @Test("The map store replaces a target's layer and keeps its colour")
+    func mapStore() async throws {
+        let store = TriangulationMapStore()
+        let outcome = try #require(await TriangulationDataProvider.solve(
+            targetId: Self.target, anchors: twoAnchors(), calibration: .default
+        ))
+        store.show(outcome, targetName: "Target")
+        let first = try #require(store.layers.first)
+        #expect(store.focusRevision == first.revision)
+        #expect(first.rings.count == 4)
+        #expect(first.anchorLabels.map(\.text) == ["A0: 10 km", "A1: 10 km"])
+        #expect(first.estimateLabel.hasPrefix("📍 ~Target (±"))
+
+        store.show(outcome, targetName: "Target")
+        #expect(store.layers.count == 1)
+        let second = try #require(store.layers.first)
+        #expect(second.revision > first.revision)
+        #expect(second.colorHex == first.colorHex)
+
+        store.consumeFocus(revision: second.revision)
+        #expect(store.focusRevision == nil)
+        store.remove(targetId: Self.target)
+        #expect(store.layers.isEmpty)
+    }
+}
