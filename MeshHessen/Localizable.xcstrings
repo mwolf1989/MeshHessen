@@ -23470,6 +23470,566 @@
           }
         }
       }
+    },
+    "If the node no longer connects, remove it under System Settings → Bluetooth and pair again." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbindet sich der Node nicht mehr, ihn unter Systemeinstellungen → Bluetooth entfernen und neu koppeln."
+          }
+        }
+      }
+    },
+    "Open the bootloader update guide" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anleitung zum Bootloader-Update öffnen"
+          }
+        }
+      }
+    },
+    "Bluetooth connection to the bootloader failed: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth-Verbindung zum Bootloader fehlgeschlagen: %@"
+          }
+        }
+      }
+    },
+    "Bluetooth is not available (%@)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth ist nicht verfügbar (%@)."
+          }
+        }
+      }
+    },
+    "Bluetooth operation failed: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth-Vorgang fehlgeschlagen: %@"
+          }
+        }
+      }
+    },
+    "Bluetooth operation timed out (%@)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeitüberschreitung beim Bluetooth-Vorgang (%@)."
+          }
+        }
+      }
+    },
+    "Bluetooth write to the OTA loader failed: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth-Schreibvorgang zum OTA-Loader fehlgeschlagen: %@"
+          }
+        }
+      }
+    },
+    "Bootloader found: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bootloader gefunden: %@"
+          }
+        }
+      }
+    },
+    "Bootloader protocol: Legacy DFU" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bootloader-Protokoll: Legacy-DFU"
+          }
+        }
+      }
+    },
+    "Bootloader protocol: Secure DFU" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bootloader-Protokoll: Secure-DFU"
+          }
+        }
+      }
+    },
+    "CRC-32 mismatch: expected %@, got %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CRC-32 stimmt nicht: erwartet %1$@, erhalten %2$@."
+          }
+        }
+      }
+    },
+    "Connected, but the device offers no OTA service (still in mesh mode, or a stale Bluetooth pairing)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbunden, aber das Gerät bietet keinen OTA-Dienst an (noch im Mesh-Modus oder veraltete Bluetooth-Kopplung)."
+          }
+        }
+      }
+    },
+    "Connecting to the bootloader (attempt %lld of %lld)…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbindung zum Bootloader (Versuch %1$lld von %2$lld)…"
+          }
+        }
+      }
+    },
+    "Connecting to the bootloader failed: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbindung zum Bootloader fehlgeschlagen: %@"
+          }
+        }
+      }
+    },
+    "DFU failed: %@ — the device stays in its bootloader; the update can be repeated (recovery mode)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DFU fehlgeschlagen: %@ – das Gerät bleibt im Bootloader; das Update kann wiederholt werden (Wiederherstellungsmodus)."
+          }
+        }
+      }
+    },
+    "DFU mode could not be triggered: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der DFU-Modus konnte nicht ausgelöst werden: %@"
+          }
+        }
+      }
+    },
+    "DFU package: %@ (%lld KB), init packet %lld bytes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DFU-Paket: %1$@ (%2$lld KB), Init-Paket %3$lld Bytes"
+          }
+        }
+      }
+    },
+    "DFU protocol error: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DFU-Protokollfehler: %@"
+          }
+        }
+      }
+    },
+    "Firmware transferred and verified by the OTA loader." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware übertragen und vom OTA-Loader geprüft."
+          }
+        }
+      }
+    },
+    "Firmware transferred over Bluetooth DFU. The device restarts with the new firmware." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware per Bluetooth-DFU übertragen. Das Gerät startet mit der neuen Firmware neu."
+          }
+        }
+      }
+    },
+    "Keep the device close to the Mac. The mesh connection is released and the Mac connects to the loader / bootloader over Bluetooth." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gerät in der Nähe des Macs halten. Die Mesh-Verbindung wird getrennt und der Mac verbindet sich per Bluetooth mit dem Loader / Bootloader."
+          }
+        }
+      }
+    },
+    "Legacy DFU bootloader version %lld is too old (need ≥ %lld) — update the bootloader first." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Legacy-DFU-Bootloader-Version %1$lld ist zu alt (benötigt ≥ %2$lld) – zuerst den Bootloader aktualisieren."
+          }
+        }
+      }
+    },
+    "Not connected to the OTA loader." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht mit dem OTA-Loader verbunden."
+          }
+        }
+      }
+    },
+    "Only for nRF52 devices." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur für nRF52-Geräte."
+          }
+        }
+      }
+    },
+    "Only while connected to the device over Bluetooth." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur bei Bluetooth-Verbindung zum Gerät."
+          }
+        }
+      }
+    },
+    "Retrying the upload (attempt %lld of %lld)…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upload wird wiederholt (Versuch %1$lld von %2$lld)…"
+          }
+        }
+      }
+    },
+    "Searching for the bootloader over Bluetooth…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suche den Bootloader per Bluetooth…"
+          }
+        }
+      }
+    },
+    "Sending the DFU init packet…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sende das DFU-Init-Paket…"
+          }
+        }
+      }
+    },
+    "Sending the device into its Bluetooth bootloader…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gerät wird in seinen Bluetooth-Bootloader geschickt…"
+          }
+        }
+      }
+    },
+    "The Bluetooth connection failed: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Bluetooth-Verbindung ist fehlgeschlagen: %@"
+          }
+        }
+      }
+    },
+    "The Bluetooth connection to the OTA loader was lost (%@)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Bluetooth-Verbindung zum OTA-Loader wurde unterbrochen (%@)."
+          }
+        }
+      }
+    },
+    "The Bluetooth connection was lost." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Bluetooth-Verbindung wurde unterbrochen."
+          }
+        }
+      }
+    },
+    "The Bluetooth device of the current connection is unknown. Connect to the node over Bluetooth first." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Bluetooth-Gerät der aktuellen Verbindung ist unbekannt. Zuerst per Bluetooth mit dem Node verbinden."
+          }
+        }
+      }
+    },
+    "The Bluetooth device was not found." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Bluetooth-Gerät wurde nicht gefunden."
+          }
+        }
+      }
+    },
+    "The Bluetooth link dropped during the upload at %lld of %lld bytes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Bluetooth-Verbindung brach beim Upload bei %1$lld von %2$lld Bytes ab."
+          }
+        }
+      }
+    },
+    "The OTA loader reported OK before the last chunk (size accounting mismatch)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der OTA-Loader meldete OK vor dem letzten Block (Größenzählung stimmt nicht)."
+          }
+        }
+      }
+    },
+    "The OTA loader was not found over Bluetooth. Make sure the device restarted into OTA mode and is close to the Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der OTA-Loader wurde per Bluetooth nicht gefunden. Sicherstellen, dass das Gerät in den OTA-Modus neu gestartet ist und sich in der Nähe des Macs befindet."
+          }
+        }
+      }
+    },
+    "The bootloader did not accept the start within 5 minutes; it boots the old firmware by itself. Try again." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Bootloader hat den Start innerhalb von 5 Minuten nicht angenommen; er startet die alte Firmware von selbst. Erneut versuchen."
+          }
+        }
+      }
+    },
+    "The bootloader did not answer in time (%@)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Bootloader hat nicht rechtzeitig geantwortet (%@)."
+          }
+        }
+      }
+    },
+    "The bootloader erases the application area (may take 30–60 s)…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Bootloader löscht den Anwendungsbereich (kann 30–60 s dauern)…"
+          }
+        }
+      }
+    },
+    "The bootloader holds an interrupted session — resetting it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Bootloader hält eine unterbrochene Sitzung – sie wird zurückgesetzt."
+          }
+        }
+      }
+    },
+    "The bootloader is stuck in an interrupted DFU session and could not be reset. Power-cycle the device and try again." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Bootloader steckt in einer unterbrochenen DFU-Sitzung und ließ sich nicht zurücksetzen. Gerät aus- und einschalten, dann erneut versuchen."
+          }
+        }
+      }
+    },
+    "The bootloader rejected the start (interrupted earlier session)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Bootloader hat den Start abgelehnt (unterbrochene frühere Sitzung)."
+          }
+        }
+      }
+    },
+    "The bootloader was not found over Bluetooth. If the device never entered DFU mode, a stale pairing may block the trigger: remove the device under System Settings → Bluetooth, pair it again and retry." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Bootloader wurde per Bluetooth nicht gefunden. Ist das Gerät nicht in den DFU-Modus gestartet, blockiert evtl. eine veraltete Kopplung: Gerät unter Systemeinstellungen → Bluetooth entfernen, neu koppeln und erneut versuchen."
+          }
+        }
+      }
+    },
+    "The device confirmed OTA mode, but the Bluetooth OTA service was unreachable after %lld attempts (%@). The device stays in OTA mode until it is restarted (reset button or a short power cycle) — then try again." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Gerät hat den OTA-Modus bestätigt, der Bluetooth-OTA-Dienst war aber nach %1$lld Versuchen nicht erreichbar (%2$@). Das Gerät bleibt im OTA-Modus, bis es neu gestartet wird (Reset-Taste oder Strom kurz trennen) – dann erneut versuchen."
+          }
+        }
+      }
+    },
+    "The device does not offer the Bluetooth characteristic %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Gerät bietet die Bluetooth-Charakteristik %@ nicht an."
+          }
+        }
+      }
+    },
+    "The device does not offer the Bluetooth service %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Gerät bietet den Bluetooth-Dienst %@ nicht an."
+          }
+        }
+      }
+    },
+    "The device offers no DFU service (neither Legacy 1530 nor Secure FE59)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Gerät bietet keinen DFU-Dienst an (weder Legacy 1530 noch Secure FE59)."
+          }
+        }
+      }
+    },
+    "The init packet is %lld bytes — this looks like a Secure DFU package; the Legacy bootloader would reject it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Init-Paket hat %lld Bytes – das sieht nach einem Secure-DFU-Paket aus; der Legacy-Bootloader würde es ablehnen."
+          }
+        }
+      }
+    },
+    "The mesh connection is released and the Mac connects to the device's OTA loader over Bluetooth. The loader verifies the SHA-256 hash before it activates the image; a failed or interrupted transfer leaves the old firmware on the device." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Mesh-Verbindung wird getrennt und der Mac verbindet sich per Bluetooth mit dem OTA-Loader des Geräts. Der Loader prüft den SHA-256-Hash, bevor er das Image aktiviert; eine fehlgeschlagene oder unterbrochene Übertragung lässt die alte Firmware auf dem Gerät."
+          }
+        }
+      }
+    },
+    "The mesh connection is released, the device restarts into its Bluetooth bootloader and the Mac sends the DFU package. Keep other devices in bootloader mode away from the Mac. If the transfer fails, the device stays in its bootloader and the update can be repeated in recovery mode." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Mesh-Verbindung wird getrennt, das Gerät startet in seinen Bluetooth-Bootloader neu und der Mac sendet das DFU-Paket. Andere Geräte im Bootloader-Modus vom Mac fernhalten. Schlägt die Übertragung fehl, bleibt das Gerät im Bootloader und das Update kann im Wiederherstellungsmodus wiederholt werden."
+          }
+        }
+      }
+    },
+    "This device usually ships with a bootloader that cannot update over Bluetooth. Update the bootloader once over USB before the first Bluetooth update — otherwise the DFU fails (the device stays usable)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Gerät wird meist mit einem Bootloader ausgeliefert, der kein Update über Bluetooth kann. Vor dem ersten Bluetooth-Update einmalig den Bootloader per USB aktualisieren – sonst schlägt die DFU fehl (das Gerät bleibt nutzbar)."
+          }
+        }
+      }
+    },
+    "This device usually ships with a bootloader that cannot update over Bluetooth. Update the bootloader once over USB before the first Bluetooth update." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Gerät wird meist mit einem Bootloader ausgeliefert, der kein Update über Bluetooth kann. Vor dem ersten Bluetooth-Update einmalig den Bootloader per USB aktualisieren."
+          }
+        }
+      }
+    },
+    "The transfer is still running. The bootloader is told to abort and stays in DFU mode; the update can be repeated in recovery mode (the bootloader starts the old firmware by itself after a few minutes)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Übertragung läuft noch. Der Bootloader wird zum Abbruch aufgefordert und bleibt im DFU-Modus; das Update kann im Wiederherstellungsmodus wiederholt werden (nach einigen Minuten startet der Bootloader die alte Firmware von selbst)."
+          }
+        }
+      }
+    },
+    "Updates the firmware of the connected node: ESP32 over Wi-Fi or Bluetooth, nRF52 over Bluetooth or its USB boot drive, RP2040 through its USB boot drive. Firmware comes from the official Meshtastic releases or from a local file." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktualisiert die Firmware des verbundenen Nodes: ESP32 per WLAN oder Bluetooth, nRF52 per Bluetooth oder über sein USB-Boot-Laufwerk, RP2040 über sein USB-Boot-Laufwerk. Die Firmware stammt aus den offiziellen Meshtastic-Releases oder aus einer lokalen Datei."
+          }
+        }
+      }
+    },
+    "No device connected. Recovery mode: a device that already shows its UF2 boot drive or advertises its Bluetooth DFU bootloader can still be flashed with a local file." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Gerät verbunden. Wiederherstellungsmodus: Ein Gerät, das bereits sein UF2-Boot-Laufwerk zeigt oder seinen Bluetooth-DFU-Bootloader anbietet, kann trotzdem mit einer lokalen Datei geflasht werden."
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
