@@ -894,6 +894,21 @@ final class SettingsService {
         }
     }
 
+    // MARK: - Terrain
+
+    /// 3D terrain with hillshading on the vector map (Mesh Hessen elevation tiles).
+    var mapTerrain3D: Bool {
+        get {
+            access(keyPath: \.mapTerrain3D)
+            return defaults.bool(forKey: "mapTerrain3D")
+        }
+        set {
+            withMutation(keyPath: \.mapTerrain3D) {
+                defaults.set(newValue, forKey: "mapTerrain3D")
+            }
+        }
+    }
+
     // MARK: - Messaging
 
     static let dmStyleWindow = "window"

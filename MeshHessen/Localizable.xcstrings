@@ -21510,6 +21510,26 @@
           }
         }
       }
+    },
+    "3D Terrain" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3D-Gelände"
+          }
+        }
+      }
+    },
+    "Elevation model on the vector map: 3D terrain with hillshading (Control-drag or right-drag to tilt and rotate). Coverage up to 52° N." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Höhenmodell auf der Vektorkarte: 3D-Gelände mit Schummerung (Ctrl-Ziehen oder Rechts-Ziehen zum Neigen und Drehen). Abdeckung bis 52° N."
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
