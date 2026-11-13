@@ -36,7 +36,7 @@ Generated on 2026-11-12 by a feature-gap audit of the Windows client against thi
 | [023](023-config-backup-restore.md) | Config backup / restore as JSON | P2 | M | MED | (001, 008) | DONE (reviewed) — merged into `main` from `feat/023-config-backup-restore` |
 | [024](024-firmware-foundation.md) | Firmware: catalog, download, file inspection, admin commands | P2 | L | LOW | 008, 002 | DONE (reviewed) — merged into `main` from `feat/024-firmware-foundation` |
 | [025](025-firmware-wizard-wifi-ota-uf2.md) | Firmware wizard + ESP32 Wi-Fi OTA + UF2 | P2 | L | **HIGH** | 024, 008, (023) | DONE (reviewed, **not hardware-tested**) — merged into `main` from `feat/025-firmware-wizard` |
-| [026](026-firmware-bluetooth-ota-and-nrf-dfu.md) | Firmware: ESP32 BLE OTA + nRF52 DFU | P3 | L | **HIGH** | 025 | TODO |
+| [026](026-firmware-bluetooth-ota-and-nrf-dfu.md) | Firmware: ESP32 BLE OTA + nRF52 DFU | P3 | L | **HIGH** | 025 | DONE (reviewed, **not hardware-tested**) — merged into `main` from `feat/026-firmware-ble` |
 | [027](027-environment-map-overlay.md) | Environment data on the map (boxes + heatmap) | P3 | L | MED | (013) | DONE (reviewed) — merged into `main` from `feat/027-environment-map-overlay` |
 | [028](028-terrain-link-profile-3d.md) | Terrain service, link elevation profile, 3D terrain | P3 | L | LOW–MED | (022) | DONE (reviewed) — merged into `main` from `feat/028-terrain-link-profile` |
 | [029](029-triangulation.md) | Position triangulation (easter egg) | P3 | L | LOW | 004, 022, (028) | DONE (reviewed) — merged into `main` from `feat/029-triangulation` |
@@ -127,6 +127,31 @@ Hardware checklist (a person, before release):
 11. Sandbox: writing to the picked boot drive and receiving UDP broadcasts on port 3232 both work. If either fails, report it — do not add a `/Volumes` exception.
 
 Learnings for 026: replace the `.laterVersion` entries in `FirmwareWizardLogic.availableMethods`; add `.bleOta` / `.bleDfu` branches in `FirmwareUpdateSession.run()` (currently `methodNotSupported`); reuse `Esp32WifiOtaUpdater.perform`'s request/answer/release pattern and `classifyNotification` (add a mode parameter for "BLE"); go through `beginFirmwareUpdate` / `disconnectForFirmwareUpdate` / `endFirmwareUpdate`, never the heartbeat directly; keep every method behind `canStart`; `disconnect()` stops the shared `bleService`, so the loader/DFU scan probably needs its own CoreBluetooth central; heavy synchronous I/O belongs in `Task.detached` (the target uses approachable concurrency).
+
+2026-11-13 (eighth wave) — plan 026 executed alone and reviewed with extra care (session branches, release points and exit paths read line by line). Merged cleanly (`feat/026-firmware-ble`). Coordinator fix: the Tools firmware description now names the Bluetooth methods. The combined result builds (`swift build`, `xcodebuild` Debug) and `swift test` passes with 791 tests in 101 suites. **No device was touched; a person must run the hardware checklist below before release.** With this, every plan in this folder is DONE.
+
+How it is wired:
+- Transports have no CoreBluetooth dependency (`Services/Firmware/Dfu/DfuProtocol.swift` with the `DfuGattLink` protocol, `LegacyDfuTransport`, `SecureDfuTransport`, `BleOtaTransport`) and are tested against a scripted `FakeDfuLink`. Only `BleGattLink.swift` imports CoreBluetooth; it uses its **own** `CBCentralManager`, never the mesh link's.
+- **ESP32 BLE OTA**: `ota_request(.otaBle)` → wait ≤ 6 s for the ClientNotification. Refusal or request not sent → link not released, update mode ends at the end of `run()`. Confirmation, silence, or a cancel during the wait → `linkReleased = true` (`markRebootRequested`) → release the mesh link → find the loader (service UUID or former peripheral) → `OTA <size> <sha>` → chunked writes, one notification per chunk → final OK.
+- **nRF52 DFU**: the mesh link is released (and counts as released) **before** the buttonless trigger (Secure FE59 first, then Legacy 1530) → bootloader scan → Secure or Legacy transfer with the Windows retry rules; ABORT/RESET is sent from a non-cancelled task on failure/cancel. Recovery mode (not connected) skips release and trigger.
+- Both methods sit behind the same `canStart` gate and confirmation alert as 025; the file is re-read off the main actor and re-hashed right before sending. No entitlement or Info.plist change was needed.
+- Deviations from Windows (deliberate fixes, all tested): Secure DFU ignores answers whose opcode does not match the pending command (a packet receipt at the end of an object looks like the checksum answer); sends PRN 1 to the device before resending lost bytes; refuses a device offset before the current object.
+- **Known risk to check on hardware**: macOS exposes no MAC address, so the bootloader scan matches FE59/1530, a name containing "dfu", or the former peripheral identifier. A nearby foreign device in bootloader mode could be picked; the confirmation text warns about this.
+
+Hardware checklist (a person, before release):
+1. ESP32-S3 BLE OTA over BLE, firmware ≥ 2.7.17: log shows "Firmware confirmed: Rebooting to BLE OTA", loader found, ERASING, upload %, final OK; Reconnect shows the new version; no auto-reconnect during the transfer. Note whether macOS connects to the unbonded loader or the old pairing must be removed first.
+2. Wrong hash / corrupted local file: `ERR Hash Mismatch` / Rejected gives a clear error, old firmware still runs.
+3. Link drop mid-transfer (power off, out of range): clear error, device recovers after reset; normal connect, heartbeat and auto-reconnect work after closing the wizard.
+4. Refusal while connected (e.g. no OTA partition): link stays up, debug log "Link supervision resumed".
+5. nRF52 Legacy DFU (RAK4631 or T-Echo, older Adafruit bootloader): buttonless trigger reboots it, bootloader found (check name and RSSI in the log), "Bootloader protocol: Legacy DFU", erase wait, upload, validate, reboot. Check the packet size used is a multiple of 4.
+6. nRF52 Secure DFU (FE59 bootloader, if available).
+7. Resume after a drop: Secure resumes from SELECT; Legacy retries the whole session with PRN 5.
+8. Device already in its bootloader, wizard opened without a connection: recovery DFU with a local `-ota.zip`.
+9. Cancel mid-transfer: RESET/ABORT in the log, bootloader stays in DFU, a second run works without a power cycle.
+10. Stale session: cancel during the erase, run again; expect "interrupted session — resetting it".
+11. Two devices in bootloader mode nearby: the right one is chosen — report if not.
+12. Hardware flagged `requiresBootloaderUpgradeForOta` shows the warning on the device and pre-flight pages.
+13. After each Bluetooth update: Reconnect works or the re-pair hint applies; manual connect works after closing without Reconnect.
 
 ## Suggested waves
 
