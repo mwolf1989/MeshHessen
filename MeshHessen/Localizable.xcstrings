@@ -18240,6 +18240,22 @@
           }
         }
       }
+    },
+    "AEAD-encrypted channel (firmware 2.8, experimental)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AEAD-verschlüsselter Kanal (Firmware 2.8, experimentell)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AEAD-encrypted channel (firmware 2.8, experimental)"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
