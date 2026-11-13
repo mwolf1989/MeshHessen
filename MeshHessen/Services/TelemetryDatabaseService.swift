@@ -65,6 +65,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         "health_telemetry",
         "traffic_telemetry",
         "pax_telemetry",
+        "soil_water_telemetry",
         "telemetry_samples",
         "traceroute_hops",
         "node_positions",
@@ -216,6 +217,8 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                 rainfall_24h REAL,
                 soil_moisture REAL,
                 soil_temperature REAL,
+                lightning_strike_count_1h REAL,
+                lightning_distance_km REAL,
                 is_day INTEGER DEFAULT 1
             );
             CREATE INDEX IF NOT EXISTS idx_envtel_node_time
@@ -291,6 +294,30 @@ final class TelemetryDatabaseService: @unchecked Sendable {
             CREATE INDEX IF NOT EXISTS idx_paxtel_node_time
                 ON pax_telemetry (node_id, timestamp);
 
+            CREATE TABLE IF NOT EXISTS soil_water_telemetry (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                node_id INTEGER NOT NULL,
+                timestamp REAL NOT NULL,
+                soil_ph REAL,
+                water_ph REAL,
+                electrical_conductivity REAL,
+                salinity REAL,
+                nitrogen REAL,
+                phosphorus REAL,
+                potassium REAL,
+                dissolved_oxygen REAL,
+                orp REAL,
+                chemical_oxygen_demand REAL,
+                biochemical_oxygen_demand REAL,
+                turbidity REAL,
+                nitrate REAL,
+                ammonium REAL,
+                solar_irradiance REAL,
+                is_day INTEGER DEFAULT 1
+            );
+            CREATE INDEX IF NOT EXISTS idx_soilwatertel_node_time
+                ON soil_water_telemetry (node_id, timestamp);
+
             CREATE TABLE IF NOT EXISTS telemetry_samples (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 node_id INTEGER NOT NULL,
@@ -359,6 +386,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                 "wind_lull": "REAL", "radiation": "REAL", "rainfall_1h": "REAL",
                 "rainfall_24h": "REAL", "soil_moisture": "REAL",
                 "soil_temperature": "REAL",
+                "lightning_strike_count_1h": "REAL", "lightning_distance_km": "REAL",
             ],
             on: db
         )
@@ -726,8 +754,8 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                          gas_resistance, voltage, current, iaq, distance, lux, white_lux, ir_lux,
                          uv_lux, wind_direction, wind_speed, weight, wind_gust, wind_lull,
                          radiation, rainfall_1h, rainfall_24h, soil_moisture, soil_temperature,
-                         is_day)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         lightning_strike_count_1h, lightning_distance_km, is_day)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     bindings: [
                         .integer(Int64(nodeId)), .double(ts), .optionalDouble(sample.temperature),
@@ -741,7 +769,9 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                         .optionalDouble(sample.windGust), .optionalDouble(sample.windLull),
                         .optionalDouble(sample.radiation), .optionalDouble(sample.rainfall1Hour),
                         .optionalDouble(sample.rainfall24Hours), .optionalDouble(sample.soilMoisture),
-                        .optionalDouble(sample.soilTemperature), .integer(Int64(isDay)),
+                        .optionalDouble(sample.soilTemperature),
+                        .optionalDouble(sample.lightningStrikeCount1Hour),
+                        .optionalDouble(sample.lightningDistance), .integer(Int64(isDay)),
                     ],
                     on: db
                 )
@@ -749,6 +779,47 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                     nodeId: nodeId,
                     timestamp: ts,
                     variant: "environment",
+                    values: values,
+                    isDay: isDay,
+                    on: db
+                )
+            }
+            if succeeded {
+                service.publishFreshTelemetry(nodeID: nodeId, timestamp: timestamp, values: values)
+            }
+        }
+    }
+
+    func insertSoilWaterTelemetry(
+        nodeId: UInt32,
+        timestamp: Date = Date(),
+        sample: SoilWaterTelemetrySample,
+        latitude: Double = 0,
+        longitude: Double = 0
+    ) {
+        let metrics = SoilWaterTelemetrySample.metrics
+        let values = sample.values
+        enqueueWrite { service, db in
+            let ts = timestamp.timeIntervalSince1970
+            let isDay = service.dayFlag(timestamp, latitude: latitude, longitude: longitude)
+            let columns = metrics.map(\.rawValue).joined(separator: ", ")
+            let placeholders = Array(repeating: "?", count: metrics.count + 3).joined(separator: ", ")
+            let bindings: [SQLiteBinding] = [.integer(Int64(nodeId)), .double(ts)]
+                + metrics.map { .optionalDouble(values[$0]) }
+                + [.integer(Int64(isDay))]
+            let succeeded = service.inTransaction(on: db) {
+                let inserted = service.run(
+                    """
+                    INSERT INTO soil_water_telemetry (node_id, timestamp, \(columns), is_day)
+                    VALUES (\(placeholders))
+                    """,
+                    bindings: bindings,
+                    on: db
+                )
+                return inserted && service.insertSamples(
+                    nodeId: nodeId,
+                    timestamp: ts,
+                    variant: "soil_water",
                     values: values,
                     isDay: isDay,
                     on: db
@@ -1529,6 +1600,7 @@ final class TelemetryDatabaseService: @unchecked Sendable {
                 UNION SELECT node_id FROM health_telemetry
                 UNION SELECT node_id FROM traffic_telemetry
                 UNION SELECT node_id FROM pax_telemetry
+                UNION SELECT node_id FROM soil_water_telemetry
                 UNION SELECT node_id FROM telemetry_samples
                 UNION SELECT source_node_id FROM traceroute_hops
                 UNION SELECT dest_node_id FROM traceroute_hops
@@ -1873,6 +1945,8 @@ final class TelemetryDatabaseService: @unchecked Sendable {
             .rainfall24Hours: sample.rainfall24Hours,
             .soilMoisture: sample.soilMoisture,
             .soilTemperature: sample.soilTemperature,
+            .lightningStrikeCount1Hour: sample.lightningStrikeCount1Hour,
+            .lightningDistance: sample.lightningDistance,
         ]
         return values.compactMapValues { $0 }
     }

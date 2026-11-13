@@ -60,7 +60,8 @@ struct TelemetryDashboardWidgetCard: View {
         .task(id: LoadKey(
             widget: widget,
             refreshToken: refreshToken,
-            knownNodeIDs: nodeNames.keys.sorted()
+            knownNodeIDs: nodeNames.keys.sorted(),
+            radiationInSievert: SettingsService.shared.radiationInSievert
         )) {
             await load()
         }
@@ -175,7 +176,8 @@ struct TelemetryDashboardWidgetCard: View {
         isLoading = true
         let loaded = await loader.load(
             widget: widget,
-            fallbackNodeIds: nodeNames.keys.sorted()
+            fallbackNodeIds: nodeNames.keys.sorted(),
+            radiationInSievert: SettingsService.shared.radiationInSievert
         )
         guard !Task.isCancelled else { return }
         snapshot = loaded
@@ -186,6 +188,7 @@ struct TelemetryDashboardWidgetCard: View {
         let widget: TelemetryDashboardWidget
         let refreshToken: Int
         let knownNodeIDs: [UInt32]
+        let radiationInSievert: Bool
     }
 }
 
@@ -398,7 +401,7 @@ private struct DashboardGauge: View {
     }
 
     private var range: ClosedRange<Double> {
-        if let configured = widget.effectiveDisplayRange { return configured }
+        if let configured = widget.displayedEffectiveRange { return configured }
         let values = points.map(\.value)
         let minimum = min(0, values.min() ?? 0)
         let maximum = values.max() ?? 1
@@ -423,7 +426,7 @@ private struct DashboardGauge: View {
                 .scaleEffect(1.35)
                 .padding(18)
 
-                Text(widget.metric.unit)
+                Text(widget.displayUnit)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text(
@@ -455,7 +458,7 @@ private struct DashboardStat: View {
                 Text(latest.value, format: .number.precision(.fractionLength(1)))
                     .font(.system(.largeTitle, design: .rounded).weight(.light))
                     .monospacedDigit()
-                Text(widget.metric.unit)
+                Text(widget.displayUnit)
                     .font(.headline)
                     .foregroundStyle(.secondary)
                 Text(
@@ -533,7 +536,7 @@ private struct DashboardHistogram: View {
                 )
                 .foregroundStyle(.green.gradient)
             }
-            .chartXAxisLabel(widget.metric.unit)
+            .chartXAxisLabel(widget.displayUnit)
             .chartYAxisLabel("Messungen")
             .modifier(DashboardHistogramScale(widget: widget))
         }
@@ -570,7 +573,7 @@ private struct DashboardCandlestick: View {
                     AxisValueLabel(format: .dateTime.day().month(.abbreviated))
                 }
             }
-            .chartYAxisLabel(widget.metric.unit)
+            .chartYAxisLabel(widget.displayUnit)
             .modifier(DashboardMetricScale(widget: widget))
         }
     }
@@ -634,7 +637,7 @@ private struct DashboardRanking: View {
                             Spacer()
                             Text(row.value, format: .number.precision(.fractionLength(1)))
                                 .font(.body.monospacedDigit())
-                            Text(widget.metric.unit)
+                            Text(widget.displayUnit)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -916,5 +919,21 @@ private extension TelemetryHealthState {
         case .warning: return String(localized: "Warning")
         case .alert: return String(localized: "Alert")
         }
+    }
+}
+
+// MARK: - Display Units
+
+private extension TelemetryDashboardWidget {
+    /// Unit matching the converted values in `TelemetryDashboardSnapshot`.
+    var displayUnit: String {
+        metric.displayUnit(radiationInSievert: SettingsService.shared.radiationInSievert)
+    }
+
+    /// User-entered ranges are already in the displayed unit; the metric's suggested
+    /// range is stored in the base unit and converted here.
+    var displayedEffectiveRange: ClosedRange<Double>? {
+        explicitDisplayRange
+            ?? metric.displaySuggestedRange(radiationInSievert: SettingsService.shared.radiationInSievert)
     }
 }

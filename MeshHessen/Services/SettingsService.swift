@@ -762,6 +762,19 @@ final class SettingsService {
         set { telemetryRetentionDays = newValue.rawValue }
     }
 
+    /// Display radiation in µSv/h instead of the stored µR/h (display only).
+    var radiationInSievert: Bool {
+        get {
+            access(keyPath: \.radiationInSievert)
+            return defaults.bool(forKey: "radiationInSievert")
+        }
+        set {
+            withMutation(keyPath: \.radiationInSievert) {
+                defaults.set(newValue, forKey: "radiationInSievert")
+            }
+        }
+    }
+
     var signalAnalysisWindowHours: Int {
         get {
             access(keyPath: \.signalAnalysisWindowHours)

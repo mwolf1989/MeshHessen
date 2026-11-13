@@ -261,6 +261,11 @@ struct TelemetryDatabaseParityTests {
             timestamp: timestamp,
             sample: PaxTelemetrySample(wifiCount: 2)
         )
+        database.insertSoilWaterTelemetry(
+            nodeId: nodeId,
+            timestamp: timestamp,
+            sample: SoilWaterTelemetrySample(values: [.soilPH: 6.5])
+        )
         database.insertTracerouteHops(
             requestId: 9,
             sourceNodeId: nodeId,
@@ -328,7 +333,7 @@ struct TelemetryDatabaseParityTests {
 
         #expect(try await database.clearAllTelemetry() == 0)
         #expect(database.schemaTableNames() == schemaBefore)
-        #expect(TelemetryDatabaseService.telemetryTableNames.count == 13)
+        #expect(TelemetryDatabaseService.telemetryTableNames.count == 14)
     }
 
     @Test("Known node IDs include telemetry and traceroute-only nodes without duplicates")
