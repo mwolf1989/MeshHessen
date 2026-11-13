@@ -1288,10 +1288,23 @@ final class MeshtasticProtocolService {
         )
         MessageLogger.shared.logDirectMessage(message, partnerName: message.from, partnerNodeId: entry.from)
         if hasAlertBell { triggerAlertBell(message) }
+        MessageNotificationService.shared.handleIncoming(
+            message,
+            conversation: String(localized: "Direct message"),
+            target: .directMessage(entry.from),
+            messageDate: entry.receivedAt,
+            isOwn: false,
+            isInitializing: isInitializing
+        )
         NotificationCenter.default.post(
             name: .incomingDirectMessage,
             object: nil,
-            userInfo: ["partnerId": entry.from, "message": message]
+            userInfo: [
+                "partnerId": entry.from,
+                "message": message,
+                "messageDate": entry.receivedAt,
+                "isInitializing": isInitializing,
+            ]
         )
         return true
     }
