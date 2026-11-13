@@ -58,6 +58,30 @@ struct LogDocument: FileDocument {
     }
 }
 
+// MARK: - Config Backup Document
+
+/// A `FileDocument` wrapping the JSON bytes of a `ConfigBackupFile`.
+struct ConfigBackupDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+
+    var data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        self.data = data
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
 // MARK: - Export Functions
 
 enum MeshExport {

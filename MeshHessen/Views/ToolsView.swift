@@ -17,6 +17,7 @@ struct ToolsView: View {
             Form {
                 virtualNodeSection
                 mqttProxySection
+                ConfigBackupSection()
                 if appState.connectionState.isConnected, let display = coordinator.protocol_.displayInfo {
                     displayMirrorSection(display)
                 }
