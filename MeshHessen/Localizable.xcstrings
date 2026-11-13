@@ -24030,6 +24030,16 @@
           }
         }
       }
+    },
+    "Guided firmware update: ESP32 over Wi-Fi or Bluetooth, nRF52 over Bluetooth DFU, nRF52 and RP2040 through their USB boot drive. Firmware from the official Stable/Alpha releases or a local file." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geführtes Firmware-Update: ESP32 über WLAN oder Bluetooth, nRF52 über Bluetooth-DFU, nRF52 und RP2040 über ihr USB-Boot-Laufwerk. Firmware aus den offiziellen Stable-/Alpha-Releases oder aus einer lokalen Datei."
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

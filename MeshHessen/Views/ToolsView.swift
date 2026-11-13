@@ -158,7 +158,7 @@ struct ToolsView: View {
             } label: {
                 Label("Download Firmware for Offline Use…", systemImage: "arrow.down.circle")
             }
-            Text("Guided firmware update: ESP32 over Wi-Fi, nRF52 and RP2040 through their USB boot drive. Firmware from the official Stable/Alpha releases or a local file.")
+            Text("Guided firmware update: ESP32 over Wi-Fi or Bluetooth, nRF52 over Bluetooth DFU, nRF52 and RP2040 through their USB boot drive. Firmware from the official Stable/Alpha releases or a local file.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
