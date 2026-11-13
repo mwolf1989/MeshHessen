@@ -289,6 +289,22 @@ final class AppCoordinator {
         AppLogger.shared.log("[Coordinator] Disconnect complete", debug: true)
     }
 
+    // MARK: - Direct message routing
+
+    /// Single entry point for "Send DM" / opening a conversation. Inline style:
+    /// switches to the Messages tab and selects the conversation in its sidebar;
+    /// window style: opens the DM window on that conversation.
+    func openDirectMessage(nodeId: UInt32, openWindow: OpenWindowAction) {
+        appState.ensureDMConversation(for: nodeId)
+        if SettingsService.shared.dmStyleIsInline {
+            appState.selectedTab = .messages
+            appState.messagesSidebarRequest = .directMessage(nodeId)
+        } else {
+            appState.dmTargetNodeId = nodeId
+            openWindow(id: "dm")
+        }
+    }
+
     // MARK: - Send messages
 
     func sendMessage(_ text: String, toChannelIndex: Int = 0, replyToPacketId: UInt32? = nil) async {
