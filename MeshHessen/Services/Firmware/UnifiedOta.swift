@@ -7,6 +7,20 @@ import Foundation
 /// firmware bytes; the loader answers `ACK` per receive-buffer drain (BLE) and a terminal `OK` once the
 /// whole image arrived and its hash verified, or `ERR Hash Mismatch`.
 enum UnifiedOta {
+    /// Which loader transport `ota_request` asks for (`OTAMode.otaWifi` / `.otaBle`).
+    enum Mode: Equatable, Sendable {
+        case wifi
+        case ble
+
+        /// Word the firmware's confirmation ("Rebooting to … OTA") must contain.
+        var confirmationKeyword: String {
+            switch self {
+            case .wifi: "WiFi"
+            case .ble: "BLE"
+            }
+        }
+    }
+
     enum Response: Equatable, Sendable {
         /// `OK`, optionally followed by loader details (`<hw> <fw> <rebootCount> <gitHash>`).
         case ok(details: String?)

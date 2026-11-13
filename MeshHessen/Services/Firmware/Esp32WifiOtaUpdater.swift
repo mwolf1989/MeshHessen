@@ -41,14 +41,15 @@ enum Esp32WifiOtaUpdater {
         case refused(String)
     }
 
-    /// nil for notifications unrelated to OTA; otherwise confirmation ("Rebooting to … WiFi …") or refusal.
-    static func classifyNotification(_ message: String) -> OtaRequestAnswer? {
+    /// nil for notifications unrelated to OTA; otherwise confirmation ("Rebooting to … WiFi …" for Wi-Fi,
+    /// "Rebooting to … BLE …" for Bluetooth) or refusal.
+    static func classifyNotification(_ message: String, mode: UnifiedOta.Mode = .wifi) -> OtaRequestAnswer? {
         let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.range(of: #"\bOTA\b"#, options: [.regularExpression, .caseInsensitive]) != nil else {
             return nil
         }
         let confirmed = text.range(of: "Rebooting to", options: [.caseInsensitive, .anchored]) != nil
-            && text.range(of: "WiFi", options: .caseInsensitive) != nil
+            && text.range(of: mode.confirmationKeyword, options: .caseInsensitive) != nil
         return confirmed ? .confirmed(text) : .refused(text)
     }
 

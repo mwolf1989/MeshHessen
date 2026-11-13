@@ -22,6 +22,12 @@ enum FirmwareTransferPhase: Equatable, Sendable {
     case waitingForDriveAccess
     case copying(Double)
     case waitingForReboot
+    case triggeringBootloader
+    case searchingBootloader
+    case connectingBootloader(attempt: Int, of: Int)
+    case preparingFlash
+    case sendingInitPacket
+    case retryingUpload(attempt: Int, of: Int)
 
     var text: String {
         switch self {
@@ -39,6 +45,12 @@ enum FirmwareTransferPhase: Equatable, Sendable {
         case .waitingForDriveAccess: String(localized: "Waiting for access to the boot drive…")
         case .copying: String(localized: "Copying firmware to the boot drive…")
         case .waitingForReboot: String(localized: "Waiting for the device to restart…")
+        case .triggeringBootloader: String(localized: "Sending the device into its Bluetooth bootloader…")
+        case .searchingBootloader: String(localized: "Searching for the bootloader over Bluetooth…")
+        case .connectingBootloader(let attempt, let total): String(localized: "Connecting to the bootloader (attempt \(attempt) of \(total))…")
+        case .preparingFlash: String(localized: "The bootloader erases the application area (may take 30–60 s)…")
+        case .sendingInitPacket: String(localized: "Sending the DFU init packet…")
+        case .retryingUpload(let attempt, let total): String(localized: "Retrying the upload (attempt \(attempt) of \(total))…")
         }
     }
 
