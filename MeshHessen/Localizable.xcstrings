@@ -21860,6 +21860,1616 @@
           }
         }
       }
+    },
+    "Backing up the configuration…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konfiguration wird gesichert…"
+          }
+        }
+      }
+    },
+    "Asking the device to start its OTA loader…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gerät wird gebeten, den OTA-Loader zu starten…"
+          }
+        }
+      }
+    },
+    "Asking the device to start its bootloader…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gerät wird gebeten, den Bootloader zu starten…"
+          }
+        }
+      }
+    },
+    "Releasing the connection to the device…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbindung zum Gerät wird freigegeben…"
+          }
+        }
+      }
+    },
+    "Searching for the OTA loader on the network…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OTA-Loader wird im Netzwerk gesucht…"
+          }
+        }
+      }
+    },
+    "Connecting to the OTA loader (attempt %lld of %lld)…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbinde mit dem OTA-Loader (Versuch %1$lld von %2$lld)…"
+          }
+        }
+      }
+    },
+    "Starting the OTA transfer…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OTA-Übertragung wird gestartet…"
+          }
+        }
+      }
+    },
+    "The device is erasing its update partition…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Gerät löscht seine Update-Partition…"
+          }
+        }
+      }
+    },
+    "Transferring firmware…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware wird übertragen…"
+          }
+        }
+      }
+    },
+    "Waiting for the device to verify the firmware…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warte auf die Prüfung der Firmware durch das Gerät…"
+          }
+        }
+      }
+    },
+    "Waiting for the boot drive to appear…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warte auf das Boot-Laufwerk…"
+          }
+        }
+      }
+    },
+    "Waiting for access to the boot drive…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warte auf Zugriff auf das Boot-Laufwerk…"
+          }
+        }
+      }
+    },
+    "Copying firmware to the boot drive…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware wird auf das Boot-Laufwerk kopiert…"
+          }
+        }
+      }
+    },
+    "Waiting for the device to restart…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warte auf Neustart des Geräts…"
+          }
+        }
+      }
+    },
+    "Available in a later version." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In einer späteren Version verfügbar."
+          }
+        }
+      }
+    },
+    "Upgrade" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktualisierung"
+          }
+        }
+      }
+    },
+    "Same version (reinstall)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gleiche Version (Neuinstallation)"
+          }
+        }
+      }
+    },
+    "Downgrade" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downgrade"
+          }
+        }
+      }
+    },
+    "Version comparison not possible" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versionsvergleich nicht möglich"
+          }
+        }
+      }
+    },
+    "Requires a connected device." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfordert ein verbundenes Gerät."
+          }
+        }
+      }
+    },
+    "Only for ESP32 devices." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur für ESP32-Geräte."
+          }
+        }
+      }
+    },
+    "Requires firmware 2.7.17 or newer on the device." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfordert Firmware 2.7.17 oder neuer auf dem Gerät."
+          }
+        }
+      }
+    },
+    "Wi-Fi must be enabled and configured on the device." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WLAN muss auf dem Gerät aktiviert und konfiguriert sein."
+          }
+        }
+      }
+    },
+    "Only for nRF52 and RP2040 devices." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur für nRF52- und RP2040-Geräte."
+          }
+        }
+      }
+    },
+    "No firmware catalog available (offline and no cache)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Firmware-Katalog verfügbar (offline und kein Cache)."
+          }
+        }
+      }
+    },
+    "Firmware catalog from cache (%@)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware-Katalog aus dem Cache (%@)."
+          }
+        }
+      }
+    },
+    "Firmware catalog loaded online." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware-Katalog online geladen."
+          }
+        }
+      }
+    },
+    "This device type is not actively supported by Meshtastic." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Gerätetyp wird von Meshtastic nicht aktiv unterstützt."
+          }
+        }
+      }
+    },
+    "The selected method cannot be used: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der gewählte Übertragungsweg ist nicht nutzbar: %@"
+          }
+        }
+      }
+    },
+    "Firmware file %@, %lld KB, SHA-256 %@…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware-Datei %1$@, %2$lld KB, SHA-256 %3$@…"
+          }
+        }
+      }
+    },
+    "The firmware file has not been checked." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Firmware-Datei wurde nicht geprüft."
+          }
+        }
+      }
+    },
+    "No firmware file selected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Firmware-Datei gewählt."
+          }
+        }
+      }
+    },
+    "The release lists no build for “%@”." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Release enthält keinen Build für „%@“."
+          }
+        }
+      }
+    },
+    "Firmware %@ → %@: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware %1$@ → %2$@: %3$@"
+          }
+        }
+      }
+    },
+    "Power: external supply." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stromversorgung: extern."
+          }
+        }
+      }
+    },
+    "Battery at %lld %% and not on external power — charge the device before updating." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akku bei %lld %% und keine externe Stromversorgung – Gerät vor dem Update laden."
+          }
+        }
+      }
+    },
+    "Battery at %lld %%." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akku bei %lld %%."
+          }
+        }
+      }
+    },
+    "Mac and device must be on the same Wi-Fi network." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac und Gerät müssen im selben WLAN sein."
+          }
+        }
+      }
+    },
+    "The device appears as a USB drive; you will be asked to select it so the firmware can be copied." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Gerät erscheint als USB-Laufwerk; du wirst gebeten, es auszuwählen, damit die Firmware kopiert werden kann."
+          }
+        }
+      }
+    },
+    "No device connected: recovery mode. Put the device into its bootloader manually (double-press reset)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Gerät verbunden: Wiederherstellungsmodus. Gerät manuell in den Bootloader versetzen (Reset-Taste zweimal drücken)."
+          }
+        }
+      }
+    },
+    "The pre-flight check has not passed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Prüfung vor dem Start ist nicht bestanden."
+          }
+        }
+      }
+    },
+    "The bootloader request could not be sent to the device." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Bootloader-Anforderung konnte nicht an das Gerät gesendet werden."
+          }
+        }
+      }
+    },
+    "The firmware file changed after the check. Run the check again." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Firmware-Datei hat sich nach der Prüfung geändert. Bitte erneut prüfen."
+          }
+        }
+      }
+    },
+    "This update method is not available in this version." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Übertragungsweg ist in dieser Version nicht verfügbar."
+          }
+        }
+      }
+    },
+    "The configuration backup failed, nothing was sent to the device: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Konfigurationssicherung ist fehlgeschlagen, es wurde nichts an das Gerät gesendet: %@"
+          }
+        }
+      }
+    },
+    "No method selected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Übertragungsweg gewählt."
+          }
+        }
+      }
+    },
+    "Download failed: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download fehlgeschlagen: %@"
+          }
+        }
+      }
+    },
+    "The device type is unknown; no firmware can be selected for it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Gerätetyp ist unbekannt; dafür kann keine Firmware gewählt werden."
+          }
+        }
+      }
+    },
+    "Configuration backup saved: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konfigurations-Backup gespeichert: %@"
+          }
+        }
+      }
+    },
+    "Firmware transferred and verified. The device restarts with the new firmware." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware übertragen und geprüft. Das Gerät startet mit der neuen Firmware neu."
+          }
+        }
+      }
+    },
+    "Firmware copied. The device restarts with the new firmware." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware kopiert. Das Gerät startet mit der neuen Firmware neu."
+          }
+        }
+      }
+    },
+    "Done." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fertig."
+          }
+        }
+      }
+    },
+    "Boot drive detected: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Boot-Laufwerk erkannt: %@"
+          }
+        }
+      }
+    },
+    "Boot drive detached — firmware taken by the bootloader." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Boot-Laufwerk getrennt – der Bootloader hat die Firmware übernommen."
+          }
+        }
+      }
+    },
+    "The firmware file is empty." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Firmware-Datei ist leer."
+          }
+        }
+      }
+    },
+    "The OTA request could not be sent to the device." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die OTA-Anforderung konnte nicht an das Gerät gesendet werden."
+          }
+        }
+      }
+    },
+    "The device refused to enter OTA mode: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Gerät lehnt den OTA-Modus ab: %@"
+          }
+        }
+      }
+    },
+    "The OTA loader was not found on the network. Mac and device must be on the same Wi-Fi network." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der OTA-Loader wurde im Netzwerk nicht gefunden. Mac und Gerät müssen im selben WLAN sein."
+          }
+        }
+      }
+    },
+    "Could not connect to the OTA loader after %lld attempts: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Verbindung zum OTA-Loader nach %1$lld Versuchen: %2$@"
+          }
+        }
+      }
+    },
+    "Timed out waiting for the OTA loader (%@)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeitüberschreitung beim Warten auf den OTA-Loader (%@)."
+          }
+        }
+      }
+    },
+    "The OTA loader closed the connection." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der OTA-Loader hat die Verbindung geschlossen."
+          }
+        }
+      }
+    },
+    "The OTA loader rejected the firmware hash." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der OTA-Loader lehnt den Firmware-Hash ab. Gerät neu starten und erneut versuchen."
+          }
+        }
+      }
+    },
+    "The firmware hash did not match after the transfer. The device keeps its old firmware." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hash-Prüfung nach der Übertragung fehlgeschlagen. Das Gerät behält seine alte Firmware."
+          }
+        }
+      }
+    },
+    "The OTA loader reported an error: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der OTA-Loader meldet einen Fehler: %@"
+          }
+        }
+      }
+    },
+    "Unexpected answer from the OTA loader: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unerwartete Antwort des OTA-Loaders: %@"
+          }
+        }
+      }
+    },
+    "connect to %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbindung zu %@"
+          }
+        }
+      }
+    },
+    "Firmware refused OTA: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware lehnt OTA ab: %@"
+          }
+        }
+      }
+    },
+    "Firmware confirmed: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware bestätigt: %@"
+          }
+        }
+      }
+    },
+    "No confirmation from the firmware — continuing (older firmware is silent)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Bestätigung der Firmware – fahre fort (ältere Firmware antwortet nicht)."
+          }
+        }
+      }
+    },
+    "OTA loader found at %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OTA-Loader gefunden unter %@."
+          }
+        }
+      }
+    },
+    "No loader beacon — using the known host %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Loader-Beacon – verwende den bekannten Host %@."
+          }
+        }
+      }
+    },
+    "No UF2 boot drive appeared. Double-press the device's reset button to start the bootloader manually and try again." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es ist kein UF2-Boot-Laufwerk erschienen. Reset-Taste des Geräts zweimal drücken, um den Bootloader manuell zu starten, und erneut versuchen."
+          }
+        }
+      }
+    },
+    "Access to the boot drive was not granted." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Zugriff auf das Boot-Laufwerk wurde nicht erlaubt."
+          }
+        }
+      }
+    },
+    "“%@” is not a UF2 boot drive (INFO_UF2.TXT is missing)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„%@“ ist kein UF2-Boot-Laufwerk (INFO_UF2.TXT fehlt)."
+          }
+        }
+      }
+    },
+    "Copying the firmware to the boot drive failed: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kopieren der Firmware auf das Boot-Laufwerk fehlgeschlagen: %@"
+          }
+        }
+      }
+    },
+    "The boot drive “%@” is still mounted after the copy — the device did not take the firmware." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Boot-Laufwerk „%@“ ist nach dem Kopieren noch eingebunden – das Gerät hat die Firmware nicht übernommen."
+          }
+        }
+      }
+    },
+    "Select the boot drive of the device to allow copying the firmware" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle das Boot-Laufwerk des Geräts aus, um das Kopieren der Firmware zu erlauben"
+          }
+        }
+      }
+    },
+    "cannot create %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kann nicht angelegt werden"
+          }
+        }
+      }
+    },
+    "Allow" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erlauben"
+          }
+        }
+      }
+    },
+    "Start the firmware update?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware-Update starten?"
+          }
+        }
+      }
+    },
+    "Start Update" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update starten"
+          }
+        }
+      }
+    },
+    "Cancel the transfer?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Übertragung abbrechen?"
+          }
+        }
+      }
+    },
+    "Cancel Transfer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Übertragung abbrechen"
+          }
+        }
+      }
+    },
+    "Continue" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fortfahren"
+          }
+        }
+      }
+    },
+    "The transfer is still running. An ESP32 keeps its old firmware as long as the loader has not activated the new image. A UF2 bootloader stays on its drive; the copy can be repeated." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Übertragung läuft noch. Ein ESP32 behält seine alte Firmware, solange der Loader das neue Image nicht aktiviert hat. Ein UF2-Bootloader bleibt als Laufwerk aktiv; das Kopieren kann wiederholt werden."
+          }
+        }
+      }
+    },
+    "Firmware Update" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware-Update"
+          }
+        }
+      }
+    },
+    "Device & Catalog" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gerät & Katalog"
+          }
+        }
+      }
+    },
+    "Transfer Method" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Übertragungsweg"
+          }
+        }
+      }
+    },
+    "Choose Firmware" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware wählen"
+          }
+        }
+      }
+    },
+    "Check & Start" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prüfung & Start"
+          }
+        }
+      }
+    },
+    "Transfer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Übertragung"
+          }
+        }
+      }
+    },
+    "Finished" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fertig"
+          }
+        }
+      }
+    },
+    "Cancel Transfer…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Übertragung abbrechen…"
+          }
+        }
+      }
+    },
+    "Start Update…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update starten…"
+          }
+        }
+      }
+    },
+    "The device restarts into its update mode. Keep it powered and connected, and do not close the assistant until the transfer has finished." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Gerät startet in seinen Update-Modus neu. Gerät mit Strom versorgt und verbunden lassen und den Assistenten erst nach Abschluss der Übertragung schließen."
+          }
+        }
+      }
+    },
+    "The OTA loader verifies the SHA-256 hash before it activates the image; a failed or interrupted transfer leaves the old firmware on the device." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der OTA-Loader prüft den SHA-256-Hash, bevor er das Image aktiviert; eine fehlgeschlagene oder abgebrochene Übertragung lässt die alte Firmware auf dem Gerät."
+          }
+        }
+      }
+    },
+    "The UF2 bootloader stays on its drive until it received a complete image; an interrupted copy can be repeated." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der UF2-Bootloader bleibt als Laufwerk aktiv, bis er ein vollständiges Image erhalten hat; ein abgebrochenes Kopieren kann wiederholt werden."
+          }
+        }
+      }
+    },
+    "Updates the firmware of the connected node: ESP32 over Wi-Fi, nRF52 and RP2040 through their USB boot drive. Firmware comes from the official Meshtastic releases or from a local file." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktualisiert die Firmware des verbundenen Nodes: ESP32 per WLAN, nRF52 und RP2040 über ihr USB-Boot-Laufwerk. Die Firmware stammt aus den offiziellen Meshtastic-Releases oder aus einer lokalen Datei."
+          }
+        }
+      }
+    },
+    "Architecture" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Architektur"
+          }
+        }
+      }
+    },
+    "Build target" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Build-Ziel"
+          }
+        }
+      }
+    },
+    "No device connected. Recovery mode: a device that already shows its UF2 boot drive can still be flashed with a local file." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Gerät verbunden. Wiederherstellungsmodus: Ein Gerät, das bereits sein UF2-Boot-Laufwerk zeigt, kann mit einer lokalen Datei geflasht werden."
+          }
+        }
+      }
+    },
+    "This hardware model is not in the catalog. File name and chip checks use the build target the device reports." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Hardware-Modell ist nicht im Katalog. Dateinamen- und Chip-Prüfung nutzen das vom Gerät gemeldete Build-Ziel."
+          }
+        }
+      }
+    },
+    "This device is no longer actively supported by Meshtastic; new releases may not contain a build for it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Gerät wird von Meshtastic nicht mehr aktiv unterstützt; neue Releases enthalten eventuell keinen Build dafür."
+          }
+        }
+      }
+    },
+    "Loading firmware catalog…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware-Katalog wird geladen…"
+          }
+        }
+      }
+    },
+    "Refresh Catalog" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Katalog aktualisieren"
+          }
+        }
+      }
+    },
+    "(disconnected)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(getrennt)"
+          }
+        }
+      }
+    },
+    "No firmware catalog available — only local files can be used." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Firmware-Katalog verfügbar – nur lokale Dateien sind möglich."
+          }
+        }
+      }
+    },
+    "Catalog from cache (%@)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Katalog aus dem Cache (%@)"
+          }
+        }
+      }
+    },
+    "Catalog loaded online" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Katalog online geladen"
+          }
+        }
+      }
+    },
+    "Choose how the firmware reaches the device. Unavailable methods show the reason. The mesh connection is released during the update." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle, wie die Firmware zum Gerät kommt. Nicht verfügbare Wege zeigen den Grund. Die Mesh-Verbindung wird während des Updates getrennt."
+          }
+        }
+      }
+    },
+    "Wi-Fi OTA (ESP32)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WLAN-OTA (ESP32)"
+          }
+        }
+      }
+    },
+    "Bluetooth OTA (ESP32)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth-OTA (ESP32)"
+          }
+        }
+      }
+    },
+    "Bluetooth DFU (nRF52)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth-DFU (nRF52)"
+          }
+        }
+      }
+    },
+    "USB drive (UF2, nRF52/RP2040)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "USB-Laufwerk (UF2, nRF52/RP2040)"
+          }
+        }
+      }
+    },
+    "The device restarts into its OTA loader and receives the firmware over TCP port 3232. The loader checks the SHA-256 hash. Requires Wi-Fi configured on the node and the Mac on the same network." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Gerät startet in den OTA-Loader und empfängt die Firmware über TCP-Port 3232. Der Loader prüft den SHA-256-Hash. Voraussetzung: WLAN auf dem Node konfiguriert, Mac im selben Netz."
+          }
+        }
+      }
+    },
+    "The device restarts into its OTA loader and receives the firmware over Bluetooth LE." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Gerät startet in den OTA-Loader und empfängt die Firmware über Bluetooth LE."
+          }
+        }
+      }
+    },
+    "Nordic DFU through the Adafruit bootloader over Bluetooth." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nordic-DFU über den Adafruit-Bootloader per Bluetooth."
+          }
+        }
+      }
+    },
+    "The device restarts as a USB drive (bootloader); the .uf2 file is copied onto it. The safest way — a USB cable is required." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Gerät startet als USB-Laufwerk (Bootloader); die .uf2-Datei wird darauf kopiert. Der sicherste Weg – ein USB-Kabel ist erforderlich."
+          }
+        }
+      }
+    },
+    "ESP32 over USB is not supported here. Configure Wi-Fi on the device, or use the Meshtastic web flasher in Chrome or Edge." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ESP32 über USB wird hier nicht unterstützt. WLAN auf dem Gerät konfigurieren oder den Meshtastic-Web-Flasher in Chrome oder Edge verwenden."
+          }
+        }
+      }
+    },
+    "Open flasher.meshtastic.org" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "flasher.meshtastic.org öffnen"
+          }
+        }
+      }
+    },
+    "Stable" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stabil"
+          }
+        }
+      }
+    },
+    "Alpha / pre-release" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alpha / Vorabversion"
+          }
+        }
+      }
+    },
+    "Local file" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lokale Datei"
+          }
+        }
+      }
+    },
+    "Download Firmware for Offline Use…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware vorab laden…"
+          }
+        }
+      }
+    },
+    "Alpha builds are pre-releases — bugs and incompatibilities in the mesh are possible." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alpha-Builds sind Vorabversionen – Fehler und Inkompatibilitäten im Mesh sind möglich."
+          }
+        }
+      }
+    },
+    "No releases available." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Releases verfügbar."
+          }
+        }
+      }
+    },
+    "Offline — releases come from the cache. Only entries marked “available offline” already contain the file for this device." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline – die Releases stammen aus dem Cache. Nur Einträge mit „offline verfügbar“ enthalten bereits die Datei für dieses Gerät."
+          }
+        }
+      }
+    },
+    "Release" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release"
+          }
+        }
+      }
+    },
+    "Release Notes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versionshinweise"
+          }
+        }
+      }
+    },
+    "No release notes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Versionshinweise."
+          }
+        }
+      }
+    },
+    "Open Release Page" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release-Seite öffnen"
+          }
+        }
+      }
+    },
+    "Choose File…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datei wählen…"
+          }
+        }
+      }
+    },
+    "No file selected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Datei gewählt"
+          }
+        }
+      }
+    },
+    "The release contains a build for “%@”." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Release enthält einen Build für „%@“."
+          }
+        }
+      }
+    },
+    "Build target: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Build-Ziel: %@"
+          }
+        }
+      }
+    },
+    "available offline" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "offline verfügbar"
+          }
+        }
+      }
+    },
+    "The firmware is downloaded or read and checked. Red entries prevent the start; yellow entries are warnings." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Firmware wird geladen bzw. gelesen und geprüft. Rote Einträge verhindern den Start; gelbe sind Warnungen."
+          }
+        }
+      }
+    },
+    "Downloading firmware…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware wird geladen…"
+          }
+        }
+      }
+    },
+    "Back up the device configuration first (saved in the app's firmware folder; contains channel keys)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gerätekonfiguration vorher sichern (im Firmware-Ordner der App; enthält Kanal-Schlüssel)"
+          }
+        }
+      }
+    },
+    "Firmware updates are at your own risk. The assistant checks what can be checked on the Mac; power loss, radio dropouts or an unsuitable bootloader can still make a manual recovery necessary." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware-Updates erfolgen auf eigene Gefahr. Der Assistent prüft, was sich am Mac prüfen lässt; Stromausfall, Funkabbrüche oder ein ungeeigneter Bootloader können trotzdem eine manuelle Wiederherstellung nötig machen."
+          }
+        }
+      }
+    },
+    "Transfer in progress — do not switch off or disconnect the device!" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Übertragung läuft – Gerät nicht ausschalten oder trennen!"
+          }
+        }
+      }
+    },
+    "If the device already shows its boot drive, select it manually." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeigt das Gerät sein Boot-Laufwerk bereits an, kann es manuell ausgewählt werden."
+          }
+        }
+      }
+    },
+    "Choose Boot Drive…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Boot-Laufwerk wählen…"
+          }
+        }
+      }
+    },
+    "Update failed: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update fehlgeschlagen: %@"
+          }
+        }
+      }
+    },
+    "Cancelled by the user." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vom Benutzer abgebrochen."
+          }
+        }
+      }
+    },
+    "Configuration backup: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konfigurations-Backup: %@"
+          }
+        }
+      }
+    },
+    "Show in Finder" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Im Finder zeigen"
+          }
+        }
+      }
+    },
+    "Reconnect" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neu verbinden"
+          }
+        }
+      }
+    },
+    "Reconnecting and waiting for the device…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbinde neu und warte auf das Gerät…"
+          }
+        }
+      }
+    },
+    "Connected — firmware %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbunden – Firmware %@"
+          }
+        }
+      }
+    },
+    "The device did not answer within 120 seconds. Check it and connect manually." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Gerät hat nicht innerhalb von 120 Sekunden geantwortet. Bitte prüfen und manuell verbinden."
+          }
+        }
+      }
+    },
+    "Log" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protokoll"
+          }
+        }
+      }
+    },
+    "Download Firmware for Offline Use" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware vorab laden"
+          }
+        }
+      }
+    },
+    "While online, download the firmware for every device type you want to update later without a network. The assistant finds the files in its cache and marks those releases as available offline." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit Internetverbindung die Firmware für alle Gerätetypen laden, die später ohne Netz aktualisiert werden sollen. Der Assistent findet die Dateien in seinem Cache und markiert diese Releases als offline verfügbar."
+          }
+        }
+      }
+    },
+    "Filter device types" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gerätetypen filtern"
+          }
+        }
+      }
+    },
+    "Show Firmware Folder" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware-Ordner zeigen"
+          }
+        }
+      }
+    },
+    "Device catalog not available — downloading in advance needs an internet connection." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gerätekatalog nicht verfügbar – zum Vorab-Laden wird eine Internetverbindung benötigt."
+          }
+        }
+      }
+    },
+    "Downloading %@ – %@ (%@)…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lade %1$@ – %2$@ (%3$@)…"
+          }
+        }
+      }
+    },
+    "Finished: %lld file(s) downloaded, %lld not available." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fertig: %1$lld Datei(en) geladen, %2$lld nicht verfügbar."
+          }
+        }
+      }
+    },
+    "Firmware Update Assistant…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware-Update-Assistent…"
+          }
+        }
+      }
+    },
+    "Guided firmware update: ESP32 over Wi-Fi, nRF52 and RP2040 through their USB boot drive. Firmware from the official Stable/Alpha releases or a local file." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geführtes Firmware-Update: ESP32 per WLAN, nRF52 und RP2040 über ihr USB-Boot-Laufwerk. Firmware aus den offiziellen Stable-/Alpha-Releases oder aus einer lokalen Datei."
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
