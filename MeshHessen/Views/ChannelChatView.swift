@@ -8,6 +8,7 @@ struct ChannelChatView: View {
 
     let channelIndex: Int
     @State private var messageText = ""
+    @State private var showFormatToolbar = false
     @State private var isSending = false
     @State private var isLoadingOlder = false
     @State private var hasMoreHistory = true
@@ -129,6 +130,10 @@ struct ChannelChatView: View {
                     }
                 }
 
+                if showFormatToolbar {
+                    MessageFormatToolbar(text: $messageText)
+                }
+
                 HStack(spacing: 8) {
                     if !kioskState.isFeatureLocked(.sos) {
                         Button {
@@ -146,6 +151,8 @@ struct ChannelChatView: View {
                         .help("Send SOS broadcast on this channel")
                         .disabled(!appState.protocolReady || isSending)
                     }
+
+                    MessageFormatToggleButton(isExpanded: $showFormatToolbar)
 
                     TextField("Message…", text: $messageText, axis: .vertical)
                         .textFieldStyle(.roundedBorder)

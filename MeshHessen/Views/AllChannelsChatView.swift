@@ -8,6 +8,7 @@ struct AllChannelsChatView: View {
     @State private var kioskState = KioskState.shared
     @State private var sendChannelIndex = 0
     @State private var messageText = ""
+    @State private var showFormatToolbar = false
     @State private var isSending = false
     @State private var showSOSConfirmation = false
     @State private var replyingTo: MessageItem?
@@ -94,6 +95,10 @@ struct AllChannelsChatView: View {
                     }
                 }
 
+                if showFormatToolbar {
+                    MessageFormatToolbar(text: $messageText)
+                }
+
                 HStack(spacing: 8) {
                     Picker("Send on", selection: $sendChannelIndex) {
                         ForEach(appState.channels) { channel in
@@ -108,6 +113,8 @@ struct AllChannelsChatView: View {
                             .tint(.red)
                             .disabled(!appState.protocolReady || isSending)
                     }
+
+                    MessageFormatToggleButton(isExpanded: $showFormatToolbar)
 
                     TextField("Message…", text: $messageText, axis: .vertical)
                         .lineLimit(1...6)
