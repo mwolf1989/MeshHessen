@@ -11,6 +11,8 @@ struct ToolsView: View {
     @State private var settings = SettingsService.shared
     @State private var showTDeckWizard = false
     @State private var showTileExport = false
+    @State private var showFirmwareWizard = false
+    @State private var showFirmwarePrefetch = false
 
     var body: some View {
         NavigationStack {
@@ -21,6 +23,7 @@ struct ToolsView: View {
                 if appState.connectionState.isConnected, let display = coordinator.protocol_.displayInfo {
                     displayMirrorSection(display)
                 }
+                firmwareSection
                 tDeckSection
             }
             .formStyle(.grouped)
@@ -37,6 +40,12 @@ struct ToolsView: View {
         }
         .sheet(isPresented: $showTileExport) {
             TDeckWizardView(startAtExport: true)
+        }
+        .sheet(isPresented: $showFirmwareWizard) {
+            FirmwareUpdateWizardView()
+        }
+        .sheet(isPresented: $showFirmwarePrefetch) {
+            FirmwarePrefetchSheet(catalog: nil, preselect: nil)
         }
         .onChange(of: settings.virtualNodeEnabled) { _, _ in applySettings() }
         .onChange(of: settings.virtualNodePort) { _, _ in applySettings() }
@@ -134,6 +143,24 @@ struct ToolsView: View {
         case .eink: return " · E-Ink"
         case .hub75: return " · HUB75"
         default: return ""
+        }
+    }
+
+    private var firmwareSection: some View {
+        Section("Firmware") {
+            Button {
+                showFirmwareWizard = true
+            } label: {
+                Label("Firmware Update Assistant…", systemImage: "arrow.up.circle")
+            }
+            Button {
+                showFirmwarePrefetch = true
+            } label: {
+                Label("Download Firmware for Offline Use…", systemImage: "arrow.down.circle")
+            }
+            Text("Guided firmware update: ESP32 over Wi-Fi, nRF52 and RP2040 through their USB boot drive. Firmware from the official Stable/Alpha releases or a local file.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
     }
 

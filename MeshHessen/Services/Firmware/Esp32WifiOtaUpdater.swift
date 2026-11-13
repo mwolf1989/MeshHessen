@@ -30,6 +30,8 @@ enum Esp32WifiOtaUpdater {
         var discoverLoader: (Duration) async -> String?
         var openStream: (String) async throws -> any OtaByteStream
         var sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        /// How long to wait for the firmware's answer to `ota_request` (silence counts as consent).
+        var answerTimeout: Duration = Esp32WifiOtaUpdater.preflightTimeout
     }
 
     // MARK: - Firmware answer to ota_request
@@ -74,7 +76,7 @@ enum Esp32WifiOtaUpdater {
         defer { dependencies.setNotificationHandler(nil) }
         guard await dependencies.sendOtaRequest(sha256) else { throw WifiOtaError.otaRequestNotSent }
 
-        let deadline = ContinuousClock.now.advanced(by: preflightTimeout)
+        let deadline = ContinuousClock.now.advanced(by: dependencies.answerTimeout)
         while answer.value == nil, ContinuousClock.now < deadline {
             try Task.checkCancellation()
             try await dependencies.sleep(.milliseconds(100))
