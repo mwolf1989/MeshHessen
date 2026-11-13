@@ -60,6 +60,14 @@ final class AppCoordinator {
     private var expectedDisconnectTimeoutTask: Task<Void, Never>?
     private var pendingLocalNodeDatabaseReset: Bool = false
 
+    /// True while the firmware assistant drives the device (OTA request, loader, bootloader drive).
+    /// Suppresses auto-reconnect and the link watchdog; cleared by `endFirmwareUpdate()` or
+    /// `reconnectAfterFirmwareUpdate(type:parameters:)`.
+    private(set) var firmwareUpdateInProgress = false
+
+    /// Receives every `ClientNotification` text while set (the firmware answers `ota_request` this way).
+    @ObservationIgnored var firmwareClientNotificationHandler: ((String) -> Void)?
+
     /// Maximum backoff delay in seconds
     private let maxBackoffSeconds: Int = 30
     private let coreDataMigrationVersionKey = "coreDataMigrationVersion"
@@ -101,6 +109,9 @@ final class AppCoordinator {
         }
         protocol_.onLinkStale = { [weak self] in
             self?.handleLinkStale()
+        }
+        protocol_.onClientNotification = { [weak self] note in
+            self?.firmwareClientNotificationHandler?(note.message)
         }
 
         Task { @MainActor [weak self] in
@@ -290,6 +301,54 @@ final class AppCoordinator {
         lastConnectionType = nil
         lastConnectionParameters = nil
         AppLogger.shared.log("[Coordinator] Disconnect complete", debug: true)
+    }
+
+    // MARK: - Firmware update hooks
+
+    /// Enters firmware-update mode before anything is sent to the device: no auto-reconnect,
+    /// no heartbeat / link watchdog. Every caller must end with `endFirmwareUpdate()` or
+    /// `reconnectAfterFirmwareUpdate(type:parameters:)`.
+    func beginFirmwareUpdate() {
+        firmwareUpdateInProgress = true
+        cancelReconnect()
+        protocol_.suspendLinkSupervision()
+        AppLogger.shared.log("[FW] Firmware update started — auto-reconnect and link watchdog suspended")
+    }
+
+    /// Leaves firmware-update mode without reconnecting. When the link survived (OTA refused,
+    /// cancelled before the link was released) heartbeat and watchdog are restarted.
+    func endFirmwareUpdate() {
+        firmwareClientNotificationHandler = nil
+        guard firmwareUpdateInProgress else { return }
+        firmwareUpdateInProgress = false
+        protocol_.resumeLinkSupervision()
+        AppLogger.shared.log("[FW] Firmware update ended — normal link supervision restored")
+    }
+
+    /// Like `disconnect()`, but keeps the last connection target for the reconnect afterwards and
+    /// stays in firmware-update mode (no auto-reconnect while the loader / bootloader is driven).
+    func disconnectForFirmwareUpdate() async -> (type: ConnectionType, parameters: ConnectionParameters)? {
+        firmwareUpdateInProgress = true
+        let type = lastConnectionType
+        let parameters = lastConnectionParameters
+        await disconnect()
+        lastConnectionType = type
+        lastConnectionParameters = parameters
+        guard let type, let parameters else { return nil }
+        return (type, parameters)
+    }
+
+    /// Clears firmware-update mode and connects again through the normal connect path.
+    func reconnectAfterFirmwareUpdate(type: ConnectionType, parameters: ConnectionParameters) async {
+        firmwareUpdateInProgress = false
+        firmwareClientNotificationHandler = nil
+        await connect(type: type, parameters: parameters)
+    }
+
+    /// Last connection target, for the firmware assistant (Wi-Fi OTA host fallback, reconnect).
+    var firmwareUpdateConnectionTarget: (type: ConnectionType, parameters: ConnectionParameters)? {
+        guard let lastConnectionType, let lastConnectionParameters else { return nil }
+        return (lastConnectionType, lastConnectionParameters)
     }
 
     // MARK: - Direct message routing
@@ -963,7 +1022,7 @@ final class AppCoordinator {
     /// although the port/socket still looks open. Tears the link down without
     /// marking it user-requested, then takes the regular auto-reconnect path.
     private func handleLinkStale() {
-        guard !userRequestedDisconnect, let connection = activeConnection else { return }
+        guard !userRequestedDisconnect, !firmwareUpdateInProgress, let connection = activeConnection else { return }
         AppLogger.shared.log("[Coordinator] Link stale on \(connection.type.rawValue) — reconnecting")
         cancelProtocolInitialization()
         // Same teardown order as `teardownActiveConnection`. The transport's own
@@ -1001,7 +1060,10 @@ final class AppCoordinator {
             pendingLocalNodeDatabaseReset = false
         }
 
+        // During a firmware update the device reboots on purpose; reconnecting would grab the
+        // loader or bootloader. The assistant reconnects itself afterwards.
         guard autoReconnectEnabled,
+              !firmwareUpdateInProgress,
               lastConnectionType != nil,
               lastConnectionParameters != nil
         else {

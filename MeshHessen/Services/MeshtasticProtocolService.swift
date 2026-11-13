@@ -4674,6 +4674,24 @@ final class MeshtasticProtocolService {
         heartbeatTask = nil
     }
 
+    /// Firmware update: stops heartbeat and link watchdog so a device busy rebooting into its
+    /// loader is never declared stale (which would start an automatic reconnect).
+    func suspendLinkSupervision() {
+        stopHeartbeat()
+        AppLogger.shared.log("[Protocol] Link supervision suspended (firmware update)")
+    }
+
+    /// Restarts heartbeat and watchdog after a firmware update that left the link up (refused or
+    /// cancelled before the link was released). No-op without a live connection.
+    func resumeLinkSupervision() {
+        guard !isDisconnecting, connectionService?.isConnected == true else { return }
+        startHeartbeat()  // also resets the watchdog, so the suspended period never counts as silence
+        AppLogger.shared.log("[Protocol] Link supervision resumed")
+    }
+
+    /// True while the heartbeat / watchdog loop is running (diagnostics and tests).
+    var isLinkSupervisionActive: Bool { heartbeatTask != nil }
+
     // MARK: - Private send helpers
 
     private func sendWantConfig() async {
