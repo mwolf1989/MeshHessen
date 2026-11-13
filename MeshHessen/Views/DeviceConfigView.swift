@@ -1483,7 +1483,7 @@ private struct LoRaConfigurationForm: View {
                 if config.usePreset {
                     Picker("Modem preset", selection: $config.modemPreset) {
                         ForEach(Meshtastic_Config.LoRaConfig.ModemPreset.allCases, id: \.rawValue) { value in
-                            Text(protobufValueLabel(value)).tag(value)
+                            Text(value.displayLabel).tag(value)
                         }
                     }
                 } else {
@@ -1855,7 +1855,7 @@ private struct SerialConfigurationForm: View {
                 Toggle("Enabled", isOn: $config.enabled)
                 Picker("Mode", selection: $config.mode) {
                     ForEach(Meshtastic_ModuleConfig.SerialConfig.Serial_Mode.allCases, id: \.rawValue) { value in
-                        Text(protobufValueLabel(value)).tag(value)
+                        Text(value.displayLabel).tag(value)
                     }
                 }
                 Picker("Baud rate", selection: $config.baud) {
