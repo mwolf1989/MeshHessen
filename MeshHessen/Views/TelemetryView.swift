@@ -21,6 +21,9 @@ struct TelemetryView: View {
     @State private var traceroutes: [TracerouteResult] = []
     @State private var loadGeneration = 0
     @State private var linkProfile: LinkProfileRequest?
+    /// Easter egg: a triple-click on the analysis footer reveals the triangulation tool.
+    @State private var showsTriangulateButton = false
+    @State private var showTriangulation = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -179,11 +182,16 @@ struct TelemetryView: View {
                         }
                     }
                 }
+
+                analysisFooter
             }
                 .padding()
             }
         }
         .frame(minWidth: 500, minHeight: 400)
+        .sheet(isPresented: $showTriangulation) {
+            TriangulationSheet(initialTargetId: nodeId, onShownOnMap: { dismiss() })
+        }
         .onAppear { loadStats() }
         .onChange(of: selectedDays) { loadStats() }
         .sheet(item: $linkProfile) { request in
@@ -194,6 +202,25 @@ struct TelemetryView: View {
             object: TelemetryDatabaseService.shared
         )) { _ in
             loadStats()
+        }
+    }
+
+    /// "Analysis of the last N days" — a triple-click reveals the hidden triangulation button.
+    @ViewBuilder
+    private var analysisFooter: some View {
+        HStack {
+            Text(selectedDays == 0
+                 ? String(localized: "Analysis of all recorded data")
+                 : String(localized: "Analysis of the last \(selectedDays) days"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 3) { showsTriangulateButton = true }
+            Spacer()
+            if showsTriangulateButton {
+                Button("Triangulate Position", systemImage: "scope") { showTriangulation = true }
+                    .help("Estimates this node's position from its RF neighbors and their signal strength. Rough estimate — terrain dominates LoRa links.")
+            }
         }
     }
 

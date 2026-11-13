@@ -21530,6 +21530,336 @@
           }
         }
       }
+    },
+    "Triangulate Position" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standort triangulieren"
+          }
+        }
+      }
+    },
+    "Rough estimate — terrain dominates LoRa links." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grobe Schätzung — Gelände dominiert LoRa-Links."
+          }
+        }
+      }
+    },
+    "Loading link data…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Link-Daten werden geladen…"
+          }
+        }
+      }
+    },
+    "Result" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ergebnis"
+          }
+        }
+      }
+    },
+    "Estimated position" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschätzte Position"
+          }
+        }
+      }
+    },
+    "Uncertainty" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsicherheit"
+          }
+        }
+      }
+    },
+    "RF anchors" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HF-Anker"
+          }
+        }
+      }
+    },
+    "Alternative position" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alternative Position"
+          }
+        }
+      }
+    },
+    "The anchors fit a second region about as well (one-sided anchor geometry)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Anker passen etwa gleich gut zu einer zweiten Region (einseitige Anker-Geometrie)."
+          }
+        }
+      }
+    },
+    "Terrain" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gelände"
+          }
+        }
+      }
+    },
+    "Terrain data used" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geländedaten verwendet"
+          }
+        }
+      }
+    },
+    "Flat model (no terrain data)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flaches Modell (keine Geländedaten)"
+          }
+        }
+      }
+    },
+    "Too few anchors: at least 2 RF neighbors with a known position and a signal value are required. Traceroutes and NeighborInfo packets fill the link database over time." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zu wenige Anker: Es werden mindestens 2 HF-Nachbarn mit bekannter Position und Signalwert benötigt. Traceroutes und NeighborInfo-Pakete füllen die Link-Datenbank mit der Zeit."
+          }
+        }
+      }
+    },
+    "Distance model" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Distanzmodell"
+          }
+        }
+      }
+    },
+    "Model" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modell"
+          }
+        }
+      }
+    },
+    "Default model" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standardmodell"
+          }
+        }
+      }
+    },
+    "Self-calibrated" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selbstkalibriert"
+          }
+        }
+      }
+    },
+    ", R² = %.2f, σ = %.1f dB, %d links" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ", R² = %.2f, σ = %.1f dB, %d Links"
+          }
+        }
+      }
+    },
+    "⚠ The fit runs into the physical parameter bounds (degenerate) — its circles would be unusable." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⚠ Der Fit läuft gegen die physikalischen Grenzwerte (degeneriert) — die Kreise wären unbrauchbar."
+          }
+        }
+      }
+    },
+    "Recommendation: self-calibrated (usable distance correlation)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empfehlung: Selbstkalibriert (brauchbare Distanz-Korrelation)."
+          }
+        }
+      }
+    },
+    "Recommendation: default model — the fit has almost no distance correlation (R² < 0.2) and would produce unreliable distances." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empfehlung: Standardmodell — der Fit hat kaum Distanz-Korrelation (R² < 0,2) und würde unzuverlässige Distanzen liefern."
+          }
+        }
+      }
+    },
+    "Self-calibration needs at least 8 links between nodes with known positions." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Selbstkalibrierung braucht mindestens 8 Links zwischen Nodes mit bekannter Position."
+          }
+        }
+      }
+    },
+    "RSSI at 1 km %.1f dBm, n = %.2f" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RSSI bei 1 km %.1f dBm, n = %.2f"
+          }
+        }
+      }
+    },
+    "SNR both ways" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SNR beidseitig"
+          }
+        }
+      }
+    },
+    "SNR one way" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SNR einseitig"
+          }
+        }
+      }
+    },
+    "default noise floor" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standard-Rauschpegel"
+          }
+        }
+      }
+    },
+    "reported position" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "gemeldete Position"
+          }
+        }
+      }
+    },
+    "Alternative" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alternative"
+          }
+        }
+      }
+    },
+    "Analysis of all recorded data" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auswertung aller aufgezeichneten Daten"
+          }
+        }
+      }
+    },
+    "Analysis of the last %lld days" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auswertung der letzten %lld Tage"
+          }
+        }
+      }
+    },
+    "Estimates this node's position from its RF neighbors and their signal strength. Rough estimate — terrain dominates LoRa links." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schätzt die Position dieses Nodes aus seinen HF-Nachbarn und deren Signalstärke. Grobe Schätzung — Gelände dominiert LoRa-Links."
+          }
+        }
+      }
+    },
+    "Triangulation (rough estimate)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triangulation (grobe Schätzung)"
+          }
+        }
+      }
+    },
+    "Remove triangulation" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triangulation entfernen"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

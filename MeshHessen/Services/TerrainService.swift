@@ -395,3 +395,25 @@ actor TerrainService {
         )
     }
 }
+
+// MARK: - Triangulation
+
+extension TerrainService: TriangulationTerrainSource {
+    /// Terrain heights for the triangulation solver's diffraction term (plan 029).
+    /// Nil when no terrain tile could be loaded for the box; the solver then keeps
+    /// the flat model.
+    func elevationSampler(
+        minLatitude: Double,
+        minLongitude: Double,
+        maxLatitude: Double,
+        maxLongitude: Double
+    ) async -> TriangulationElevationSampler? {
+        let bounds = TerrainBounds(
+            minLatitude: minLatitude,
+            minLongitude: minLongitude,
+            maxLatitude: maxLatitude,
+            maxLongitude: maxLongitude
+        )
+        return await grid(covering: bounds)?.sampler
+    }
+}

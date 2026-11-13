@@ -174,7 +174,7 @@ function initMap(styleUrl, lon, lat, zoom, attribution, lang) {
     post('maperror', { message: (e && e.error && e.error.message) || 'unknown' });
   });
   // setStyle() resets layer visibility and custom layers – re-apply on every style(data) load
-  map.on('styledata', function () { applyOverlays(); restoreLineLayers(); restoreEnvLayers(); applyTerrain(); });
+  map.on('styledata', function () { applyOverlays(); restoreLineLayers(); restoreEnvLayers(); restoreTriLayers(); applyTerrain(); });
   map.on('moveend', function () {
     const c = map.getCenter();
     const b = map.getBounds();
@@ -652,6 +652,108 @@ function onEmergencyClick(e) {
                (rows ? '<table>' + rows + '</table>' : '') + '</div>';
   new maplibregl.Popup({ closeButton: true, maxWidth: '280px' })
     .setLngLat(e.lngLat).setHTML(html).addTo(map);
+}
+
+// ── Triangulation (rough position estimate) ──────────────────────────────
+// Host passes a FeatureCollection whose features carry kind = ring (dashed distance
+// circle), band (dotted outer band), region (uncertainty fill), outline (its border),
+// label (anchor distance text), estimate / alternative (triangle marker + label),
+// plus color, and for markers size / opacity. Re-added after a style reload.
+
+let triData = null;
+const TRI_SRC = 'tri-src';
+const TRI_LAYERS = ['tri-region', 'tri-outline', 'tri-ring', 'tri-band', 'tri-label', 'tri-marker'];
+
+function setTriangulation(fc) {
+  triData = fc || null;
+  addTriLayers();
+}
+
+function clearTriangulation() {
+  triData = null;
+  removeTriLayers();
+}
+
+function restoreTriLayers() {
+  if (triData && map && !map.getSource(TRI_SRC)) addTriLayers();
+}
+
+function removeTriLayers() {
+  if (!map) return;
+  TRI_LAYERS.slice().reverse().forEach(function (id) {
+    try { if (map.getLayer(id)) map.removeLayer(id); } catch (e) { }
+  });
+  try { if (map.getSource(TRI_SRC)) map.removeSource(TRI_SRC); } catch (e) { }
+}
+
+// Tintable triangle (SDF) for the estimate marker – distinct from node pins and circles
+function ensureTriangleImage() {
+  try {
+    if (map.hasImage('tri-triangle')) return;
+    const size = 32;
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(16, 4); ctx.lineTo(28, 27); ctx.lineTo(4, 27); ctx.closePath();
+    ctx.fill();
+    map.addImage('tri-triangle', ctx.getImageData(0, 0, size, size), { sdf: true });
+  } catch (e) { }
+}
+
+function triKind(kinds) {
+  return ['match', ['get', 'kind'], kinds, true, false];
+}
+
+function addTriLayers() {
+  if (!map) return;
+  removeTriLayers();
+  if (!triData) return;
+  try {
+    ensureTriangleImage();
+    map.addSource(TRI_SRC, { type: 'geojson', data: triData });
+    map.addLayer({
+      id: 'tri-region', type: 'fill', source: TRI_SRC, filter: triKind(['region']),
+      paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.11 }
+    });
+    map.addLayer({
+      id: 'tri-outline', type: 'line', source: TRI_SRC, filter: triKind(['outline']),
+      paint: { 'line-color': ['get', 'color'], 'line-width': 2.6, 'line-opacity': 0.9 }
+    });
+    map.addLayer({
+      id: 'tri-ring', type: 'line', source: TRI_SRC, filter: triKind(['ring']),
+      paint: { 'line-color': ['get', 'color'], 'line-width': 1.6, 'line-opacity': 0.67, 'line-dasharray': [3, 2] }
+    });
+    map.addLayer({
+      id: 'tri-band', type: 'line', source: TRI_SRC, filter: triKind(['band']),
+      paint: { 'line-color': ['get', 'color'], 'line-width': 1.0, 'line-opacity': 0.35, 'line-dasharray': [1, 2] }
+    });
+    map.addLayer({
+      id: 'tri-label', type: 'symbol', source: TRI_SRC, filter: triKind(['label']),
+      layout: {
+        'text-field': ['get', 'label'], 'text-font': ['Noto Sans Regular'], 'text-size': 11,
+        'text-anchor': 'bottom', 'text-allow-overlap': true, 'text-ignore-placement': true
+      },
+      paint: { 'text-color': ['get', 'color'], 'text-halo-color': 'rgba(255,255,255,0.85)', 'text-halo-width': 1.5 }
+    });
+    map.addLayer({
+      id: 'tri-marker', type: 'symbol', source: TRI_SRC, filter: triKind(['estimate', 'alternative']),
+      layout: {
+        'icon-image': 'tri-triangle', 'icon-size': ['coalesce', ['get', 'size'], 1],
+        'icon-allow-overlap': true, 'icon-ignore-placement': true,
+        'text-field': ['get', 'label'], 'text-font': ['Noto Sans Regular'], 'text-size': 12,
+        'text-anchor': 'top', 'text-offset': [0, 1.1], 'text-allow-overlap': true, 'text-ignore-placement': true
+      },
+      paint: {
+        'icon-color': ['get', 'color'], 'icon-opacity': ['coalesce', ['get', 'opacity'], 1],
+        'icon-halo-color': '#ffffff', 'icon-halo-width': 2,
+        'text-color': '#111', 'text-halo-color': 'rgba(255,255,255,0.9)', 'text-halo-width': 1.5
+      }
+    });
+  } catch (e) {
+    // Style may still be loading – restoreTriLayers() retries on the next styledata event
+  }
 }
 
 function setStyle(styleUrl) {

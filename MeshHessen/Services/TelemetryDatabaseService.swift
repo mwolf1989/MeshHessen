@@ -1419,6 +1419,114 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         }
     }
 
+    /// Raw `rf_links` rows with a known SNR confirmed since `cutoff` (path-loss
+    /// self-calibration against links whose both ends have positions). Windows
+    /// `GetRfLinkSnrRows`.
+    func rfLinkSnrRows(since cutoff: Date) async -> [RfLinkSnrRow] {
+        await read(default: []) { service, db in
+            var rows: [RfLinkSnrRow] = []
+            service.forEachRow(
+                "SELECT observer, neighbor, snr FROM rf_links WHERE snr IS NOT NULL AND last_seen >= ?",
+                on: db,
+                bind: { sqlite3_bind_double($0, 1, cutoff.timeIntervalSince1970) },
+                row: { statement in
+                    rows.append(RfLinkSnrRow(
+                        observer: UInt32(truncatingIfNeeded: sqlite3_column_int64(statement, 0)),
+                        neighbor: UInt32(truncatingIfNeeded: sqlite3_column_int64(statement, 1)),
+                        snr: sqlite3_column_double(statement, 2)
+                    ))
+                }
+            )
+            return rows
+        }
+    }
+
+    /// Every SNR measurement of the direction "`observer` heard `neighbor`" since `cutoff`:
+    /// traceroute/NeighborInfo history from `rf_link_obs`, plus — when the own node is the
+    /// observer — every direct RF reception (0 hops, not MQTT, SNR measured) from
+    /// `packet_rx`. Windows `GetRfLinkSnrSamples`.
+    func rfLinkSnrSamples(
+        observer: UInt32,
+        neighbor: UInt32,
+        myNodeId: UInt32,
+        since cutoff: Date
+    ) async -> [Double] {
+        await read(default: []) { service, db in
+            var samples: [Double] = []
+            service.forEachRow(
+                "SELECT snr FROM rf_link_obs WHERE observer = ? AND neighbor = ? AND timestamp >= ?",
+                on: db,
+                bind: { statement in
+                    sqlite3_bind_int64(statement, 1, Int64(observer))
+                    sqlite3_bind_int64(statement, 2, Int64(neighbor))
+                    sqlite3_bind_double(statement, 3, cutoff.timeIntervalSince1970)
+                },
+                row: { samples.append(sqlite3_column_double($0, 0)) }
+            )
+            if observer == myNodeId, myNodeId != 0 {
+                service.forEachRow(
+                    """
+                    SELECT rx_snr FROM packet_rx
+                    WHERE node_id = ? AND timestamp >= ? AND rx_snr IS NOT NULL AND rx_snr != 0
+                      AND (hop_count = 0 OR hop_count IS NULL) AND COALESCE(via_mqtt, 0) = 0
+                    """,
+                    on: db,
+                    bind: { statement in
+                        sqlite3_bind_int64(statement, 1, Int64(neighbor))
+                        sqlite3_bind_double(statement, 2, cutoff.timeIntervalSince1970)
+                    },
+                    row: { samples.append(sqlite3_column_double($0, 0)) }
+                )
+            }
+            return samples
+        }
+    }
+
+    /// Every direct RF reception RSSI (0 hops, not MQTT, measured) of a node since
+    /// `cutoff`. Windows `GetDirectRssiSamples`.
+    func directRssiSamples(nodeId: UInt32, since cutoff: Date) async -> [Double] {
+        await read(default: []) { service, db in
+            var samples: [Double] = []
+            service.forEachRow(
+                """
+                SELECT rx_rssi FROM packet_rx
+                WHERE node_id = ? AND timestamp >= ? AND rx_rssi IS NOT NULL AND rx_rssi != 0
+                  AND (hop_count = 0 OR hop_count IS NULL) AND COALESCE(via_mqtt, 0) = 0
+                """,
+                on: db,
+                bind: { statement in
+                    sqlite3_bind_int64(statement, 1, Int64(nodeId))
+                    sqlite3_bind_double(statement, 2, cutoff.timeIntervalSince1970)
+                },
+                row: { samples.append(Double(sqlite3_column_int64($0, 0))) }
+            )
+            return samples
+        }
+    }
+
+    /// Latest LocalStats noise floor (dBm) per node. 0 is the protobuf default for
+    /// "not reported" and is skipped.
+    func latestNoiseFloors() async -> [UInt32: Double] {
+        await read(default: [:]) { service, db in
+            var floors: [UInt32: Double] = [:]
+            // SQLite returns the bare columns of the row holding MAX(timestamp).
+            service.forEachRow(
+                """
+                SELECT node_id, value, MAX(timestamp) FROM telemetry_samples
+                WHERE metric = ? AND value != 0
+                GROUP BY node_id
+                """,
+                on: db,
+                bind: { sqlite3_bind_text($0, 1, TelemetrySeriesMetric.localNoiseFloor.rawValue, -1, Self.transientDestructor) },
+                row: { statement in
+                    floors[UInt32(truncatingIfNeeded: sqlite3_column_int64(statement, 0))] =
+                        sqlite3_column_double(statement, 1)
+                }
+            )
+            return floors
+        }
+    }
+
     /// When RF-link collection began (first ever `rf_links` insert), or nil.
     func rfLinkCollectionStart() async -> Date? {
         await read(default: nil) { _, db in

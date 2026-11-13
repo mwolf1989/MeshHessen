@@ -37,6 +37,7 @@ struct MapView: View {
     @State private var persistedDirectContacts: [DirectNeighborContact] = []
     @State private var directContactLoadGeneration = 0
     @State private var tracerouteSelection = TracerouteMapSelectionStore.shared
+    @State private var triangulationStore = TriangulationMapStore.shared
     @State private var errorMessage: String?
     @State private var showEnvironmentControls = false
     @State private var environmentOverlay: EnvironmentOverlay?
@@ -100,6 +101,8 @@ struct MapView: View {
                     emergencyOverlayEnabled: settings.mapOverlays.contains(.emergency),
                     environmentOverlay: environmentOverlay,
                     terrain3DEnabled: settings.mapTerrain3D,
+                    triangulations: triangulationStore.layers,
+                    triangulationFocusRevision: triangulationStore.focusRevision,
                     onSendDM: openDirectMessage,
                     onShowNodeInfo: showNode,
                     onToggleFavorite: toggleFavorite,
@@ -140,6 +143,8 @@ struct MapView: View {
                     neighborColorMode: neighborColorMode,
                     showTraceroutes: showTraceroutes,
                     environmentOverlay: environmentOverlay,
+                    triangulations: triangulationStore.layers,
+                    triangulationFocusRevision: triangulationStore.focusRevision,
                     onSendDM: openDirectMessage,
                     onShowNodeInfo: showNode,
                     onToggleFavorite: toggleFavorite,
@@ -187,6 +192,8 @@ struct MapView: View {
                         tracerouteSelection.remove(ids: [id])
                     },
                     onClearTraceroutes: tracerouteSelection.clear,
+                    triangulations: triangulationStore.layers,
+                    onRemoveTriangulation: { triangulationStore.remove(targetId: $0) },
                     onChooseTracks: { showTrackPicker = true },
                     onClearTracks: { pathNodeIds.removeAll() }
                 )
@@ -768,6 +775,8 @@ private struct MapLayerControls: View {
     let emergencyIsLoading: Bool
     let onRemoveTraceroute: (UUID) -> Void
     let onClearTraceroutes: () -> Void
+    let triangulations: [TriangulationMapLayer]
+    let onRemoveTriangulation: (UInt32) -> Void
     let onChooseTracks: () -> Void
     let onClearTracks: () -> Void
 
@@ -806,6 +815,28 @@ private struct MapLayerControls: View {
                         }
                     }
                     Button("Remove All Selected Traceroutes", role: .destructive, action: onClearTraceroutes)
+                }
+                // Triangulation estimates share the traceroute list and its ✕ removal.
+                ForEach(triangulations) { layer in
+                    HStack {
+                        Image(systemName: "scope")
+                            .foregroundStyle(Color(hex: layer.colorHex) ?? .accentColor)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(layer.targetName)
+                                .lineLimit(1)
+                            Text("Triangulation (rough estimate)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            onRemoveTriangulation(layer.targetId)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Remove triangulation")
+                    }
                 }
             }
 
@@ -970,6 +1001,8 @@ private struct MeshMapViewRepresentable: NSViewRepresentable {
     let neighborColorMode: NeighborLineColorMode
     let showTraceroutes: Bool
     var environmentOverlay: EnvironmentOverlay?
+    var triangulations: [TriangulationMapLayer] = []
+    var triangulationFocusRevision: Int?
     let onSendDM: (UInt32) -> Void
     let onShowNodeInfo: (UInt32) -> Void
     let onToggleFavorite: (UInt32) -> Void
@@ -1018,6 +1051,7 @@ private struct MeshMapViewRepresentable: NSViewRepresentable {
         context.coordinator.updateAnnotations(map)
         context.coordinator.updateDynamicOverlays(map)
         context.coordinator.updateEnvironment(map)
+        context.coordinator.updateTriangulations(map)
 
         if let focusNodeId,
            let node = nodes.first(where: { $0.id == focusNodeId }),
@@ -1046,6 +1080,9 @@ private struct MeshMapViewRepresentable: NSViewRepresentable {
         private var environmentSurface: EnvironmentSurfaceOverlay?
         private var environmentBoxes: [UInt32: EnvironmentValueBox] = [:]
         private var environmentHoverNodeId: UInt32?
+        /// Revisions of the triangulation layers currently drawn; nil = redraw.
+        private var triangulationKey: [Int]?
+        private var fittedTriangulationRevision: Int?
 
         init(_ parent: MeshMapViewRepresentable) {
             self.parent = parent
@@ -1089,6 +1126,86 @@ private struct MeshMapViewRepresentable: NSViewRepresentable {
                 map.removeOverlay(environmentSurface)
                 insertEnvironmentSurface(environmentSurface, into: map)
             }
+            // The new base layer covers earlier overlays; redraw the triangulation on top.
+            triangulationKey = nil
+        }
+
+        // MARK: Triangulation
+
+        /// Draws the triangulation layers (dashed distance circles, uncertainty region,
+        /// triangle markers) when they changed, and fits a newly shown one into view.
+        func updateTriangulations(_ map: MKMapView) {
+            let key = parent.triangulations.map(\.revision)
+            if key != triangulationKey {
+                triangulationKey = key
+                map.removeOverlays(map.overlays.filter { $0 is TriangulationCircle || $0 is TriangulationRegion })
+                map.removeAnnotations(map.annotations.filter { $0 is TriangulationAnnotation })
+                for layer in parent.triangulations {
+                    addTriangulation(layer, to: map)
+                }
+            }
+
+            guard let revision = parent.triangulationFocusRevision,
+                  revision != fittedTriangulationRevision,
+                  let layer = parent.triangulations.first(where: { $0.revision == revision }) else { return }
+            fittedTriangulationRevision = revision
+            let bounds = layer.bounds
+            let northWest = MKMapPoint(.init(latitude: bounds.maxLatitude, longitude: bounds.minLongitude))
+            let southEast = MKMapPoint(.init(latitude: bounds.minLatitude, longitude: bounds.maxLongitude))
+            let rect = MKMapRect(
+                x: northWest.x,
+                y: northWest.y,
+                width: southEast.x - northWest.x,
+                height: southEast.y - northWest.y
+            )
+            Task { @MainActor in
+                map.setVisibleMapRect(rect, edgePadding: NSEdgeInsets(top: 40, left: 40, bottom: 40, right: 40), animated: true)
+                TriangulationMapStore.shared.consumeFocus(revision: revision)
+            }
+        }
+
+        private func addTriangulation(_ layer: TriangulationMapLayer, to map: MKMapView) {
+            let color = Color(hex: layer.colorHex).map(NSColor.init) ?? .systemPink
+            for ring in layer.rings {
+                let circle = TriangulationCircle(
+                    center: .init(latitude: ring.latitude, longitude: ring.longitude),
+                    radius: ring.radiusKm * 1000
+                )
+                circle.color = color
+                circle.style = ring.style
+                map.addOverlay(circle)
+            }
+            let estimate = layer.estimate
+            let coordinates = TriangulationMapLayer
+                .circle(latitude: estimate.lat, longitude: estimate.lon, radiusKm: estimate.uncertaintyKm)
+                .map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+            let region = TriangulationRegion(coordinates: coordinates, count: coordinates.count)
+            region.color = color
+            map.addOverlay(region)
+
+            var annotations = layer.anchorLabels.map {
+                TriangulationAnnotation(
+                    kind: .label,
+                    coordinate: .init(latitude: $0.latitude, longitude: $0.longitude),
+                    text: $0.text,
+                    color: color
+                )
+            }
+            annotations.append(TriangulationAnnotation(
+                kind: .estimate,
+                coordinate: .init(latitude: estimate.lat, longitude: estimate.lon),
+                text: layer.estimateLabel,
+                color: color
+            ))
+            if let altLat = estimate.altLat, let altLon = estimate.altLon {
+                annotations.append(TriangulationAnnotation(
+                    kind: .alternative,
+                    coordinate: .init(latitude: altLat, longitude: altLon),
+                    text: layer.alternativeLabel,
+                    color: color
+                ))
+            }
+            map.addAnnotations(annotations)
         }
 
         // MARK: Environment overlay
@@ -1563,6 +1680,22 @@ private struct MeshMapViewRepresentable: NSViewRepresentable {
                 renderer.lineCap = .round
                 return renderer
             }
+            if let circle = overlay as? TriangulationCircle {
+                let renderer = MKCircleRenderer(circle: circle)
+                let isDistance = circle.style == .distance
+                renderer.strokeColor = circle.color.withAlphaComponent(isDistance ? 0.67 : 0.35)
+                renderer.lineWidth = isDistance ? 1.6 : 1.0
+                renderer.lineDashPattern = isDistance ? [6, 4] : [1.5, 3]
+                renderer.fillColor = nil
+                return renderer
+            }
+            if let region = overlay as? TriangulationRegion {
+                let renderer = MKPolygonRenderer(polygon: region)
+                renderer.fillColor = region.color.withAlphaComponent(0.11)
+                renderer.strokeColor = region.color.withAlphaComponent(0.9)
+                renderer.lineWidth = 2.6
+                return renderer
+            }
             if let traceroute = overlay as? TraceroutePolyline {
                 let renderer = MKPolylineRenderer(polyline: traceroute)
                 renderer.strokeColor = traceroute.viaMqtt ? .systemYellow : traceroute.color
@@ -1621,6 +1754,14 @@ private struct MeshMapViewRepresentable: NSViewRepresentable {
                     ?? EnvironmentBoxAnnotationView(annotation: box, reuseIdentifier: identifier)
                 view.annotation = box
                 view.configure(with: box.box, dark: parent.configuration.source == .dark)
+                return view
+            }
+            if let triangulation = annotation as? TriangulationAnnotation {
+                let identifier = "Triangulation"
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? TriangulationAnnotationView
+                    ?? TriangulationAnnotationView(annotation: triangulation, reuseIdentifier: identifier)
+                view.annotation = triangulation
+                view.configure(with: triangulation)
                 return view
             }
             if let segment = annotation as? TracerouteSegmentAnnotation {
@@ -1969,6 +2110,103 @@ private final class NeighborPolyline: MKPolyline {
     var colorHex = ""
     var colorMode = NeighborLineColorMode.signalQuality
     var isOutline = false
+}
+
+// MARK: - Triangulation (raster map)
+
+private final class TriangulationCircle: MKCircle {
+    var color = NSColor.systemPink
+    var style = TriangulationMapLayer.RingStyle.distance
+}
+
+private final class TriangulationRegion: MKPolygon {
+    var color = NSColor.systemPink
+}
+
+private final class TriangulationAnnotation: NSObject, MKAnnotation {
+    enum Kind { case label, estimate, alternative }
+
+    let kind: Kind
+    let text: String
+    let color: NSColor
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+
+    init(kind: Kind, coordinate: CLLocationCoordinate2D, text: String, color: NSColor) {
+        self.kind = kind
+        self.coordinate = coordinate
+        self.text = text
+        self.color = color
+    }
+}
+
+/// Anchor distance label (just above the circle top), or a triangle marker with its label
+/// below for the estimate and the alternative solution.
+private final class TriangulationAnnotationView: MKAnnotationView {
+    private let label = NSTextField(labelWithString: "")
+    private let marker = NSImageView()
+    private static let padding = CGSize(width: 4, height: 1)
+
+    override var isFlipped: Bool { true }
+
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        canShowCallout = false
+        isEnabled = false
+        displayPriority = .required
+        collisionMode = .none
+        label.drawsBackground = true
+        label.backgroundColor = NSColor.white.withAlphaComponent(0.75)
+        label.isBordered = false
+        addSubview(marker)
+        addSubview(label)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    func configure(with annotation: TriangulationAnnotation) {
+        let isLabel = annotation.kind == .label
+        label.stringValue = annotation.text
+        label.font = annotation.kind == .estimate ? .boldSystemFont(ofSize: 11) : .systemFont(ofSize: 10)
+        label.textColor = isLabel ? annotation.color : .black
+        let labelSize = label.fittingSize
+
+        if isLabel {
+            marker.isHidden = true
+            label.frame = CGRect(origin: .zero, size: labelSize)
+            frame.size = labelSize
+            centerOffset = CGPoint(x: 0, y: -labelSize.height / 2)
+            return
+        }
+
+        let side: CGFloat = annotation.kind == .estimate ? 20 : 13
+        let alpha: CGFloat = annotation.kind == .estimate ? 1 : 0.6
+        marker.isHidden = false
+        marker.image = Self.triangle(side: side, color: annotation.color.withAlphaComponent(alpha))
+        let width = max(side, labelSize.width)
+        marker.frame = CGRect(x: (width - side) / 2, y: 0, width: side, height: side)
+        label.frame = CGRect(x: (width - labelSize.width) / 2, y: side + 2, width: labelSize.width, height: labelSize.height)
+        frame.size = CGSize(width: width, height: side + 2 + labelSize.height)
+        // Put the triangle's centre on the coordinate.
+        centerOffset = CGPoint(x: 0, y: frame.height / 2 - side / 2)
+    }
+
+    private static func triangle(side: CGFloat, color: NSColor) -> NSImage {
+        NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            let inset = rect.insetBy(dx: 1.5, dy: 1.5)
+            let path = NSBezierPath()
+            path.move(to: CGPoint(x: inset.midX, y: inset.maxY))
+            path.line(to: CGPoint(x: inset.maxX, y: inset.minY))
+            path.line(to: CGPoint(x: inset.minX, y: inset.minY))
+            path.close()
+            color.setFill()
+            path.fill()
+            NSColor.white.setStroke()
+            path.lineWidth = 2
+            path.stroke()
+            return true
+        }
+    }
 }
 
 private final class TraceroutePolyline: MKPolyline {
