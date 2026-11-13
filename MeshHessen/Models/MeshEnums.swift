@@ -543,3 +543,17 @@ enum PortNum: Int, CaseIterable, Identifiable {
         }
     }
 }
+
+// MARK: - Firmware 2.8 picker labels
+
+extension Meshtastic_Config.SecurityConfig.PacketSignaturePolicy {
+    /// Label for the packet-signature-policy picker (firmware 2.8+).
+    var displayLabel: String {
+        switch self {
+        case .compatible: return String(localized: "Compatible")
+        case .balanced: return String(localized: "Balanced")
+        case .strict: return String(localized: "Strict")
+        default: return String(describing: self)
+        }
+    }
+}

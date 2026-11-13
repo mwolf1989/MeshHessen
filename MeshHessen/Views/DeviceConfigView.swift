@@ -1555,6 +1555,16 @@ private struct SecurityConfigurationForm: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Section("Packet signatures") {
+                Picker("Signature policy", selection: $config.packetSignaturePolicy) {
+                    ForEach(Meshtastic_Config.SecurityConfig.PacketSignaturePolicy.allCases, id: \.rawValue) { value in
+                        Text(value.displayLabel).tag(value)
+                    }
+                }
+                Text("Strict hides nodes running older firmware. Enforcement is done by the device (firmware 2.8+).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("Administration") {
                 Toggle("Managed node", isOn: $config.isManaged)
                 Toggle("Serial console enabled", isOn: $config.serialEnabled)
