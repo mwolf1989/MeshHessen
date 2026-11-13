@@ -5,6 +5,7 @@ import SwiftUI
 struct TelemetryView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.appState) private var appState
 
     let nodeId: UInt32
     let nodeName: String
@@ -15,6 +16,8 @@ struct TelemetryView: View {
     @State private var airtimeStats = AirtimeStats()
     @State private var routingStats = RoutingStats()
     @State private var directContacts: [DirectNeighborContact] = []
+    @State private var rfNeighbors: [RfNeighbor] = []
+    @State private var rfCollectionStart: Date?
     @State private var traceroutes: [TracerouteResult] = []
     @State private var loadGeneration = 0
 
@@ -119,13 +122,27 @@ struct TelemetryView: View {
 
                 GroupBox("Neighbors and Path Stability") {
                     statsGrid {
-                        statRow("Direct RF contacts", value: "\(directContacts.count)")
+                        if showsRfNeighbors {
+                            statRow("RF neighbors", value: "\(rfNeighbors.count)")
+                        } else {
+                            statRow("Direct RF contacts", value: "\(directContacts.count)")
+                        }
                         statRow("Traceroutes", value: "\(traceroutes.count)")
                         statRow("Path changes", value: "\(pathChangeCount)")
                         statRow("Path stability", value: pathStabilityText)
                     }
 
-                    if !directContacts.isEmpty {
+                    if showsRfNeighbors {
+                        Divider()
+                        Text("RF Neighbors")
+                            .font(.subheadline.bold())
+                        Text("In: this node heard the neighbor · Out: the neighbor heard this node")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        ForEach(rfNeighbors.prefix(20)) { neighbor in
+                            RfNeighborRow(neighbor: neighbor, name: neighborName(neighbor.neighborId))
+                        }
+                    } else if !directContacts.isEmpty {
                         Divider()
                         Text("Latest Direct Neighbor Contacts")
                             .font(.subheadline.bold())
@@ -192,6 +209,8 @@ struct TelemetryView: View {
                 ($0.targetNodeId == nodeId || $0.sourceNodeId == nodeId)
                     && $0.receivedAt >= cutoff
             }
+            let neighbors = await db.rfNeighbors(of: nodeId, since: cutoff)
+            let collectionStart = await db.rfLinkCollectionStart()
             await MainActor.run {
                 guard loadGeneration == generation else { return }
                 signalStats = signal
@@ -199,9 +218,23 @@ struct TelemetryView: View {
                 airtimeStats = airtime
                 routingStats = routing
                 directContacts = contacts
+                rfNeighbors = neighbors
+                rfCollectionStart = collectionStart
                 traceroutes = traces.sorted { $0.receivedAt > $1.receivedAt }
             }
         }
+    }
+
+    private var showsRfNeighbors: Bool {
+        RfNeighbor.shouldUseRfLinks(
+            linkCount: rfNeighbors.count,
+            collectionStart: rfCollectionStart,
+            now: Date()
+        )
+    }
+
+    private func neighborName(_ id: UInt32) -> String {
+        appState.node(forId: id)?.name ?? String(format: "!%08x", id)
     }
 
     private var pathChangeCount: Int {
@@ -271,5 +304,38 @@ struct TelemetryView: View {
             Text(value).font(.system(.caption, design: .monospaced)).frame(width: 80, alignment: .trailing)
             Text("").frame(width: 80)
         }
+    }
+}
+
+/// One RF neighbour: name, evidence badges, SNR in both directions, last seen.
+private struct RfNeighborRow: View {
+    let neighbor: RfNeighbor
+    let name: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(name)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            ForEach(neighbor.sources, id: \.self) { source in
+                Text(source.displayName)
+                    .font(.caption2)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(.quaternary, in: Capsule())
+            }
+            Spacer()
+            Text("In \(snrText(neighbor.snrIn))")
+                .help("This node heard the neighbor at this SNR")
+            Text("Out \(snrText(neighbor.snrOut))")
+                .help("The neighbor heard this node at this SNR")
+            Text(neighbor.lastSeen, style: .relative)
+                .foregroundStyle(.secondary)
+        }
+        .font(.caption)
+    }
+
+    private func snrText(_ snr: Float?) -> String {
+        snr.map { String(format: "%.1f dB", $0) } ?? "–"
     }
 }

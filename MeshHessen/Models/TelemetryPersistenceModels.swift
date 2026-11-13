@@ -713,3 +713,53 @@ struct TelemetryHistogramBin: Identifiable, Hashable, Sendable {
     let upperBound: Double
     let count: Int
 }
+
+// MARK: - RF Links
+
+/// Evidence that one node heard another directly over RF.
+enum RfLinkSource: String, CaseIterable, Codable, Hashable, Sendable {
+    /// Our own 0-hop, non-MQTT reception.
+    case rx
+    /// A node's own NEIGHBORINFO_APP report.
+    case neighborInfo = "neighborinfo"
+    /// Adjacent hop pair of a traceroute reply.
+    case traceroute
+
+    var displayName: String {
+        switch self {
+        case .rx: return String(localized: "Direct")
+        case .neighborInfo: return String(localized: "NeighborInfo")
+        case .traceroute: return String(localized: "Traceroute")
+        }
+    }
+}
+
+/// One directed RF observation: `observer` heard `neighbor` at `snr` dB.
+struct RfLinkObservation: Hashable, Sendable {
+    let observer: UInt32
+    let neighbor: UInt32
+    let snr: Float
+}
+
+/// A direct-RF partner of a node, merged over both directions and all sources.
+struct RfNeighbor: Identifiable, Hashable, Sendable {
+    var id: UInt32 { neighborId }
+    let neighborId: UInt32
+    /// The selected node heard the partner at this SNR.
+    var snrIn: Float?
+    /// The partner heard the selected node at this SNR.
+    var snrOut: Float?
+    var sources: [RfLinkSource] = []
+    var lastSeen: Date = .distantPast
+
+    /// Sparse link data (1–2 partners) is trusted only after collection has run this long.
+    static let sparseDataMinimumAge: TimeInterval = 7 * 86_400
+
+    /// Whether collected RF links replace the own-contact neighbour list: with at
+    /// least three partners, or one or two once collection has run for a week.
+    static func shouldUseRfLinks(linkCount: Int, collectionStart: Date?, now: Date) -> Bool {
+        if linkCount >= 3 { return true }
+        guard linkCount > 0, let collectionStart else { return false }
+        return now.timeIntervalSince(collectionStart) >= sparseDataMinimumAge
+    }
+}

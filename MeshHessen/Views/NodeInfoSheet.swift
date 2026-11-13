@@ -28,6 +28,7 @@ struct NodeInfoSheet: View {
     @State private var showTelemetry = false
     @State private var showRemoteAdmin = false
     @State private var kioskState = KioskState.shared
+    @State private var firstSeen: Date?
 
     private var isOwnNode: Bool {
         appState.myNodeInfo?.nodeId == node.id
@@ -213,6 +214,12 @@ struct NodeInfoSheet: View {
                         }
                     }
                 }
+                if let firstSeen {
+                    GridRow {
+                        Text("First Seen").foregroundStyle(.secondary)
+                        Text(firstSeen, format: .dateTime.day().month().year().hour().minute())
+                    }
+                }
                 if node.hasPublicKey {
                     GridRow {
                         Text("Public Key").foregroundStyle(.secondary)
@@ -352,6 +359,9 @@ struct NodeInfoSheet: View {
         }
         .sheet(isPresented: $showRemoteAdmin) {
             RemoteAdminView(nodeID: node.id, nodeName: node.name)
+        }
+        .task(id: node.id) {
+            firstSeen = await TelemetryDatabaseService.shared.firstSeen(nodeId: node.id)
         }
         .onAppear {
             // Load persisted values from UserDefaults, falling back to in-memory model

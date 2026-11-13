@@ -20360,6 +20360,96 @@
           }
         }
       }
+    },
+    "NeighborInfo" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NeighborInfo"
+          }
+        }
+      }
+    },
+    "RF neighbors" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Funk-Nachbarn"
+          }
+        }
+      }
+    },
+    "RF Neighbors" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Funk-Nachbarn"
+          }
+        }
+      }
+    },
+    "In: this node heard the neighbor · Out: the neighbor heard this node" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein: dieser Knoten hörte den Nachbarn · Aus: der Nachbar hörte diesen Knoten"
+          }
+        }
+      }
+    },
+    "In %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein %@"
+          }
+        }
+      }
+    },
+    "Out %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus %@"
+          }
+        }
+      }
+    },
+    "This node heard the neighbor at this SNR" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Knoten hörte den Nachbarn mit diesem SNR"
+          }
+        }
+      }
+    },
+    "The neighbor heard this node at this SNR" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Nachbar hörte diesen Knoten mit diesem SNR"
+          }
+        }
+      }
+    },
+    "First Seen" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zuerst gesehen"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
