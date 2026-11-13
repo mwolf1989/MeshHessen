@@ -22,6 +22,12 @@ enum FirmwareTransferPhase: Equatable, Sendable {
     case waitingForDriveAccess
     case copying(Double)
     case waitingForReboot
+    case triggeringBootloader
+    case searchingBootloader
+    case connectingBootloader(attempt: Int, of: Int)
+    case preparingFlash
+    case sendingInitPacket
+    case retryingUpload(attempt: Int, of: Int)
 
     var text: String {
         switch self {
@@ -39,6 +45,12 @@ enum FirmwareTransferPhase: Equatable, Sendable {
         case .waitingForDriveAccess: String(localized: "Waiting for access to the boot drive…")
         case .copying: String(localized: "Copying firmware to the boot drive…")
         case .waitingForReboot: String(localized: "Waiting for the device to restart…")
+        case .triggeringBootloader: String(localized: "Sending the device into its Bluetooth bootloader…")
+        case .searchingBootloader: String(localized: "Searching for the bootloader over Bluetooth…")
+        case .connectingBootloader(let attempt, let total): String(localized: "Connecting to the bootloader (attempt \(attempt) of \(total))…")
+        case .preparingFlash: String(localized: "The bootloader erases the application area (may take 30–60 s)…")
+        case .sendingInitPacket: String(localized: "Sending the DFU init packet…")
+        case .retryingUpload(let attempt, let total): String(localized: "Retrying the upload (attempt \(attempt) of \(total))…")
         }
     }
 
@@ -139,13 +151,14 @@ enum FirmwareWizardLogic {
     static let minimumOtaRequestFirmware = FirmwareVersion(major: 2, minor: 7, patch: 17)
     static let lowBatteryPercent: UInt32 = 30
 
-    /// Method gating of step 2 (Windows `RenderMethodPage`). Bluetooth methods are placeholders until
-    /// plan 026. ESP32 over serial is deliberately not offered (see `showsWebFlasherHint`).
+    /// Method gating of step 2 (Windows `RenderMethodPage`). ESP32 over serial is deliberately not offered
+    /// (see `showsWebFlasherHint`).
     static func availableMethods(facts: FirmwareDeviceFacts, hardware: DeviceHardware?) -> [FirmwareMethodOption] {
         let architectureKnown = hardware.map { !$0.architecture.isEmpty } ?? false
         let isEsp = hardware?.isEsp32 ?? false
         let isNrf = hardware?.isNrf52 ?? false
         let isRp = hardware?.isRp2040 ?? false
+        let isBluetooth = facts.connectionType == .bluetooth
         let current = FirmwareVersion(facts.firmwareVersion)
         let firmwareSupportsOta = current.map { $0 >= minimumOtaRequestFirmware } ?? true
 
@@ -162,6 +175,29 @@ enum FirmwareWizardLogic {
             wifi = .available
         }
 
+        let bleOta: FirmwareMethodAvailability
+        if !facts.isConnected {
+            bleOta = .unavailable(String(localized: "Requires a connected device."))
+        } else if architectureKnown, !isEsp {
+            bleOta = .unavailable(String(localized: "Only for ESP32 devices."))
+        } else if !isBluetooth {
+            bleOta = .unavailable(String(localized: "Only while connected to the device over Bluetooth."))
+        } else if !firmwareSupportsOta {
+            bleOta = .unavailable(String(localized: "Requires firmware 2.7.17 or newer on the device."))
+        } else {
+            bleOta = .available
+        }
+
+        // Also offered without a connection: recovery for a device that already advertises its bootloader.
+        let bleDfu: FirmwareMethodAvailability
+        if facts.isConnected, architectureKnown, !isNrf {
+            bleDfu = .unavailable(String(localized: "Only for nRF52 devices."))
+        } else if facts.isConnected, !isBluetooth {
+            bleDfu = .unavailable(String(localized: "Only while connected to the device over Bluetooth."))
+        } else {
+            bleDfu = .available
+        }
+
         let uf2: FirmwareMethodAvailability
         if facts.isConnected, architectureKnown, !(isNrf || isRp) {
             uf2 = .unavailable(String(localized: "Only for nRF52 and RP2040 devices."))
@@ -171,11 +207,18 @@ enum FirmwareWizardLogic {
 
         return [
             FirmwareMethodOption(method: .wifiOta, availability: wifi),
-            FirmwareMethodOption(method: .bleOta, availability: .laterVersion),
-            FirmwareMethodOption(method: .bleDfu, availability: .laterVersion),
+            FirmwareMethodOption(method: .bleOta, availability: bleOta),
+            FirmwareMethodOption(method: .bleDfu, availability: bleDfu),
             FirmwareMethodOption(method: .uf2, availability: uf2),
         ]
     }
+
+    /// Hardware whose stock bootloader cannot do Bluetooth DFU (catalog `requiresBootloaderUpgradeForOta`).
+    static func needsBootloaderUpgradeWarning(hardware: DeviceHardware?, method: FirmwareUpdateMethod?) -> Bool {
+        hardware?.requiresBootloaderUpgradeForOta == true && method == .bleDfu
+    }
+
+    static let bootloaderGuideURL = "https://meshtastic.org/docs/getting-started/flashing-firmware/nrf52/"
 
     /// The first available method in display order (Windows default selection).
     static func defaultMethod(_ options: [FirmwareMethodOption]) -> FirmwareUpdateMethod? {
@@ -251,6 +294,9 @@ enum FirmwareWizardLogic {
         if let reason = input.methodAvailability.reason {
             items.append(.error(String(localized: "The selected method cannot be used: \(reason)")))
         }
+        if needsBootloaderUpgradeWarning(hardware: input.hardware, method: input.method) {
+            items.append(.warning(String(localized: "This device usually ships with a bootloader that cannot update over Bluetooth. Update the bootloader once over USB before the first Bluetooth update — otherwise the DFU fails (the device stays usable).")))
+        }
 
         // Firmware file
         if let fileError = input.fileError {
@@ -296,7 +342,7 @@ enum FirmwareWizardLogic {
         case .uf2:
             items.append(.info(String(localized: "The device appears as a USB drive; you will be asked to select it so the firmware can be copied.")))
         case .bleOta, .bleDfu:
-            break
+            items.append(.info(String(localized: "Keep the device close to the Mac. The mesh connection is released and the Mac connects to the loader / bootloader over Bluetooth.")))
         }
         if !input.facts.isConnected {
             items.append(.warning(String(localized: "No device connected: recovery mode. Put the device into its bootloader manually (double-press reset).")))
@@ -329,7 +375,7 @@ protocol FirmwareUpdateHost: AnyObject {
     func endFirmwareUpdate()
     func disconnectForFirmwareUpdate() async -> (type: ConnectionType, parameters: ConnectionParameters)?
     func reconnectAfterFirmwareUpdate(type: ConnectionType, parameters: ConnectionParameters) async
-    func sendFirmwareOtaRequest(sha256: Data) async -> Bool
+    func sendFirmwareOtaRequest(mode: UnifiedOta.Mode, sha256: Data) async -> Bool
     func sendFirmwareEnterDfu() async -> Bool
     func exportFirmwareBackup() async throws -> ConfigBackupFile
 }
@@ -362,8 +408,11 @@ extension AppCoordinator: FirmwareUpdateHost {
         return version
     }
 
-    func sendFirmwareOtaRequest(sha256: Data) async -> Bool {
-        await protocol_.sendOtaRequest(mode: .otaWifi, sha256: sha256)
+    func sendFirmwareOtaRequest(mode: UnifiedOta.Mode, sha256: Data) async -> Bool {
+        switch mode {
+        case .wifi: await protocol_.sendOtaRequest(mode: .otaWifi, sha256: sha256)
+        case .ble: await protocol_.sendOtaRequest(mode: .otaBle, sha256: sha256)
+        }
     }
 
     func sendFirmwareEnterDfu() async -> Bool {
@@ -384,9 +433,11 @@ enum FirmwareUpdateError: LocalizedError, Equatable {
     case fileChanged
     case methodNotSupported
     case backupFailed(String)
+    case bluetoothTargetUnknown
 
     var errorDescription: String? {
         switch self {
+        case .bluetoothTargetUnknown: String(localized: "The Bluetooth device of the current connection is unknown. Connect to the node over Bluetooth first.")
         case .notReady: String(localized: "The pre-flight check has not passed.")
         case .notConnected: String(localized: "The device is not connected.")
         case .dfuRequestNotSent: String(localized: "The bootloader request could not be sent to the device.")
@@ -457,6 +508,8 @@ final class FirmwareUpdateSession {
     private(set) var outcome: Outcome?
     private(set) var backupURL: URL?
     private(set) var linkReleased = false
+    /// After a successful Bluetooth update: macOS may keep the old pairing / GATT table of the node.
+    private(set) var showsBluetoothPairingHint = false
     private(set) var isWaitingForDrive = false
     private(set) var connectionTarget: (type: ConnectionType, parameters: ConnectionParameters)?
 
@@ -745,6 +798,7 @@ final class FirmwareUpdateSession {
         outcome = nil
         log = []
         linkReleased = false
+        showsBluetoothPairingHint = false
 
         do {
             // Last gate right before anything is sent: the file on disk must still be the checked one.
@@ -776,8 +830,14 @@ final class FirmwareUpdateSession {
             case .uf2:
                 try await runUf2(host: host, artifact: artifact)
                 outcome = .success(String(localized: "Firmware copied. The device restarts with the new firmware."))
-            case .bleOta, .bleDfu:
-                throw FirmwareUpdateError.methodNotSupported
+            case .bleOta:
+                try await runBleOta(host: host, artifact: artifact)
+                outcome = .success(String(localized: "Firmware transferred and verified. The device restarts with the new firmware."))
+                showsBluetoothPairingHint = true
+            case .bleDfu:
+                try await runBleDfu(artifact: artifact)
+                outcome = .success(String(localized: "Firmware transferred over Bluetooth DFU. The device restarts with the new firmware."))
+                showsBluetoothPairingHint = true
             }
             append(String(localized: "Done."))
         } catch is CancellationError {
@@ -804,7 +864,7 @@ final class FirmwareUpdateSession {
         var knownHost: String?
         if case .tcp(let hostname, _)? = connectionTarget?.parameters { knownHost = hostname }
         let dependencies = Esp32WifiOtaUpdater.Dependencies(
-            sendOtaRequest: { [weak host] sha in await host?.sendFirmwareOtaRequest(sha256: sha) ?? false },
+            sendOtaRequest: { [weak host] sha in await host?.sendFirmwareOtaRequest(mode: .wifi, sha256: sha) ?? false },
             setNotificationHandler: { [weak host] handler in host?.firmwareClientNotificationHandler = handler },
             releaseMeshLink: { [weak self] in await self?.releaseLink() },
             discoverLoader: { await OtaBeaconListener.discover(timeout: $0) },
@@ -817,6 +877,82 @@ final class FirmwareUpdateSession {
         try await Esp32WifiOtaUpdater.perform(
             image: image,
             knownHost: knownHost,
+            dependencies: dependencies,
+            progress: { [weak self] in self?.setPhase($0) },
+            log: { [weak self] in self?.append($0) }
+        )
+    }
+
+    /// Identifier of the Bluetooth peripheral of the (last) mesh connection, if it was Bluetooth.
+    private var bluetoothPeripheralID: UUID? {
+        guard case .bluetooth(let address, _)? = connectionTarget?.parameters else { return nil }
+        return UUID(uuidString: address)
+    }
+
+    /// Reads the file off the main actor and checks it is still the verified one.
+    private func readVerifiedBytes(_ artifact: FirmwareArtifact) async throws -> Data {
+        let url = artifact.url
+        let data = try await Task.detached { try Data(contentsOf: url) }.value
+        guard data.count == artifact.size, Data(SHA256.hash(data: data)) == artifact.sha256 else {
+            throw FirmwareUpdateError.fileChanged
+        }
+        return data
+    }
+
+    private func runBleOta(host: any FirmwareUpdateHost, artifact: FirmwareArtifact) async throws {
+        guard facts.isConnected else { throw FirmwareUpdateError.notConnected }
+        guard let meshID = bluetoothPeripheralID else { throw FirmwareUpdateError.bluetoothTargetUnknown }
+        let image = try await readVerifiedBytes(artifact)
+        let dependencies = Esp32BleOtaUpdater.Dependencies(
+            sendOtaRequest: { [weak host] sha in await host?.sendFirmwareOtaRequest(mode: .ble, sha256: sha) ?? false },
+            setNotificationHandler: { [weak host] handler in host?.firmwareClientNotificationHandler = handler },
+            // From here on the device may be rebooting into its loader: a cancel must not end update mode.
+            markRebootRequested: { [weak self] in self?.linkReleased = true },
+            releaseMeshLink: { [weak self] in await self?.releaseLink() },
+            connectLoader: {
+                try await BleGattLink.scanAndConnect(
+                    criteria: .esp32Loader(previous: meshID),
+                    attempts: Esp32BleOtaUpdater.scanAttempts,
+                    timeout: Esp32BleOtaUpdater.scanTimeout,
+                    retryDelay: Esp32BleOtaUpdater.scanRetryDelay,
+                    tag: "OTA/BLE",
+                    notFound: BleOtaError.loaderNotFound
+                )
+            }
+        )
+        try await Esp32BleOtaUpdater.perform(
+            image: image,
+            dependencies: dependencies,
+            progress: { [weak self] in self?.setPhase($0) },
+            log: { [weak self] in self?.append($0) }
+        )
+    }
+
+    /// Nordic DFU. Connected: release the mesh link (counts as released from then on), trigger the
+    /// buttonless reboot, find the bootloader. Not connected: recovery, the bootloader is already advertising.
+    private func runBleDfu(artifact: FirmwareArtifact) async throws {
+        let recovery = !facts.isConnected
+        let meshID = bluetoothPeripheralID
+        if !recovery, meshID == nil { throw FirmwareUpdateError.bluetoothTargetUnknown }
+        let archive = try await readVerifiedBytes(artifact)
+        let package = try await Task.detached { try DfuPackage(zipData: archive) }.value
+        append(String(localized: "DFU package: \(package.binFileName) (\(package.applicationBinary.count / 1024) KB), init packet \(package.initPacket.count) bytes"))
+
+        let dependencies = NordicDfuUpdater.Dependencies(
+            releaseMeshLink: { [weak self] in await self?.releaseLink() },
+            connectApp: {
+                guard let meshID else { throw FirmwareBleError.peripheralNotFound }
+                return try await BleGattLink.open(id: meshID)
+            },
+            scanBootloader: { timeout in
+                try await BleGattLink().scan(criteria: .nordicBootloader(previous: meshID), timeout: timeout)
+            },
+            connectBootloader: { hit in try await BleGattLink.open(id: hit.id) }
+        )
+        try await NordicDfuUpdater.perform(
+            initPacket: package.initPacket,
+            firmware: package.applicationBinary,
+            alreadyInBootloader: recovery,
             dependencies: dependencies,
             progress: { [weak self] in self?.setPhase($0) },
             log: { [weak self] in self?.append($0) }

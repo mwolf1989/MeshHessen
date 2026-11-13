@@ -96,7 +96,11 @@ private struct FirmwareUpdateWizardContent: View {
             Button("Cancel Transfer", role: .destructive) { session.cancelTransfer() }
             Button("Continue", role: .cancel) {}
         } message: {
-            Text("The transfer is still running. An ESP32 keeps its old firmware as long as the loader has not activated the new image. A UF2 bootloader stays on its drive; the copy can be repeated.")
+            if session.method == .bleDfu {
+                Text("The transfer is still running. The bootloader is told to abort and stays in DFU mode; the update can be repeated in recovery mode (the bootloader starts the old firmware by itself after a few minutes).")
+            } else {
+                Text("The transfer is still running. An ESP32 keeps its old firmware as long as the loader has not activated the new image. A UF2 bootloader stays on its drive; the copy can be repeated.")
+            }
         }
     }
 
@@ -195,7 +199,11 @@ private struct FirmwareUpdateWizardContent: View {
             return common + "\n\n" + String(localized: "The OTA loader verifies the SHA-256 hash before it activates the image; a failed or interrupted transfer leaves the old firmware on the device.")
         case .uf2:
             return common + "\n\n" + String(localized: "The UF2 bootloader stays on its drive until it received a complete image; an interrupted copy can be repeated.")
-        default:
+        case .bleOta:
+            return common + "\n\n" + String(localized: "The mesh connection is released and the Mac connects to the device's OTA loader over Bluetooth. The loader verifies the SHA-256 hash before it activates the image; a failed or interrupted transfer leaves the old firmware on the device.")
+        case .bleDfu:
+            return common + "\n\n" + String(localized: "The mesh connection is released, the device restarts into its Bluetooth bootloader and the Mac sends the DFU package. Keep other devices in bootloader mode away from the Mac. If the transfer fails, the device stays in its bootloader and the update can be repeated in recovery mode.")
+        case nil:
             return common
         }
     }
@@ -208,7 +216,7 @@ private struct DeviceStep: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Updates the firmware of the connected node: ESP32 over Wi-Fi, nRF52 and RP2040 through their USB boot drive. Firmware comes from the official Meshtastic releases or from a local file.")
+            Text("Updates the firmware of the connected node: ESP32 over Wi-Fi or Bluetooth, nRF52 over Bluetooth or its USB boot drive, RP2040 through its USB boot drive. Firmware comes from the official Meshtastic releases or from a local file.")
                 .foregroundStyle(.secondary)
 
             GroupBox("Device") {
@@ -224,10 +232,22 @@ private struct DeviceStep: View {
 
             if !session.facts.isConnected {
                 notice(
-                    "No device connected. Recovery mode: a device that already shows its UF2 boot drive can still be flashed with a local file.",
+                    "No device connected. Recovery mode: a device that already shows its UF2 boot drive or advertises its Bluetooth DFU bootloader can still be flashed with a local file.",
                     systemImage: "exclamationmark.triangle.fill",
                     color: .orange
                 )
+            }
+            if session.hardware?.requiresBootloaderUpgradeForOta == true, session.connectionTarget?.type == .bluetooth {
+                VStack(alignment: .leading, spacing: 6) {
+                    notice(
+                        "This device usually ships with a bootloader that cannot update over Bluetooth. Update the bootloader once over USB before the first Bluetooth update.",
+                        systemImage: "exclamationmark.triangle.fill",
+                        color: .orange
+                    )
+                    if let url = URL(string: FirmwareWizardLogic.bootloaderGuideURL) {
+                        Link("Open the bootloader update guide", destination: url)
+                    }
+                }
             }
             if session.facts.isConnected, session.catalog?.isEmpty == false, !session.hardwareFromCatalog {
                 notice(
@@ -651,6 +671,11 @@ private struct DoneStep: View {
                 Label("Cancelled by the user.", systemImage: "stop.circle.fill").foregroundStyle(.orange)
             case nil:
                 EmptyView()
+            }
+
+            if session.showsBluetoothPairingHint {
+                Label("If the node no longer connects, remove it under System Settings → Bluetooth and pair again.", systemImage: "info.circle")
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let backupURL = session.backupURL {

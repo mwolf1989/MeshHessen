@@ -90,17 +90,66 @@ struct FirmwareWizardLogicTests {
         #expect(options.filter { $0.availability.isAvailable }.map(\.method) == [.uf2])
     }
 
-    @Test("Bluetooth methods are placeholders for a later version")
-    func bluetoothLater() {
-        let options = FirmwareWizardLogic.availableMethods(facts: facts(type: .bluetooth), hardware: hardware("esp32"))
-        #expect(options.first { $0.method == .bleOta }?.availability == .laterVersion)
-        #expect(options.first { $0.method == .bleDfu }?.availability == .laterVersion)
+    @Test("Bluetooth OTA: ESP32, Bluetooth connection, firmware 2.7.17 or newer")
+    func bluetoothOta() {
+        #expect(availability(.bleOta, facts(type: .bluetooth), hardware("esp32-s3")) == .available)
+        #expect(availability(.bleOta, facts(firmware: nil, type: .bluetooth), hardware("esp32")) == .available)
+        #expect(availability(.bleOta, facts(type: .serial), hardware("esp32"))?.isAvailable == false)
+        #expect(availability(.bleOta, facts(wifi: true, type: .tcp), hardware("esp32"))?.isAvailable == false)
+        #expect(availability(.bleOta, facts(firmware: "2.7.16.1", type: .bluetooth), hardware("esp32"))?.reason?.contains("2.7.17") == true)
+        #expect(availability(.bleOta, facts(type: .bluetooth), hardware("nrf52840"))?.isAvailable == false)
+        #expect(availability(.bleOta, facts(connected: false, type: .bluetooth), hardware("esp32"))?.isAvailable == false)
     }
 
-    @Test("Not connected: only UF2 (recovery mode)")
+    @Test("Bluetooth DFU: nRF52 over Bluetooth, or recovery without a connection")
+    func bluetoothDfu() {
+        #expect(availability(.bleDfu, facts(type: .bluetooth), hardware("nrf52840")) == .available)
+        #expect(availability(.bleDfu, facts(type: .serial), hardware("nrf52840"))?.isAvailable == false)
+        #expect(availability(.bleDfu, facts(type: .bluetooth), hardware("esp32"))?.isAvailable == false)
+        #expect(availability(.bleDfu, facts(connected: false), nil) == .available)
+        let options = FirmwareWizardLogic.availableMethods(facts: facts(type: .bluetooth), hardware: hardware("nrf52840"))
+        #expect(FirmwareWizardLogic.defaultMethod(options) == .bleDfu)
+    }
+
+    @Test("ESP32 over Bluetooth defaults to Bluetooth OTA when Wi-Fi is not configured")
+    func espBluetoothDefault() {
+        let options = FirmwareWizardLogic.availableMethods(facts: facts(type: .bluetooth), hardware: hardware("esp32-s3"))
+        #expect(FirmwareWizardLogic.defaultMethod(options) == .bleOta)
+        let wifiOptions = FirmwareWizardLogic.availableMethods(facts: facts(wifi: true, type: .bluetooth), hardware: hardware("esp32-s3"))
+        #expect(FirmwareWizardLogic.defaultMethod(wifiOptions) == .wifiOta)
+    }
+
+    @Test("Not connected: Bluetooth DFU and UF2 (recovery mode)")
     func recovery() {
         let options = FirmwareWizardLogic.availableMethods(facts: facts(connected: false), hardware: nil)
-        #expect(options.filter { $0.availability.isAvailable }.map(\.method) == [.uf2])
+        #expect(options.filter { $0.availability.isAvailable }.map(\.method) == [.bleDfu, .uf2])
+    }
+
+    @Test("Bootloader-upgrade warning only for flagged hardware and Bluetooth DFU")
+    func bootloaderWarning() {
+        let flagged = DeviceHardware(
+            hwModel: 1,
+            hwModelSlug: "T_ECHO",
+            platformioTarget: "t-echo",
+            architecture: "nrf52840",
+            activelySupported: true,
+            displayName: "T-Echo",
+            requiresDfu: true,
+            requiresBootloaderUpgradeForOta: true,
+            supportLevel: nil
+        )
+        #expect(FirmwareWizardLogic.needsBootloaderUpgradeWarning(hardware: flagged, method: .bleDfu))
+        #expect(!FirmwareWizardLogic.needsBootloaderUpgradeWarning(hardware: flagged, method: .uf2))
+        #expect(!FirmwareWizardLogic.needsBootloaderUpgradeWarning(hardware: hardware("nrf52840"), method: .bleDfu))
+
+        var input = FirmwarePreflightInput()
+        input.hardware = flagged
+        input.method = .bleDfu
+        input.facts = facts(type: .bluetooth)
+        let items = FirmwareWizardLogic.preflightItems(input)
+        #expect(items.contains { $0.level == .warning && $0.text.contains("bootloader") })
+        // A warning never blocks; the missing file does.
+        #expect(!FirmwareWizardLogic.canStart(items: items, artifact: nil, inspection: nil))
     }
 
     @Test("Version verdicts")
@@ -234,7 +283,7 @@ private final class FakeFirmwareHost: FirmwareUpdateHost {
         return firmwareUpdateConnectionTarget
     }
     func reconnectAfterFirmwareUpdate(type: ConnectionType, parameters: ConnectionParameters) async {}
-    func sendFirmwareOtaRequest(sha256: Data) async -> Bool { otaRequests += 1; return true }
+    func sendFirmwareOtaRequest(mode: UnifiedOta.Mode, sha256: Data) async -> Bool { otaRequests += 1; return true }
     func sendFirmwareEnterDfu() async -> Bool { dfuRequests += 1; return true }
     func exportFirmwareBackup() async throws -> ConfigBackupFile {
         backups += 1
@@ -302,6 +351,31 @@ struct FirmwareUpdateSessionGateTests {
 
         #expect(!host.anythingSent)
         #expect(session.outcome == .failure(FirmwareUpdateError.notReady.localizedDescription))
+    }
+
+    @Test("A DFU package the inspector rejects is never transmitted over Bluetooth")
+    func badDfuPackageNeverTransmits() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let host = FakeFirmwareHost()
+        host.firmwareDeviceFacts.isConnected = true
+        host.firmwareDeviceFacts.connectionType = .bluetooth
+        host.firmwareUpdateConnectionTarget = (.bluetooth, .bluetooth(deviceAddress: UUID().uuidString, deviceName: "Node"))
+        let session = makeSession(host, cache: directory.appendingPathComponent("cache"))
+        session.method = .bleDfu
+        session.selectSource(.local)
+        session.step = .firmware
+        let zip = directory.appendingPathComponent("firmware-rak4631-2.7.26-ota.zip")
+        try Data("not a zip".utf8).write(to: zip)
+        session.selectLocalFile(zip)
+        #expect(session.localInspection?.hasErrors == true)
+
+        await session.runPreflight()
+        #expect(!session.canStart)
+        #expect(!session.startConfirmed())
+        await session.run()
+        #expect(!host.anythingSent)
+        #expect(!session.linkReleased)
     }
 
     @Test("Without a pre-flight nothing can start")
