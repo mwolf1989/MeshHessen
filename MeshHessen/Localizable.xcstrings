@@ -20360,6 +20360,66 @@
           }
         }
       }
+    },
+    "📡 Radar" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "📡 Radar"
+          }
+        }
+      }
+    },
+    "Estimated reply airtime" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschätzte Antwort-Airtime"
+          }
+        }
+      }
+    },
+    "Estimated transmit time of the replies your node sends for these requests (certain replies only, rated at the current modem preset). Every request also costs your airtime." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschätzte Sendezeit der Antworten, die dein Node auf diese Anfragen funkt (nur sicher erwartete Antworten, gerechnet mit dem aktuellen Modem-Preset). Jede Anfrage kostet also auch deine Airtime."
+          }
+        }
+      }
+    },
+    "🛰️ Show request path on map" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🛰️ Anfrageweg auf Karte zeigen"
+          }
+        }
+      }
+    },
+    "%lld requests" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Anfragen"
+          }
+        }
+      }
+    },
+    "%@ · %lld requests" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · %lld Anfragen"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Funk-Echo window ("Who's pinging us?"): journal of requests other stations sent to
-/// our node plus statistics. Plan 018 adds further tabs to `RequestEchoTab`.
+/// our node, statistics and the sonar radar with a per-station drill-down.
 struct RequestEchoView: View {
     @Environment(\.appState) private var appState
     @Environment(AppCoordinator.self) private var coordinator
@@ -67,11 +67,25 @@ struct RequestEchoView: View {
                 RequestEchoStatisticsView(
                     stats: stats,
                     rangeLabel: rangeLabel,
+                    replyAirtimeMs: coordinator.protocol_.currentModemPreset.flatMap {
+                        LoRaAirtime.totalReplyAirtimeMs(records: records, preset: $0)
+                    },
                     fullName: { labels.fullName($0) }
+                )
+            case .radar:
+                RequestEchoRadarView(
+                    records: filteredRecords,
+                    labels: labels,
+                    rangeDays: rangeDays,
+                    reloadToken: reloadGeneration,
+                    liveEvent: appState.lastRequestEcho,
+                    actions: rowActions
                 )
             }
         }
     }
+
+    private var filtersEnabled: Bool { tab != .statistics }
 
     private var filterBar: some View {
         HStack(spacing: 10) {
@@ -102,12 +116,12 @@ struct RequestEchoView: View {
             }
             .labelsHidden()
             .fixedSize()
-            .disabled(tab != .journal)
+            .disabled(!filtersEnabled)
 
             TextField("Filter by node (name, short name or !hex)", text: $searchText)
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 140, maxWidth: 220)
-                .disabled(tab != .journal)
+                .disabled(!filtersEnabled)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -176,9 +190,85 @@ struct RequestEchoView: View {
                 appState.ensureDMConversation(for: nodeId)
                 appState.dmTargetNodeId = nodeId
                 openWindow(id: "dm")
-            }
+            },
+            showRequestRoute: { record in showRequestRoute(record) }
         )
     }
+
+    /// Draws a traceroute request's inbound path with the traceroute map overlay and
+    /// switches to the map tab.
+    private func showRequestRoute(_ record: RequestEchoRecord) {
+        let ownCoordinate = appState.effectiveOwnCoordinate()
+        guard let result = RequestEchoRoute.tracerouteResult(
+            for: record,
+            myNodeId: appState.myNodeInfo?.nodeId,
+            ownLatitude: ownCoordinate?.latitude,
+            ownLongitude: ownCoordinate?.longitude,
+            node: { appState.node(forId: $0) }
+        ) else {
+            AppLogger.shared.log("[FunkEcho] No request path to show for !\(String(format: "%08x", record.nodeId))")
+            return
+        }
+        appState.selectedTab = .map
+        NSApp.activate(ignoringOtherApps: true)
+        // Hand the route over after the map tab is on screen, so its selection observer
+        // (which switches the traceroute layer on) sees the change.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(150))
+            TracerouteMapSelectionStore.shared.replace(with: [result])
+        }
+    }
+}
+
+// MARK: - Request Route
+
+/// Inbound path of a traceroute request as a `TracerouteResult` for the map overlay.
+enum RequestEchoRoute {
+    /// The stored route lists the relays the request travelled through towards us, so from
+    /// our perspective the chain to the requester is that list reversed plus the requester.
+    /// No SNR values: the request carries none for the direction we would be claiming.
+    /// nil when the record has no route or the requester is unknown.
+    static func tracerouteResult(
+        for record: RequestEchoRecord,
+        myNodeId: UInt32?,
+        ownLatitude: Double?,
+        ownLongitude: Double?,
+        node: (UInt32) -> NodeInfo?
+    ) -> TracerouteResult? {
+        let relays = record.routeNodeIds
+        guard record.type == .traceroute, !relays.isEmpty, let requester = node(record.nodeId) else { return nil }
+
+        let hops = (relays.reversed() + [record.nodeId]).map { nodeId -> TracerouteHop in
+            let isUnknown = nodeId == TracerouteHop.unknownNodeId
+            let hopNode = isUnknown ? nil : node(nodeId)
+            let name = isUnknown
+                ? String(localized: "Unknown intermediate hop")
+                : hopNode?.name.trimmingCharacters(in: .whitespaces).nonEmpty ?? String(format: "!%08x", nodeId)
+            return TracerouteHop(
+                nodeId: nodeId,
+                nodeName: name,
+                snr: nil,
+                latitude: hopNode?.latitude,
+                longitude: hopNode?.longitude,
+                viaMqtt: hopNode?.viaMqtt ?? false
+            )
+        }
+        return TracerouteResult(
+            requestId: nil,
+            requestTime: record.lastSeen,
+            sourceNodeId: myNodeId,
+            sourceLatitude: ownLatitude,
+            sourceLongitude: ownLongitude,
+            targetNodeId: record.nodeId,
+            targetName: requester.name.trimmingCharacters(in: .whitespaces).nonEmpty
+                ?? String(format: "!%08x", record.nodeId),
+            hops: hops
+        )
+    }
+}
+
+private extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
 }
 
 // MARK: - Tabs
@@ -186,6 +276,7 @@ struct RequestEchoView: View {
 enum RequestEchoTab: String, CaseIterable, Identifiable {
     case journal
     case statistics
+    case radar
 
     var id: String { rawValue }
 
@@ -193,6 +284,7 @@ enum RequestEchoTab: String, CaseIterable, Identifiable {
         switch self {
         case .journal: return String(localized: "📜 Journal")
         case .statistics: return String(localized: "📊 Statistics")
+        case .radar: return String(localized: "📡 Radar")
         }
     }
 }
@@ -222,11 +314,36 @@ struct RequestEchoNodeLabels {
     }
 }
 
-private struct RequestEchoRowActions {
+/// Node actions shared by the journal rows and the radar.
+struct RequestEchoRowActions {
     let node: (UInt32) -> NodeInfo?
     let showNodeInfo: (NodeInfo) -> Void
     let showOnMap: (UInt32) -> Void
     let sendDirectMessage: (UInt32) -> Void
+    let showRequestRoute: (RequestEchoRecord) -> Void
+}
+
+/// Context-menu items for a requester. `routeRecord` is a traceroute row with a stored
+/// route; when present, "Show request path on map" is offered.
+struct RequestEchoNodeMenu: View {
+    let nodeId: UInt32
+    let routeRecord: RequestEchoRecord?
+    let actions: RequestEchoRowActions
+
+    var body: some View {
+        let node = actions.node(nodeId)
+        Button("Node info") {
+            if let node { actions.showNodeInfo(node) }
+        }
+        .disabled(node == nil)
+        Button("📍 Show on map") { actions.showOnMap(nodeId) }
+            .disabled(node?.latitude == nil || node?.longitude == nil)
+        Button("Send DM") { actions.sendDirectMessage(nodeId) }
+        if let routeRecord, routeRecord.type == .traceroute, !routeRecord.routeNodeIds.isEmpty {
+            Button("🛰️ Show request path on map") { actions.showRequestRoute(routeRecord) }
+                .disabled(node == nil)
+        }
+    }
 }
 
 // MARK: - Journal
@@ -253,7 +370,9 @@ private struct RequestEchoJournalList: View {
                         Section {
                             ForEach(group.records) { record in
                                 RequestEchoJournalRow(record: record, labels: labels, tone: tone)
-                                    .contextMenu { contextMenu(for: record) }
+                                    .contextMenu {
+                                        RequestEchoNodeMenu(nodeId: record.nodeId, routeRecord: record, actions: actions)
+                                    }
                             }
                         } header: {
                             Text(Self.dayTitle(group.day))
@@ -268,18 +387,6 @@ private struct RequestEchoJournalList: View {
                 .padding(12)
             }
         }
-    }
-
-    @ViewBuilder
-    private func contextMenu(for record: RequestEchoRecord) -> some View {
-        let node = actions.node(record.nodeId)
-        Button("Node info") {
-            if let node { actions.showNodeInfo(node) }
-        }
-        .disabled(node == nil)
-        Button("📍 Show on map") { actions.showOnMap(record.nodeId) }
-            .disabled(node?.latitude == nil || node?.longitude == nil)
-        Button("Send DM") { actions.sendDirectMessage(record.nodeId) }
     }
 
     private var dayGroups: [(day: Date, records: [RequestEchoRecord])] {
@@ -386,6 +493,8 @@ private struct RequestEchoJournalRow: View {
 private struct RequestEchoStatisticsView: View {
     let stats: RequestEchoStats
     let rangeLabel: String
+    /// Estimated airtime of our node's automatic replies; nil = modem preset unknown.
+    let replyAirtimeMs: Double?
     let fullName: (UInt32) -> String
 
     var body: some View {
@@ -395,9 +504,18 @@ private struct RequestEchoStatisticsView: View {
                     .font(.headline)
 
                 HStack(spacing: 10) {
-                    tile(value: stats.totalRequests, title: String(localized: "Requests"))
-                    tile(value: stats.stations, title: String(localized: "Stations"))
-                    tile(value: stats.traceCount, title: String(localized: "Traces"))
+                    tile(value: "\(stats.totalRequests)", title: String(localized: "Requests"))
+                    tile(value: "\(stats.stations)", title: String(localized: "Stations"))
+                    tile(value: "\(stats.traceCount)", title: String(localized: "Traces"))
+                    if let replyAirtimeMs {
+                        tile(
+                            value: LoRaAirtime.formatted(ms: replyAirtimeMs),
+                            title: String(localized: "Estimated reply airtime")
+                        )
+                        .help(
+                            "Estimated transmit time of the replies your node sends for these requests (certain replies only, rated at the current modem preset). Every request also costs your airtime."
+                        )
+                    }
                 }
 
                 if stats.totalRequests == 0 {
@@ -423,9 +541,9 @@ private struct RequestEchoStatisticsView: View {
         }
     }
 
-    private func tile(value: Int, title: String) -> some View {
+    private func tile(value: String, title: String) -> some View {
         VStack(spacing: 2) {
-            Text(verbatim: "\(value)")
+            Text(verbatim: value)
                 .font(.title2.weight(.semibold))
                 .monospacedDigit()
             Text(title)
