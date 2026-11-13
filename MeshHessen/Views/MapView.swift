@@ -38,6 +38,15 @@ struct MapView: View {
     @State private var directContactLoadGeneration = 0
     @State private var tracerouteSelection = TracerouteMapSelectionStore.shared
     @State private var errorMessage: String?
+    @State private var showEnvironmentControls = false
+    @State private var environmentOverlay: EnvironmentOverlay?
+    @State private var environmentRevision = 0
+    @State private var environmentTrigger = 0
+    @State private var environmentLastRefresh = Date.distantPast
+    @State private var environmentRefreshScheduled = false
+
+    /// Minimum interval between refreshes caused by incoming telemetry.
+    private static let environmentRefreshThrottle: TimeInterval = 30
 
     private var runtimeConfiguration: MapRuntimeConfiguration {
         MapRuntimeConfiguration(settings: settings)
@@ -89,6 +98,7 @@ struct MapView: View {
                     neighborColorMode: neighborColorMode,
                     showTraceroutes: showTraceroutes,
                     emergencyOverlayEnabled: settings.mapOverlays.contains(.emergency),
+                    environmentOverlay: environmentOverlay,
                     onSendDM: openDirectMessage,
                     onShowNodeInfo: showNode,
                     onToggleFavorite: toggleFavorite,
@@ -128,6 +138,7 @@ struct MapView: View {
                     showNeighborsPermanently: showNeighborsPermanently,
                     neighborColorMode: neighborColorMode,
                     showTraceroutes: showTraceroutes,
+                    environmentOverlay: environmentOverlay,
                     onSendDM: openDirectMessage,
                     onShowNodeInfo: showNode,
                     onToggleFavorite: toggleFavorite,
@@ -152,9 +163,13 @@ struct MapView: View {
                 currentZoom: currentZoom,
                 effectiveRenderMode: runtimeConfiguration.effectiveRenderMode,
                 onShowLayers: { showLayerControls.toggle() },
+                onShowEnvironment: { showEnvironmentControls.toggle() },
                 onShowOfflineMaps: { showOfflineManager = true }
             )
             .padding(10)
+            .popover(isPresented: $showEnvironmentControls, arrowEdge: .top) {
+                EnvironmentMapControls(settings: settings, overlay: environmentOverlay)
+            }
             .popover(isPresented: $showLayerControls, arrowEdge: .top) {
                 MapLayerControls(
                     settings: settings,
@@ -179,10 +194,17 @@ struct MapView: View {
             VStack {
                 Spacer()
                 HStack(alignment: .bottom) {
-                    MapAttributionView(
-                        text: runtimeConfiguration.attribution,
-                        includesEmergencyLayer: settings.mapOverlays.contains(.emergency)
-                    )
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let legend = environmentOverlay?.surface?.legend {
+                            EnvironmentLegendView(legend: legend)
+                                .padding(7)
+                                .background(.ultraThinMaterial, in: .rect(cornerRadius: 6))
+                        }
+                        MapAttributionView(
+                            text: runtimeConfiguration.attribution,
+                            includesEmergencyLayer: settings.mapOverlays.contains(.emergency)
+                        )
+                    }
                     Spacer()
                     if showNeighbors {
                         NeighborLegend(mode: neighborColorMode)
@@ -251,12 +273,102 @@ struct MapView: View {
             let generation = directContactLoadGeneration
             persistedDirectContacts = []
             Task { await loadPersistedDirectContacts(generation: generation) }
+            if settings.showEnvironmentData { environmentTrigger &+= 1 }
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: .telemetrySampleDidInsert,
+            object: TelemetryDatabaseService.shared
+        )) { notification in
+            scheduleEnvironmentRefresh(after: notification)
+        }
+        .task(id: environmentRefreshKey) {
+            await refreshEnvironmentOverlay()
         }
         .alert("Map Error", isPresented: errorAlertBinding) {
             Button("OK", role: .cancel) { }
         } message: {
             Text(errorMessage ?? "")
         }
+    }
+
+    // MARK: - Environment overlay
+
+    /// Everything that requires an immediate recompute. While the overlay is off only the
+    /// switch itself is read, so no environment work happens on map updates.
+    private var environmentRefreshKey: EnvironmentRefreshKey {
+        guard settings.showEnvironmentData else { return .off }
+        return EnvironmentRefreshKey(
+            enabled: true,
+            metricKey: settings.environmentMetricKey,
+            boxMode: settings.environmentBoxMode,
+            showHeatmap: settings.environmentShowHeatmap,
+            excludedNodeIds: settings.environmentExcludedNodeIds,
+            radiationInSievert: settings.radiationInSievert,
+            positionedNodeIds: Set(appState.filteredNodes.compactMap { $0.latitude != nil ? $0.id : nil }),
+            trigger: environmentTrigger
+        )
+    }
+
+    /// New telemetry for a shown metric refreshes the overlay at most once per 30 s.
+    private func scheduleEnvironmentRefresh(after notification: Notification) {
+        guard settings.showEnvironmentData, !environmentRefreshScheduled else { return }
+        let metrics = notification.userInfo?[TelemetryDatabaseService.insertedMetricsUserInfoKey] as? [String] ?? []
+        let selected = settings.environmentMetric.column
+        let relevant = metrics.contains { metric in
+            (settings.environmentShowHeatmap && metric == selected)
+                || (settings.environmentBoxMode != .off && EnvironmentMetricInfo.isKnownColumn(metric))
+        }
+        guard relevant else { return }
+
+        environmentRefreshScheduled = true
+        let delay = max(0, Self.environmentRefreshThrottle - Date().timeIntervalSince(environmentLastRefresh))
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(delay))
+            environmentRefreshScheduled = false
+            environmentTrigger &+= 1
+        }
+    }
+
+    private func refreshEnvironmentOverlay() async {
+        guard settings.showEnvironmentData else {
+            environmentOverlay = nil
+            return
+        }
+        // Debounce bursts of selection changes.
+        try? await Task.sleep(for: .milliseconds(300))
+        guard !Task.isCancelled else { return }
+        environmentLastRefresh = Date()
+
+        let options = EnvironmentOverlayBuilder.Options(
+            metric: settings.environmentMetric,
+            boxMode: settings.environmentBoxMode,
+            showHeatmap: settings.environmentShowHeatmap,
+            excludedNodeIds: settings.environmentExcludedNodeIds,
+            radiationInSievert: settings.radiationInSievert,
+            now: Date()
+        )
+        let nodes = appState.filteredNodes.compactMap { node -> EnvironmentNodePosition? in
+            guard let latitude = node.latitude, let longitude = node.longitude else { return nil }
+            return EnvironmentNodePosition(
+                nodeId: node.id,
+                latitude: latitude,
+                longitude: longitude,
+                title: node.shortName.isEmpty ? node.nodeId : node.shortName
+            )
+        }
+        let readings = await TelemetryDatabaseService.shared.latestEnvironmentPerNode(
+            metricColumn: options.showHeatmap ? options.metric.column : nil,
+            maxAgeHours: EnvironmentOverlayBuilder.historyHours
+        )
+        guard !Task.isCancelled else { return }
+
+        environmentRevision &+= 1
+        let revision = environmentRevision
+        let overlay = await Task.detached(priority: .utility) {
+            EnvironmentOverlayBuilder.build(revision: revision, nodes: nodes, readings: readings, options: options)
+        }.value
+        guard !Task.isCancelled, settings.showEnvironmentData else { return }
+        environmentOverlay = overlay
     }
 
     // MARK: - Actions
@@ -552,6 +664,28 @@ func resolvedTracerouteSourceCoordinate(
     return MapPointCoordinate(latitude: latitude, longitude: longitude)
 }
 
+private struct EnvironmentRefreshKey: Equatable {
+    var enabled: Bool
+    var metricKey: String
+    var boxMode: EnvironmentBoxMode
+    var showHeatmap: Bool
+    var excludedNodeIds: Set<UInt32>
+    var radiationInSievert: Bool
+    var positionedNodeIds: Set<UInt32>
+    var trigger: Int
+
+    static let off = EnvironmentRefreshKey(
+        enabled: false,
+        metricKey: "",
+        boxMode: .off,
+        showHeatmap: false,
+        excludedNodeIds: [],
+        radiationInSievert: false,
+        positionedNodeIds: [],
+        trigger: 0
+    )
+}
+
 private struct WaypointCoordinateDraft: Identifiable {
     let id = UUID()
     let coordinate: CLLocationCoordinate2D
@@ -564,6 +698,7 @@ private struct MapControlBar: View {
     let currentZoom: Int
     let effectiveRenderMode: MapRenderMode
     let onShowLayers: () -> Void
+    let onShowEnvironment: () -> Void
     let onShowOfflineMaps: () -> Void
 
     var body: some View {
@@ -598,6 +733,10 @@ private struct MapControlBar: View {
             Button("Layers", systemImage: "square.3.layers.3d", action: onShowLayers)
                 .labelStyle(.iconOnly)
                 .help("Map Layers")
+            Button("Environment Data", systemImage: "thermometer.medium", action: onShowEnvironment)
+                .labelStyle(.iconOnly)
+                .symbolVariant(settings.showEnvironmentData ? .fill : .none)
+                .help("Environment data on the map: value boxes, heatmap, metric and node selection")
             Button("Offline Maps", systemImage: "arrow.down.circle", action: onShowOfflineMaps)
                 .labelStyle(.iconOnly)
                 .help("Offline Maps")
@@ -823,6 +962,7 @@ private struct MeshMapViewRepresentable: NSViewRepresentable {
     let showNeighborsPermanently: Bool
     let neighborColorMode: NeighborLineColorMode
     let showTraceroutes: Bool
+    var environmentOverlay: EnvironmentOverlay?
     let onSendDM: (UInt32) -> Void
     let onShowNodeInfo: (UInt32) -> Void
     let onToggleFavorite: (UInt32) -> Void
@@ -855,6 +995,13 @@ private struct MeshMapViewRepresentable: NSViewRepresentable {
         )
         rightClick.buttonMask = 0x2
         map.addGestureRecognizer(rightClick)
+        map.addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+            owner: context.coordinator,
+            userInfo: nil
+        ))
+        context.coordinator.mapView = map
         return map
     }
 
@@ -863,6 +1010,7 @@ private struct MeshMapViewRepresentable: NSViewRepresentable {
         context.coordinator.updateBaseMapIfNeeded(map)
         context.coordinator.updateAnnotations(map)
         context.coordinator.updateDynamicOverlays(map)
+        context.coordinator.updateEnvironment(map)
 
         if let focusNodeId,
            let node = nodes.first(where: { $0.id == focusNodeId }),
@@ -885,6 +1033,12 @@ private struct MeshMapViewRepresentable: NSViewRepresentable {
         private var currentPackages: [URL] = []
         private var currentCacheDirectory: URL?
         private var baseTileOverlay: CachingTileOverlay?
+        weak var mapView: MKMapView?
+        /// Revision of the environment overlay currently drawn; -1 = none.
+        private var environmentRevision = -1
+        private var environmentSurface: EnvironmentSurfaceOverlay?
+        private var environmentBoxes: [UInt32: EnvironmentValueBox] = [:]
+        private var environmentHoverNodeId: UInt32?
 
         init(_ parent: MeshMapViewRepresentable) {
             self.parent = parent
@@ -923,6 +1077,80 @@ private struct MeshMapViewRepresentable: NSViewRepresentable {
             overlay.canReplaceMapContent = true
             baseTileOverlay = overlay
             map.addOverlay(overlay, level: .aboveLabels)
+            if let environmentSurface {
+                // The new base layer was appended on top; put the heatmap back above it.
+                map.removeOverlay(environmentSurface)
+                insertEnvironmentSurface(environmentSurface, into: map)
+            }
+        }
+
+        // MARK: Environment overlay
+
+        /// Applies a new environment overlay revision: the heatmap as one image overlay directly
+        /// above the base map (below all lines; annotations are always drawn above overlays) and
+        /// the value boxes as annotations.
+        func updateEnvironment(_ map: MKMapView) {
+            let revision = parent.environmentOverlay?.revision ?? -1
+            guard revision != environmentRevision else { return }
+            environmentRevision = revision
+
+            if let environmentSurface {
+                map.removeOverlay(environmentSurface)
+                self.environmentSurface = nil
+            }
+            if let surface = parent.environmentOverlay?.surface {
+                let overlay = EnvironmentSurfaceOverlay(surface: surface)
+                environmentSurface = overlay
+                insertEnvironmentSurface(overlay, into: map)
+            }
+
+            let overlay = parent.environmentOverlay
+            environmentBoxes = Dictionary(
+                (overlay?.boxes ?? []).map { ($0.nodeId, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            switch overlay?.boxMode ?? .off {
+            case .off: showEnvironmentBoxes([], on: map)
+            case .always: showEnvironmentBoxes(overlay?.boxes ?? [], on: map)
+            case .hover:
+                showEnvironmentBoxes(environmentHoverNodeId.flatMap { environmentBoxes[$0] }.map { [$0] } ?? [], on: map)
+            }
+        }
+
+        private func insertEnvironmentSurface(_ overlay: EnvironmentSurfaceOverlay, into map: MKMapView) {
+            if let baseTileOverlay, map.overlays.contains(where: { $0 === baseTileOverlay }) {
+                map.insertOverlay(overlay, above: baseTileOverlay)
+            } else {
+                map.insertOverlay(overlay, at: 0, level: .aboveRoads)
+            }
+        }
+
+        private func showEnvironmentBoxes(_ boxes: [EnvironmentValueBox], on map: MKMapView) {
+            map.removeAnnotations(map.annotations.filter { $0 is EnvironmentBoxAnnotation })
+            map.addAnnotations(boxes.map(EnvironmentBoxAnnotation.init(box:)))
+        }
+
+        /// Hover mode: shows only the box of the node pin under the mouse (within 22 pt).
+        @objc func mouseMoved(with event: NSEvent) {
+            guard parent.environmentOverlay?.boxMode == .hover, let map = mapView,
+                  !environmentBoxes.isEmpty else { return }
+            let point = map.convert(event.locationInWindow, from: nil)
+            var hit: UInt32?
+            var best: CGFloat = 22
+            for box in environmentBoxes.values {
+                let pin = map.convert(
+                    CLLocationCoordinate2D(latitude: box.latitude, longitude: box.longitude),
+                    toPointTo: map
+                )
+                let distance = hypot(pin.x - point.x, pin.y - point.y)
+                if distance < best {
+                    best = distance
+                    hit = box.nodeId
+                }
+            }
+            guard hit != environmentHoverNodeId else { return }
+            environmentHoverNodeId = hit
+            showEnvironmentBoxes(hit.flatMap { environmentBoxes[$0] }.map { [$0] } ?? [], on: map)
         }
 
         // MARK: Annotations
@@ -1308,6 +1536,9 @@ private struct MeshMapViewRepresentable: NSViewRepresentable {
             if let tile = overlay as? MKTileOverlay {
                 return MKTileOverlayRenderer(tileOverlay: tile)
             }
+            if let environment = overlay as? EnvironmentSurfaceOverlay {
+                return EnvironmentSurfaceRenderer(surfaceOverlay: environment)
+            }
             if let path = overlay as? NodePathPolyline {
                 let renderer = MKPolylineRenderer(polyline: path)
                 renderer.strokeColor = path.colorHex.isEmpty
@@ -1375,6 +1606,14 @@ private struct MeshMapViewRepresentable: NSViewRepresentable {
                     label.preferredMaxLayoutWidth = 300
                     view.detailCalloutAccessoryView = label
                 }
+                return view
+            }
+            if let box = annotation as? EnvironmentBoxAnnotation {
+                let identifier = "EnvironmentBox"
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? EnvironmentBoxAnnotationView
+                    ?? EnvironmentBoxAnnotationView(annotation: box, reuseIdentifier: identifier)
+                view.annotation = box
+                view.configure(with: box.box, dark: parent.configuration.source == .dark)
                 return view
             }
             if let segment = annotation as? TracerouteSegmentAnnotation {
@@ -1572,6 +1811,142 @@ private final class TracerouteSegmentAnnotation: NSObject, MKAnnotation {
         self.subtitle = subtitle
         self.glyph = glyph
         self.color = color
+    }
+}
+
+// MARK: - Environment overlay (raster map)
+
+private final class EnvironmentBoxAnnotation: NSObject, MKAnnotation {
+    let box: EnvironmentValueBox
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+
+    init(box: EnvironmentValueBox) {
+        self.box = box
+        coordinate = .init(latitude: box.latitude, longitude: box.longitude)
+    }
+}
+
+/// Light-yellow value box drawn just below the node pin (Windows look).
+private final class EnvironmentBoxAnnotationView: MKAnnotationView {
+    private let label = NSTextField(labelWithString: "")
+    private static let padding = CGSize(width: 6, height: 3)
+
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        canShowCallout = false
+        isEnabled = false
+        displayPriority = .required
+        collisionMode = .none
+        wantsLayer = true
+        layer?.cornerRadius = 4
+        layer?.borderWidth = 1
+        layer?.backgroundColor = NSColor(red: 1, green: 0.973, blue: 0.769, alpha: 0.95).cgColor
+        label.maximumNumberOfLines = 0
+        label.drawsBackground = false
+        addSubview(label)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    func configure(with box: EnvironmentValueBox, dark: Bool) {
+        let text = NSMutableAttributedString(
+            string: box.title,
+            attributes: [.font: NSFont.boldSystemFont(ofSize: 11), .foregroundColor: NSColor.black]
+        )
+        for line in box.lines {
+            text.append(NSAttributedString(
+                string: "\n\(line)",
+                attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.black]
+            ))
+        }
+        if !box.time.isEmpty {
+            text.append(NSAttributedString(
+                string: "\n\(box.time)",
+                attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.black.withAlphaComponent(0.65)]
+            ))
+        }
+        label.attributedStringValue = text
+        let size = label.fittingSize
+        label.frame = CGRect(origin: CGPoint(x: Self.padding.width, y: Self.padding.height), size: size)
+        frame.size = CGSize(width: size.width + Self.padding.width * 2, height: size.height + Self.padding.height * 2)
+        layer?.borderColor = (dark ? NSColor.white : NSColor.black).cgColor
+        // Top edge of the box ~10 pt below the node coordinate.
+        centerOffset = CGPoint(x: 0, y: frame.height / 2 + 10)
+    }
+}
+
+/// The interpolated environment surface as one georeferenced image.
+private final class EnvironmentSurfaceOverlay: NSObject, MKOverlay {
+    let surface: EnvironmentSurface
+    let image: CGImage?
+    let boundingMapRect: MKMapRect
+    let coordinate: CLLocationCoordinate2D
+
+    init(surface: EnvironmentSurface) {
+        self.surface = surface
+        image = EnvironmentRaster.cgImage(surface.image)
+        let northWest = MKMapPoint(.init(latitude: surface.image.maxLatitude, longitude: surface.image.minLongitude))
+        let southEast = MKMapPoint(.init(latitude: surface.image.minLatitude, longitude: surface.image.maxLongitude))
+        boundingMapRect = MKMapRect(
+            x: northWest.x,
+            y: northWest.y,
+            width: southEast.x - northWest.x,
+            height: southEast.y - northWest.y
+        )
+        coordinate = .init(
+            latitude: (surface.image.minLatitude + surface.image.maxLatitude) / 2,
+            longitude: (surface.image.minLongitude + surface.image.maxLongitude) / 2
+        )
+    }
+}
+
+/// Draws the heatmap image (bilinear smoothing) plus contour lines and the coverage border.
+private final class EnvironmentSurfaceRenderer: MKOverlayRenderer {
+    private let surfaceOverlay: EnvironmentSurfaceOverlay
+
+    init(surfaceOverlay: EnvironmentSurfaceOverlay) {
+        self.surfaceOverlay = surfaceOverlay
+        super.init(overlay: surfaceOverlay)
+    }
+
+    override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
+        let rect = self.rect(for: surfaceOverlay.boundingMapRect)
+        if let image = surfaceOverlay.image {
+            context.saveGState()
+            context.interpolationQuality = .high
+            // Renderer space grows southwards; CGImage rows grow northwards → flip.
+            context.translateBy(x: rect.minX, y: rect.maxY)
+            context.scaleBy(x: 1, y: -1)
+            context.draw(image, in: CGRect(origin: .zero, size: rect.size))
+            context.restoreGState()
+        }
+        strokeSegments(surfaceOverlay.surface.contours, color: NSColor(white: 0.16, alpha: 0.5), width: 0.8,
+                       zoomScale: zoomScale, in: context)
+        strokeSegments(surfaceOverlay.surface.border, color: NSColor(white: 0.12, alpha: 0.85), width: 1.6,
+                       zoomScale: zoomScale, in: context)
+    }
+
+    private func strokeSegments(
+        _ segments: [EnvironmentSegment],
+        color: NSColor,
+        width: CGFloat,
+        zoomScale: MKZoomScale,
+        in context: CGContext
+    ) {
+        guard !segments.isEmpty else { return }
+        context.saveGState()
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(width / zoomScale)
+        context.setLineCap(.round)
+        for segment in segments {
+            let start = point(for: MKMapPoint(.init(latitude: segment.lat1, longitude: segment.lon1)))
+            let end = point(for: MKMapPoint(.init(latitude: segment.lat2, longitude: segment.lon2)))
+            context.move(to: start)
+            context.addLine(to: end)
+        }
+        context.strokePath()
+        context.restoreGState()
     }
 }
 
