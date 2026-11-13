@@ -27,6 +27,8 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
     let showTraceroutes: Bool
     let emergencyOverlayEnabled: Bool
     var environmentOverlay: EnvironmentOverlay?
+    var triangulations: [TriangulationMapLayer] = []
+    var triangulationFocusRevision: Int?
     let onSendDM: (UInt32) -> Void
     let onShowNodeInfo: (UInt32) -> Void
     let onToggleFavorite: (UInt32) -> Void
@@ -104,6 +106,9 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
         private var lastSnapshotFingerprint = ""
         /// Revision of the environment overlay last sent to JS; `nil` = unknown (resend), -1 = cleared.
         private var lastEnvironmentRevision: Int?
+        /// Revisions of the triangulation layers last sent to JS; nil = resend.
+        private var lastTriangulationKey: [Int]?
+        private var fittedTriangulationRevision: Int?
 
         init(_ parent: VectorMeshMapViewRepresentable) {
             self.parent = parent
@@ -137,6 +142,7 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
 
             scheduleSnapshotPush()
             pushEnvironmentIfNeeded()
+            pushTriangulationIfNeeded()
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -187,8 +193,10 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
                 readyTimeoutTask?.cancel()
                 lastSnapshotFingerprint = ""
                 lastEnvironmentRevision = nil
+                lastTriangulationKey = nil
                 pushSnapshot()
                 pushEnvironmentIfNeeded()
+                pushTriangulationIfNeeded()
             case "viewport":
                 updateViewport(from: payload)
             case "nodeclick":
@@ -322,6 +330,84 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
             } else {
                 call("return setEnvSurface(null);")
             }
+        }
+
+        // MARK: Triangulation
+
+        /// Sends the triangulation layers when they changed and fits a newly shown one.
+        private func pushTriangulationIfNeeded() {
+            guard mapReady else { return }
+            let key = parent.triangulations.map(\.revision)
+            if key != lastTriangulationKey {
+                lastTriangulationKey = key
+                if parent.triangulations.isEmpty {
+                    call("return clearTriangulation();")
+                } else {
+                    call("return setTriangulation(fc);", arguments: ["fc": triangulationFeatureCollection()])
+                }
+            }
+
+            guard let revision = parent.triangulationFocusRevision,
+                  revision != fittedTriangulationRevision,
+                  let layer = parent.triangulations.first(where: { $0.revision == revision }) else { return }
+            fittedTriangulationRevision = revision
+            let bounds = layer.bounds
+            call(
+                "return fitBounds(w, s, e, n);",
+                arguments: [
+                    "w": bounds.minLongitude, "s": bounds.minLatitude,
+                    "e": bounds.maxLongitude, "n": bounds.maxLatitude,
+                ]
+            )
+            Task { @MainActor in TriangulationMapStore.shared.consumeFocus(revision: revision) }
+        }
+
+        /// GeoJSON for `setTriangulation`: `kind` = ring | band | region | outline | label |
+        /// estimate | alternative.
+        private func triangulationFeatureCollection() -> [String: Any] {
+            func ring(_ points: [(latitude: Double, longitude: Double)]) -> [[Double]] {
+                points.map { [$0.longitude, $0.latitude] }
+            }
+            func line(_ points: [[Double]], _ properties: [String: Any]) -> [String: Any] {
+                ["type": "Feature", "properties": properties,
+                 "geometry": ["type": "LineString", "coordinates": points]]
+            }
+            func point(_ latitude: Double, _ longitude: Double, _ properties: [String: Any]) -> [String: Any] {
+                ["type": "Feature", "properties": properties,
+                 "geometry": ["type": "Point", "coordinates": [longitude, latitude]]]
+            }
+
+            var features: [[String: Any]] = []
+            for layer in parent.triangulations {
+                let color = layer.colorHex
+                for circle in layer.rings {
+                    let points = ring(TriangulationMapLayer.circle(
+                        latitude: circle.latitude, longitude: circle.longitude, radiusKm: circle.radiusKm
+                    ))
+                    features.append(line(points, ["kind": circle.style == .distance ? "ring" : "band", "color": color]))
+                }
+                let estimate = layer.estimate
+                let region = ring(TriangulationMapLayer.circle(
+                    latitude: estimate.lat, longitude: estimate.lon, radiusKm: estimate.uncertaintyKm
+                ))
+                features.append([
+                    "type": "Feature", "properties": ["kind": "region", "color": color],
+                    "geometry": ["type": "Polygon", "coordinates": [region]],
+                ])
+                features.append(line(region, ["kind": "outline", "color": color]))
+                for label in layer.anchorLabels {
+                    features.append(point(label.latitude, label.longitude, ["kind": "label", "label": label.text, "color": color]))
+                }
+                features.append(point(estimate.lat, estimate.lon, [
+                    "kind": "estimate", "label": layer.estimateLabel, "color": color, "size": 1.0, "opacity": 1.0,
+                ]))
+                if let altLat = estimate.altLat, let altLon = estimate.altLon {
+                    features.append(point(altLat, altLon, [
+                        "kind": "alternative", "label": layer.alternativeLabel, "color": color, "size": 0.65, "opacity": 0.6,
+                    ]))
+                }
+            }
+            return featureCollection(features)
         }
 
         private func environmentSurfacePayload(_ surface: EnvironmentSurface) -> [String: Any] {

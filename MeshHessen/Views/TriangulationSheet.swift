@@ -209,8 +209,8 @@ private struct ModelSection: View {
                         .foregroundStyle(.orange)
                 }
                 Text(TriangulationDataProvider.recommendsFitted(calibration)
-                     ? "Recommendation: self-calibrated (usable distance correlation)."
-                     : "Recommendation: default model — the fit has almost no distance correlation (R² < 0.2) and would produce unreliable distances.")
+                     ? String(localized: "Recommendation: self-calibrated (usable distance correlation).")
+                     : String(localized: "Recommendation: default model — the fit has almost no distance correlation (R² < 0.2) and would produce unreliable distances."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
