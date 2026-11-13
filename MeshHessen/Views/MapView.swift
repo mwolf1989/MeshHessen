@@ -99,6 +99,7 @@ struct MapView: View {
                     showTraceroutes: showTraceroutes,
                     emergencyOverlayEnabled: settings.mapOverlays.contains(.emergency),
                     environmentOverlay: environmentOverlay,
+                    terrain3DEnabled: settings.mapTerrain3D,
                     onSendDM: openDirectMessage,
                     onShowNodeInfo: showNode,
                     onToggleFavorite: toggleFavorite,
@@ -737,6 +738,12 @@ private struct MapControlBar: View {
                 .labelStyle(.iconOnly)
                 .symbolVariant(settings.showEnvironmentData ? .fill : .none)
                 .help("Environment data on the map: value boxes, heatmap, metric and node selection")
+            if effectiveRenderMode == .vector {
+                Toggle("3D Terrain", systemImage: "mountain.2", isOn: $settings.mapTerrain3D)
+                    .toggleStyle(.button)
+                    .labelStyle(.iconOnly)
+                    .help("Elevation model on the vector map: 3D terrain with hillshading (Control-drag or right-drag to tilt and rotate). Coverage up to 52° N.")
+            }
             Button("Offline Maps", systemImage: "arrow.down.circle", action: onShowOfflineMaps)
                 .labelStyle(.iconOnly)
                 .help("Offline Maps")

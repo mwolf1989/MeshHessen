@@ -27,6 +27,8 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
     let showTraceroutes: Bool
     let emergencyOverlayEnabled: Bool
     var environmentOverlay: EnvironmentOverlay?
+    /// 3D terrain + hillshading (`SettingsService.mapTerrain3D`).
+    var terrain3DEnabled = false
     let onSendDM: (UInt32) -> Void
     let onShowNodeInfo: (UInt32) -> Void
     let onToggleFavorite: (UInt32) -> Void
@@ -104,6 +106,8 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
         private var lastSnapshotFingerprint = ""
         /// Revision of the environment overlay last sent to JS; `nil` = unknown (resend), -1 = cleared.
         private var lastEnvironmentRevision: Int?
+        /// Terrain mode last sent to JS; `nil` = unknown (resend).
+        private var lastTerrainEnabled: Bool?
 
         init(_ parent: VectorMeshMapViewRepresentable) {
             self.parent = parent
@@ -137,6 +141,7 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
 
             scheduleSnapshotPush()
             pushEnvironmentIfNeeded()
+            pushTerrainIfNeeded()
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -187,8 +192,10 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
                 readyTimeoutTask?.cancel()
                 lastSnapshotFingerprint = ""
                 lastEnvironmentRevision = nil
+                lastTerrainEnabled = nil
                 pushSnapshot()
                 pushEnvironmentIfNeeded()
+                pushTerrainIfNeeded()
             case "viewport":
                 updateViewport(from: payload)
             case "nodeclick":
@@ -322,6 +329,26 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
             } else {
                 call("return setEnvSurface(null);")
             }
+        }
+
+        // MARK: 3D terrain
+
+        /// Switches the `raster-dem` terrain, hillshade and north arrow handling in JS. The
+        /// page re-applies it after style changes itself (`styledata` → `applyTerrain`) and
+        /// suspends the 3D drape while the environment heatmap image is shown.
+        private func pushTerrainIfNeeded() {
+            guard mapReady else { return }
+            let enabled = parent.terrain3DEnabled
+            guard enabled != lastTerrainEnabled else { return }
+            lastTerrainEnabled = enabled
+            call(
+                "return setTerrainMode(enabled, tileURL, exaggeration);",
+                arguments: [
+                    "enabled": enabled,
+                    "tileURL": TerrainService.tileURLTemplate,
+                    "exaggeration": 1.3,
+                ]
+            )
         }
 
         private func environmentSurfacePayload(_ surface: EnvironmentSurface) -> [String: Any] {

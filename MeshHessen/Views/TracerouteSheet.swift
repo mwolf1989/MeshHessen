@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct TracerouteSheet: View {
     @Environment(AppCoordinator.self) private var coordinator
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appState) private var appState
 
     let targetNodeId: UInt32
     let targetName: String
@@ -24,6 +25,7 @@ struct TracerouteSheet: View {
     @State private var showExporter = false
     @State private var showDeleteConfirmation = false
     @State private var exportDocument: TracerouteJSONDocument?
+    @State private var linkProfile: LinkProfileRequest?
 
     private let store = TracerouteStore.shared
 
@@ -89,7 +91,9 @@ struct TracerouteSheet: View {
                             ForEach(visibleResults) { result in
                                 TracerouteResultCard(
                                     result: result,
-                                    isSelected: selectionBinding(for: result)
+                                    isSelected: selectionBinding(for: result),
+                                    linkProfileRequest: { linkProfileRequest(for: result, hopIndex: $0) },
+                                    onLinkProfile: { linkProfile = $0 }
                                 )
                             }
                         }
@@ -116,6 +120,9 @@ struct TracerouteSheet: View {
         }
         .onDisappear {
             requestTask?.cancel()
+        }
+        .sheet(item: $linkProfile) { request in
+            LinkProfileSheet(request: request)
         }
         .fileImporter(
             isPresented: $showImporter,
@@ -166,6 +173,43 @@ struct TracerouteSheet: View {
                 selection.setSelected(isSelected, result: result)
             }
         )
+    }
+
+    /// Link profile of the segment into hop `hopIndex` (previous hop, or the traceroute's
+    /// source for the first hop → this hop), as in the Windows client. Nil when the
+    /// segment involves an unknown intermediate hop.
+    private func linkProfileRequest(for result: TracerouteResult, hopIndex: Int) -> LinkProfileRequest? {
+        guard result.hops.indices.contains(hopIndex) else { return nil }
+        let hop = result.hops[hopIndex]
+        guard !hop.isUnknown else { return nil }
+        let end = hopPosition(hop)
+
+        if hopIndex > 0 {
+            let previous = result.hops[hopIndex - 1]
+            guard !previous.isUnknown else { return nil }
+            return LinkProfileRequest(
+                startName: previous.nodeName,
+                start: hopPosition(previous),
+                endName: hop.nodeName,
+                end: end
+            )
+        }
+
+        let sourceId = result.sourceNodeId ?? appState.myNodeInfo?.nodeId
+        let sourceName = sourceId.map { appState.node(forId: $0)?.name ?? String(format: "!%08x", $0) }
+            ?? String(localized: "Me")
+        let start = LinkProfileRequest.point(result.sourceLatitude, result.sourceLongitude)
+            ?? sourceId.flatMap { LinkProfileRequest.position(of: $0, in: appState) }
+        return LinkProfileRequest(startName: sourceName, start: start, endName: hop.nodeName, end: end)
+    }
+
+    /// Position captured with the trace, falling back to the node's current position.
+    private func hopPosition(_ hop: TracerouteHop) -> LinkProfilePoint? {
+        let fallback = LinkProfileRequest.position(of: hop.nodeId, in: appState)
+        return hop.resolvedPosition(
+            fallbackLatitude: fallback?.latitude,
+            fallbackLongitude: fallback?.longitude
+        ).map { LinkProfilePoint(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
     private func refreshHistory() async {
@@ -392,6 +436,8 @@ private struct TracerouteHistoryControls: View {
 private struct TracerouteResultCard: View {
     let result: TracerouteResult
     @Binding var isSelected: Bool
+    let linkProfileRequest: (Int) -> LinkProfileRequest?
+    let onLinkProfile: (LinkProfileRequest) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -427,6 +473,12 @@ private struct TracerouteResultCard: View {
                     distanceToNext: result.distanceToNextHop(after: index),
                     showsArrow: index < result.hops.count - 1
                 )
+                .contentShape(.rect)
+                .contextMenu {
+                    if let request = linkProfileRequest(index) {
+                        LinkProfileMenuButton(request: request, onOpen: onLinkProfile)
+                    }
+                }
             }
         }
         .padding(12)

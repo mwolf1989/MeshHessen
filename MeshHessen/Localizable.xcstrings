@@ -21290,6 +21290,246 @@
           }
         }
       }
+    },
+    "Link Elevation Profile" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Höhenprofil des Links"
+          }
+        }
+      }
+    },
+    "Terrain, line of sight and 60 % Fresnel zone between both nodes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gelände, Sichtlinie und 60 % Fresnel-Zone zwischen beiden Nodes"
+          }
+        }
+      }
+    },
+    "No position known for one of the two nodes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Für einen der beiden Nodes ist keine Position bekannt."
+          }
+        }
+      }
+    },
+    "Elevation Profile" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Höhenprofil"
+          }
+        }
+      }
+    },
+    "No Position" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Position"
+          }
+        }
+      }
+    },
+    "Loading elevation data…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Höhendaten werden geladen …"
+          }
+        }
+      }
+    },
+    "No Elevation Data" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Höhendaten"
+          }
+        }
+      }
+    },
+    "No elevation data available for this path (offline without cache, or outside the elevation model's coverage, north of 52° N)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Höhendaten für diese Strecke verfügbar (offline ohne Cache oder außerhalb der Abdeckung des Höhenmodells, nördlich von 52° N)."
+          }
+        }
+      }
+    },
+    "Antenna height %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antennenhöhe %@"
+          }
+        }
+      }
+    },
+    "Smallest clearance: %@ at %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kleinste Reserve: %@ bei %@"
+          }
+        }
+      }
+    },
+    "Distance between the lower edge of the 60 % Fresnel zone and the terrain (including earth bulge); negative = terrain intrudes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abstand zwischen der Unterkante der 60 % Fresnel-Zone und dem Gelände (inkl. Erdkrümmung); negativ = Gelände ragt hinein."
+          }
+        }
+      }
+    },
+    "Estimated extra loss: ≈ %@ dB" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschätzte Zusatzdämpfung: ≈ %@ dB"
+          }
+        }
+      }
+    },
+    "Knife-edge diffraction loss at the worst obstacle (ITU-R P.526 approximation)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knife-Edge-Beugungsdämpfung am stärksten Hindernis (Näherung nach ITU-R P.526)."
+          }
+        }
+      }
+    },
+    "Line of sight clear" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sichtverbindung frei"
+          }
+        }
+      }
+    },
+    "Fresnel zone partly obstructed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fresnel-Zone teilweise verdeckt"
+          }
+        }
+      }
+    },
+    "Terrain in the way" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gelände im Weg"
+          }
+        }
+      }
+    },
+    "No elevation data" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Höhendaten"
+          }
+        }
+      }
+    },
+    "Terrain (4/3 earth)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gelände (4/3-Erde)"
+          }
+        }
+      }
+    },
+    "Line of sight" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sichtlinie"
+          }
+        }
+      }
+    },
+    "60 % Fresnel zone" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 % Fresnel-Zone"
+          }
+        }
+      }
+    },
+    "Elevation profile chart" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Höhenprofil-Diagramm"
+          }
+        }
+      }
+    },
+    "Height" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Höhe"
+          }
+        }
+      }
+    },
+    "3D Terrain" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3D-Gelände"
+          }
+        }
+      }
+    },
+    "Elevation model on the vector map: 3D terrain with hillshading (Control-drag or right-drag to tilt and rotate). Coverage up to 52° N." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Höhenmodell auf der Vektorkarte: 3D-Gelände mit Schummerung (Ctrl-Ziehen oder Rechts-Ziehen zum Neigen und Drehen). Abdeckung bis 52° N."
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
