@@ -87,6 +87,7 @@ struct DMConversationView: View {
     let coordinator: AppCoordinator
     @Environment(\.appState) private var appState
     @State private var messageText = ""
+    @State private var showFormatToolbar = false
     @State private var isSending = false
     @State private var isLoadingOlder = false
     @State private var hasMoreHistory = true
@@ -186,6 +187,10 @@ struct DMConversationView: View {
                     }
                 }
 
+                if showFormatToolbar {
+                    MessageFormatToolbar(text: $messageText)
+                }
+
                 HStack(spacing: 8) {
                     if !kioskState.isFeatureLocked(.sos) {
                         Button {
@@ -203,6 +208,8 @@ struct DMConversationView: View {
                         .help("Send SOS directly to \(partnerName)")
                         .disabled(!appState.protocolReady || isSending)
                     }
+
+                    MessageFormatToggleButton(isExpanded: $showFormatToolbar)
 
                     TextField("Message to \(partnerName)…", text: $messageText, axis: .vertical)
                         .textFieldStyle(.roundedBorder)

@@ -111,7 +111,7 @@ final class MessageNotificationService {
         pendingEvents.append(MessageNotificationEvent(
             sender: message.from.isEmpty ? String(format: "!%08x", message.fromId) : message.from,
             conversation: conversation,
-            text: message.message,
+            text: MessageFormatting.plainText(message.message),
             target: target
         ))
         guard flushTask == nil else { return }

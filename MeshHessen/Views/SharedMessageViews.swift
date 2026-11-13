@@ -300,12 +300,8 @@ struct MessageBubbleView: View {
                             .help("Decrypt now or request the sender's key")
                             .accessibilityLabel("Request key and decrypt")
                         }
-                    } else if let attributed = Self.detectLinks(in: visibleMessageText) {
-                        Text(attributed)
-                            .textSelection(.enabled)
-                            .contextMenu { messageContextMenu }
                     } else {
-                        Text(visibleMessageText)
+                        Text(MessageFormatting.attributed(visibleMessageText))
                             .textSelection(.enabled)
                             .contextMenu { messageContextMenu }
                     }
@@ -576,34 +572,5 @@ struct MessageBubbleView: View {
             colorHex: node.colorHex,
             note: note
         )
-    }
-
-    /// Detect URLs in the given string and return an AttributedString with `.link` attributes.
-    /// Returns `nil` if no links are found.
-    private static let linkDetector: NSDataDetector? = {
-        try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
-    }()
-
-    private static func detectLinks(in text: String) -> AttributedString? {
-        guard let detector = linkDetector else {
-            return nil
-        }
-        let range = NSRange(text.startIndex..., in: text)
-        let matches = detector.matches(in: text, range: range)
-        guard !matches.isEmpty else { return nil }
-
-        var attributed = AttributedString(text)
-        for match in matches {
-            guard let matchRange = Range(match.range, in: text),
-                  let url = match.url else { continue }
-            let attrRange = AttributedString.Index(matchRange.lowerBound, within: attributed)
-                .flatMap { lower in
-                    AttributedString.Index(matchRange.upperBound, within: attributed)
-                        .map { upper in lower..<upper }
-                }
-            guard let attrRange else { continue }
-            attributed[attrRange].link = url
-        }
-        return attributed
     }
 }
