@@ -343,6 +343,7 @@ final class MeshtasticProtocolService {
         // 9. Finish init; data continues to stream in live
         isInitializing = false
         Task { await self.backfillStoredPositions() }
+        Task { await self.backfillStoredNodeStatuses() }
 
         // 10. Start the heartbeat: keeps the firmware's client API open and
         //     lets the link watchdog detect a silently dead link.
@@ -720,6 +721,7 @@ final class MeshtasticProtocolService {
             case .paxcounterApp:     handlePaxCounter(data: data, packet: packet)
             case .tracerouteApp:     handleTraceroutePacket(data: data, packet: packet)
             case .neighborinfoApp:   handleNeighborInfoPacket(data: data, packet: packet)
+            case .nodeStatusApp:     handleNodeStatusPacket(data: data, packet: packet)
             default:
                 if SettingsService.shared.debugDevice {
                     AppLogger.shared.log("[Protocol] Unhandled portnum \(data.portnum) from \(String(format: "!%08x", packet.from))", debug: true)
@@ -761,6 +763,7 @@ final class MeshtasticProtocolService {
                         case .telemetryApp:      handleTelemetry(data: decoded, packet: decryptedPacket)
                         case .paxcounterApp:     handlePaxCounter(data: decoded, packet: decryptedPacket)
                         case .tracerouteApp:     handleTraceroutePacket(data: decoded, packet: decryptedPacket)
+                        case .nodeStatusApp:     handleNodeStatusPacket(data: decoded, packet: decryptedPacket)
                         default:
                             AppLogger.shared.log("[PKI] Decrypted portnum \(decoded.portnum) from \(nodeDisplayName(packet.from))", debug: true)
                         }
@@ -1244,6 +1247,48 @@ final class MeshtasticProtocolService {
         }
         AppLogger.shared.log("[Protocol] Restored \(restored) node positions from the position history", debug: true)
         return restored
+    }
+
+    /// Restores statuses the radio has not re-broadcast yet (devices only send
+    /// them about every 12 h). Only nodes without a live status are touched.
+    @discardableResult
+    func backfillStoredNodeStatuses() async -> Int {
+        let stored = await telemetryDatabase.nodeStatuses()
+        guard let appState, !stored.isEmpty else { return 0 }
+        var restored = 0
+        for (nodeId, status) in stored {
+            guard let node = appState.node(forId: nodeId), node.status.isEmpty else { continue }
+            node.status = status
+            restored += 1
+        }
+        AppLogger.shared.log("[Protocol] Restored \(restored) node statuses from the database", debug: true)
+        return restored
+    }
+
+    // MARK: - NodeStatus (portnum 36)
+
+    /// Decodes a `StatusMessage` payload into its trimmed text. An empty string
+    /// means the node cleared its status; `nil` means the payload is invalid.
+    nonisolated static func nodeStatusText(from payload: Data) -> String? {
+        guard let message = try? Meshtastic_StatusMessage(serializedBytes: payload) else { return nil }
+        return message.status.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func handleNodeStatusPacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
+        guard let status = Self.nodeStatusText(from: data.payload) else {
+            AppLogger.shared.log(
+                "[Protocol] NodeStatus parse failed from \(String(format: "!%08x", packet.from))",
+                debug: SettingsService.shared.debugDevice
+            )
+            return
+        }
+        // Unknown senders are only persisted; the backfill applies it once they appear.
+        appState?.node(forId: packet.from)?.status = status
+        telemetryDatabase.upsertNodeStatus(nodeId: packet.from, status: status, timestamp: Date())
+        AppLogger.shared.log(
+            "[Protocol] NodeStatus from \(nodeDisplayName(packet.from)): \(status.isEmpty ? "<cleared>" : status)",
+            debug: true
+        )
     }
 
     // MARK: - NodeInfo (portnum 4)
@@ -2563,6 +2608,34 @@ final class MeshtasticProtocolService {
             to: target,
             timeout: timeout
         )
+    }
+
+    /// Maximum `StatusMessageConfig.node_status` length in UTF-8 bytes.
+    nonisolated static let nodeStatusMaxBytes = 79
+
+    /// Sets (or, with an empty text, clears) the own node's status through the
+    /// StatusMessage module. Only that module is read and written; the device
+    /// does not reboot.
+    func setOwnNodeStatus(_ text: String, timeout: Duration = .seconds(30)) async throws {
+        let status = UTF8Limits.clamp(
+            text.trimmingCharacters(in: .whitespacesAndNewlines),
+            maxBytes: Self.nodeStatusMaxBytes
+        )
+        let original = try await requestCompleteConfiguration(
+            from: .local,
+            selection: .module(.statusMessage),
+            timeout: timeout
+        )
+        guard original.loadedModuleCategories.contains(.statusMessage) else {
+            throw DeviceConfigError.incompleteResponse([MeshModuleConfigCategory.statusMessage.title])
+        }
+        var updated = original
+        updated.statusMessage.nodeStatus = status
+        try await saveCompleteConfiguration(updated, replacing: original, to: .local, timeout: timeout)
+
+        guard myNodeId != 0 else { return }
+        appState?.node(forId: myNodeId)?.status = status
+        telemetryDatabase.upsertNodeStatus(nodeId: myNodeId, status: status, timestamp: Date())
     }
 
     /// Re-reads LoRa and channels and returns the unmet Mesh Hessen profile items

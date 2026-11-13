@@ -18478,6 +18478,76 @@
           }
         }
       }
+    },
+    "Node Status" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knotenstatus"
+          }
+        }
+      }
+    },
+    "Node status" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knotenstatus"
+          }
+        }
+      }
+    },
+    "Status: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status: %@"
+          }
+        }
+      }
+    },
+    "%lld/%lld bytes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld/%2$lld Bytes"
+          }
+        }
+      }
+    },
+    "Other nodes show this text next to your node. Leave it empty to clear the status." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Andere Knoten zeigen diesen Text neben Ihrem Knoten an. Leer lassen, um den Status zu löschen."
+          }
+        }
+      }
+    },
+    "Status could not be saved" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status konnte nicht gespeichert werden"
+          }
+        }
+      }
+    },
+    "Set the status text your node broadcasts" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Statustext festlegen, den Ihr Knoten aussendet"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

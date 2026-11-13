@@ -225,6 +225,13 @@ private struct NodeRowView: View {
                         .font(.callout)
                         .fontWeight(.medium)
                         .lineLimit(1)
+                    if !node.status.isEmpty {
+                        Image(systemName: "text.bubble")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .help(node.status)
+                            .accessibilityLabel(Text("Status: \(node.status)"))
+                    }
                 }
 
                 HStack(spacing: 4) {

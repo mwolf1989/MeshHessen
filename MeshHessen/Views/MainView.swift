@@ -15,6 +15,7 @@ struct MainView: View {
     @State private var showStationNameEditor = false
     @State private var showKioskUnlock = false
     @State private var showDisconnectConfirmation = false
+    @State private var showNodeStatusEditor = false
     @State private var selectedNodeId: UInt32?
     @State private var routedNodeInfo: NodeInfo?
     @State private var kioskState = KioskState.shared
@@ -155,6 +156,9 @@ struct MainView: View {
         .sheet(isPresented: $showKioskUnlock) {
             KioskUnlockSheet()
         }
+        .sheet(isPresented: $showNodeStatusEditor) {
+            NodeStatusSheet(initialStatus: ownNodeStatus)
+        }
         .sheet(item: $routedNodeInfo) { node in
             NodeInfoSheet(node: node)
         }
@@ -256,6 +260,11 @@ struct MainView: View {
 
     // MARK: - Toolbar
 
+    private var ownNodeStatus: String {
+        guard let myNodeID = appState.myNodeInfo?.nodeId else { return "" }
+        return appState.node(forId: myNodeID)?.status ?? ""
+    }
+
     @ToolbarContentBuilder
     private var mainToolbar: some ToolbarContent {
         // Left: Connect button
@@ -314,6 +323,16 @@ struct MainView: View {
 
         ToolbarItem(placement: .automatic) {
             MeshStatusIndicatorsView()
+        }
+
+        ToolbarItem(placement: .automatic) {
+            Button {
+                showNodeStatusEditor = true
+            } label: {
+                Label("Node Status", systemImage: "text.bubble")
+            }
+            .disabled(!appState.connectionState.isConnected || appState.myNodeInfo == nil)
+            .help("Set the status text your node broadcasts")
         }
 
         if let updateAvailability {

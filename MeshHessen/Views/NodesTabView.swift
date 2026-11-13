@@ -124,6 +124,12 @@ struct NodesTabView: View {
                         Circle().fill(color).frame(width: 8, height: 8)
                     }
                     Text(node.name).lineLimit(1)
+                    if !node.status.isEmpty {
+                        Image(systemName: "text.bubble")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .help(node.status)
+                    }
                     if node.viaMqtt {
                         Image(systemName: "cloud.fill")
                             .font(.caption2)
@@ -495,6 +501,13 @@ private struct NodeTileView: View {
                 }
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                if !node.status.isEmpty {
+                    Label(node.status, systemImage: "text.bubble")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(node.status)
+                }
             }
 
             Spacer(minLength: 4)
@@ -730,6 +743,7 @@ private struct NodeTileView: View {
         if node.isOwnNode { details.append(String(localized: "Own node")) }
         if node.isFavorite { details.append(String(localized: "Favorite")) }
         if node.isPinned { details.append(String(localized: "Pinned")) }
+        if !node.status.isEmpty { details.append(String(localized: "Status: \(node.status)")) }
         if node.isDirectRF, let signal = node.directSignalText { details.append(signal) }
         if node.batteryLevel > 0 { details.append("\(node.batteryLevel) percent battery") }
         if node.distanceMeters > 0 { details.append(formattedDistance) }

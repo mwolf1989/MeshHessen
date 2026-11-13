@@ -110,6 +110,19 @@ struct NodeInfoSheet: View {
                     .keyboardShortcut(.return, modifiers: .command)
             }
 
+            if !node.status.isEmpty {
+                Label(node.status, systemImage: "text.bubble")
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        Color.accentColor.opacity(0.1),
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                    .help("Node status")
+            }
+
             Divider()
 
             // Details grid
