@@ -19130,6 +19130,236 @@
           }
         }
       }
+    },
+    "✅ %@: back to normal" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "✅ %@: wieder normal"
+          }
+        }
+      }
+    },
+    "⚠ %@: %@ %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⚠ %@: %@ %@"
+          }
+        }
+      }
+    },
+    "🚨 %@: %@ %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🚨 %@: %@ %@"
+          }
+        }
+      }
+    },
+    "%@: %@ %@, %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %@ %@, %@"
+          }
+        }
+      }
+    },
+    "at or below the warning limit of %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "auf oder unter der Warngrenze von %@"
+          }
+        }
+      }
+    },
+    "at or above the warning limit of %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "auf oder über der Warngrenze von %@"
+          }
+        }
+      }
+    },
+    "at or below the alarm limit of %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "auf oder unter der Alarmgrenze von %@"
+          }
+        }
+      }
+    },
+    "at or above the alarm limit of %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "auf oder über der Alarmgrenze von %@"
+          }
+        }
+      }
+    },
+    "%@ is at or below the alarm limit" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ liegt auf oder unter der Alarmgrenze"
+          }
+        }
+      }
+    },
+    "%@ is at or above the alarm limit" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ liegt auf oder über der Alarmgrenze"
+          }
+        }
+      }
+    },
+    "%@ is at or below the warning limit" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ liegt auf oder unter der Warngrenze"
+          }
+        }
+      }
+    },
+    "%@ is at or above the warning limit" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ liegt auf oder über der Warngrenze"
+          }
+        }
+      }
+    },
+    "Warn and alarm zones" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warn- und Alarmzonen"
+          }
+        }
+      }
+    },
+    "Warn low" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warnung unten"
+          }
+        }
+      }
+    },
+    "Warn high" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warnung oben"
+          }
+        }
+      }
+    },
+    "Alarm low" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alarm unten"
+          }
+        }
+      }
+    },
+    "Alarm high" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alarm oben"
+          }
+        }
+      }
+    },
+    "Bounds must be finite numbers; a low bound must be smaller than its high bound." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grenzen müssen endliche Zahlen sein; eine untere Grenze muss kleiner als ihre obere sein."
+          }
+        }
+      }
+    },
+    "Empty = off. Bounds are inclusive; every zone change notifies, including the return to normal." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leer = aus. Grenzen gelten einschließlich; jeder Zonenwechsel wird gemeldet, auch die Rückkehr in den Normalbereich."
+          }
+        }
+      }
+    },
+    "Values in %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werte in %@."
+          }
+        }
+      }
+    },
+    "Alarm zone" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alarmzone"
+          }
+        }
+      }
+    },
+    "Warning limit" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warngrenze"
+          }
+        }
+      }
+    },
+    "Alarm limit" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alarmgrenze"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

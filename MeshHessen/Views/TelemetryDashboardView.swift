@@ -346,9 +346,10 @@ private struct TelemetryWidgetEditor: View {
     let onSave: (TelemetryDashboardWidget, Bool) -> Void
 
     @State private var draft: TelemetryDashboardWidget
-    @State private var thresholdText: String
     @State private var displayMinimumText: String
     @State private var displayMaximumText: String
+    @State private var warnMinimumText: String
+    @State private var warnMaximumText: String
     @State private var alarmMinimumText: String
     @State private var alarmMaximumText: String
     @State private var nodeSearch = ""
@@ -371,11 +372,10 @@ private struct TelemetryWidgetEditor: View {
             initial = widget
         }
         _draft = State(initialValue: initial)
-        _thresholdText = State(
-            initialValue: initial.threshold.map { String(format: "%.4g", $0) } ?? ""
-        )
         _displayMinimumText = State(initialValue: Self.formatted(initial.displayMinimum))
         _displayMaximumText = State(initialValue: Self.formatted(initial.displayMaximum))
+        _warnMinimumText = State(initialValue: Self.formatted(initial.warnMinimum))
+        _warnMaximumText = State(initialValue: Self.formatted(initial.warnMaximum))
         _alarmMinimumText = State(initialValue: Self.formatted(initial.alarmMinimum))
         _alarmMaximumText = State(initialValue: Self.formatted(initial.alarmMaximum))
     }
@@ -523,7 +523,6 @@ private struct TelemetryWidgetEditor: View {
 
                 if draft.type.supportsChartOptions {
                     Section("Diagrammoptionen") {
-                        TextField("Schwellwert (leer = aus)", text: $thresholdText)
                         Toggle("Gleitenden Mittelwert anzeigen", isOn: $draft.showMovingAverage)
                     }
                 }
@@ -546,16 +545,22 @@ private struct TelemetryWidgetEditor: View {
                 }
 
                 if draft.type.usesMetric {
-                    Section("Alarme") {
-                        HStack {
-                            TextField("Untergrenze", text: $alarmMinimumText)
-                            TextField("Obergrenze", text: $alarmMaximumText)
+                    Section("Warn and alarm zones") {
+                        Grid(horizontalSpacing: 12, verticalSpacing: 8) {
+                            GridRow {
+                                TextField("Warn low", text: $warnMinimumText)
+                                TextField("Warn high", text: $warnMaximumText)
+                            }
+                            GridRow {
+                                TextField("Alarm low", text: $alarmMinimumText)
+                                TextField("Alarm high", text: $alarmMaximumText)
+                            }
                         }
-                        Text("Grenzen können einzeln gesetzt werden. Nach einer Erholung wird erneut alarmiert.")
+                        Text(zoneHint)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        if !isAlarmRangeValid {
-                            Text("Alarmgrenzen müssen endlich sein; bei zwei Grenzen muss die Untergrenze kleiner sein.")
+                        if !areZoneBoundsValid {
+                            Text("Bounds must be finite numbers; a low bound must be smaller than its high bound.")
                                 .font(.caption)
                                 .foregroundStyle(.red)
                         }
@@ -611,7 +616,20 @@ private struct TelemetryWidgetEditor: View {
         let hasValidNode = draft.type == .clock
             || draft.type.allowsMultipleNodes
             || draft.nodeIds.count == 1
-        return hasValidNode && isDisplayRangeValid && isAlarmRangeValid
+        return hasValidNode && isDisplayRangeValid && areZoneBoundsValid
+    }
+
+    private var zoneHint: String {
+        let unit = draft.metric.displayUnit(radiationInSievert: SettingsService.shared.radiationInSievert)
+        let base = String(
+            localized: "Empty = off. Bounds are inclusive; every zone change notifies, including the return to normal."
+        )
+        return unit.isEmpty ? base : "\(base) \(String(localized: "Values in \(unit)."))"
+    }
+
+    private var areZoneBoundsValid: Bool {
+        isBoundPairValid(minimumText: warnMinimumText, maximumText: warnMaximumText)
+            && isBoundPairValid(minimumText: alarmMinimumText, maximumText: alarmMaximumText)
     }
 
     private var isDisplayRangeValid: Bool {
@@ -625,9 +643,9 @@ private struct TelemetryWidgetEditor: View {
         return minimum < maximum
     }
 
-    private var isAlarmRangeValid: Bool {
-        let minimumText = normalizedNumberText(alarmMinimumText)
-        let maximumText = normalizedNumberText(alarmMaximumText)
+    private func isBoundPairValid(minimumText: String, maximumText: String) -> Bool {
+        let minimumText = normalizedNumberText(minimumText)
+        let maximumText = normalizedNumberText(maximumText)
         let minimum = finiteNumber(minimumText)
         let maximum = finiteNumber(maximumText)
         guard minimumText.isEmpty || minimum != nil,
@@ -665,10 +683,12 @@ private struct TelemetryWidgetEditor: View {
     }
 
     private func save() {
-        let normalizedThreshold = normalizedNumberText(thresholdText)
-        draft.threshold = normalizedThreshold.isEmpty ? nil : Double(normalizedThreshold)
+        // The legacy threshold is migrated to the alarm bounds on load and no longer edited.
+        draft.threshold = nil
         draft.displayMinimum = finiteNumber(normalizedNumberText(displayMinimumText))
         draft.displayMaximum = finiteNumber(normalizedNumberText(displayMaximumText))
+        draft.warnMinimum = finiteNumber(normalizedNumberText(warnMinimumText))
+        draft.warnMaximum = finiteNumber(normalizedNumberText(warnMaximumText))
         draft.alarmMinimum = finiteNumber(normalizedNumberText(alarmMinimumText))
         draft.alarmMaximum = finiteNumber(normalizedNumberText(alarmMaximumText))
         draft.normalize()
