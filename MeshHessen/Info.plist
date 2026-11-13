@@ -43,6 +43,8 @@
     <string>MeshHessen uses Bluetooth to connect to nearby Meshtastic nodes.</string>
     <key>NSHumanReadableCopyright</key>
     <string></string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>MeshHessen uses the local network to find and update Meshtastic devices over Wi-Fi.</string>
     <key>NSLocationUsageDescription</key>
     <string>MeshHessen uses your location to calculate distances and place your node on the mesh map.</string>
     <key>NSPrincipalClass</key>
