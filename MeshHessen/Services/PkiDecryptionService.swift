@@ -12,7 +12,8 @@ final class PkiDecryptionService: @unchecked Sendable {
     private let lock = NSLock()
     private var privateKey: Curve25519.KeyAgreement.PrivateKey?
 
-    private init() {}
+    /// Internal (not private) so tests can use an isolated instance instead of `shared`.
+    init() {}
 
     /// Stores the device's private key (32 bytes from SecurityConfig).
     /// Must only be called after reading the config, never persisted.
