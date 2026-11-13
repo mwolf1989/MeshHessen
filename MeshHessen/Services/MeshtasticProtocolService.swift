@@ -724,23 +724,7 @@ final class MeshtasticProtocolService {
 
         switch packet.payloadVariant {
         case .decoded(let data):
-            switch data.portnum {
-            case .textMessageApp:    handleTextMessage(data: data, packet: packet)
-            case .positionApp:       handlePosition(data: data, packet: packet)
-            case .nodeinfoApp:       handleNodeInfoPacket(data: data, packet: packet)
-            case .routingApp:        handleRoutingPacket(data: data, packet: packet)
-            case .adminApp:          handleAdminPacket(data: data, packet: packet)
-            case .waypointApp:       handleWaypointPacket(data: data, packet: packet)
-            case .telemetryApp:      handleTelemetry(data: data, packet: packet)
-            case .paxcounterApp:     handlePaxCounter(data: data, packet: packet)
-            case .tracerouteApp:     handleTraceroutePacket(data: data, packet: packet)
-            case .neighborinfoApp:   handleNeighborInfoPacket(data: data, packet: packet)
-            case .nodeStatusApp:     handleNodeStatusPacket(data: data, packet: packet)
-            default:
-                if SettingsService.shared.debugDevice {
-                    AppLogger.shared.log("[Protocol] Unhandled portnum \(data.portnum) from \(String(format: "!%08x", packet.from))", debug: true)
-                }
-            }
+            dispatchDecoded(data, packet: packet)
         case .encrypted(let ciphertext):
             // TCP echoes our own sent packets back. For PKI-encrypted DMs the node
             // can't decrypt them, so they arrive as .encrypted. Silently ignore
@@ -769,22 +753,34 @@ final class MeshtasticProtocolService {
                         decryptedPacket.decoded = decoded
                         AppLogger.shared.log("[PKI] Decrypted packet from \(nodeDisplayName(packet.from)) portnum=\(decoded.portnum)", debug: true)
                         // Re-enter dispatch with decoded payload
-                        switch decoded.portnum {
-                        case .textMessageApp:    handleTextMessage(data: decoded, packet: decryptedPacket)
-                        case .positionApp:       handlePosition(data: decoded, packet: decryptedPacket)
-                        case .nodeinfoApp:       handleNodeInfoPacket(data: decoded, packet: decryptedPacket)
-                        case .routingApp:        handleRoutingPacket(data: decoded, packet: decryptedPacket)
-                        case .telemetryApp:      handleTelemetry(data: decoded, packet: decryptedPacket)
-                        case .paxcounterApp:     handlePaxCounter(data: decoded, packet: decryptedPacket)
-                        case .tracerouteApp:     handleTraceroutePacket(data: decoded, packet: decryptedPacket)
-                        case .nodeStatusApp:     handleNodeStatusPacket(data: decoded, packet: decryptedPacket)
-                        default:
-                            AppLogger.shared.log("[PKI] Decrypted portnum \(decoded.portnum) from \(nodeDisplayName(packet.from))", debug: true)
-                        }
+                        dispatchDecoded(decoded, packet: decryptedPacket)
                         break
                     }
                 }
                 AppLogger.shared.log("[PKI] Decryption failed for packet from \(nodeDisplayName(packet.from))", debug: true)
+            }
+
+            // Channel-PSK fallback: MQTT-relayed packets on a channel whose downlink the
+            // radio does not decrypt arrive still channel-encrypted. Decrypt them with the
+            // channel key whose hash matches `packet.channel` and route them normally.
+            if let result = ChannelCrypto.tryDecrypt(
+                ciphertext: ciphertext,
+                channelHash: packet.channel,
+                packetId: packet.id,
+                from: packet.from,
+                to: packet.to,
+                channels: knownCryptoChannels()
+            ) {
+                var decryptedPacket = packet
+                decryptedPacket.decoded = result.data
+                decryptedPacket.channel = UInt32(result.channelIndex)
+                AppLogger.shared.log(
+                    "[ChanDec] Decrypted channel packet from \(nodeDisplayName(packet.from)) "
+                        + "(hash=\(packet.channel), channel=\(result.channelIndex), portnum=\(result.data.portnum))",
+                    debug: true
+                )
+                dispatchDecoded(result.data, packet: decryptedPacket)
+                break
             }
 
             // Encrypted message we can't decode.
@@ -796,6 +792,38 @@ final class MeshtasticProtocolService {
         default:
             break
         }
+    }
+
+    /// Routes a decoded payload to its portnum handler. Shared by radio-decoded packets
+    /// and packets the client decrypted itself (PKI or channel key).
+    private func dispatchDecoded(_ data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
+        switch data.portnum {
+        case .textMessageApp:    handleTextMessage(data: data, packet: packet)
+        case .positionApp:       handlePosition(data: data, packet: packet)
+        case .nodeinfoApp:       handleNodeInfoPacket(data: data, packet: packet)
+        case .routingApp:        handleRoutingPacket(data: data, packet: packet)
+        case .adminApp:          handleAdminPacket(data: data, packet: packet)
+        case .waypointApp:       handleWaypointPacket(data: data, packet: packet)
+        case .telemetryApp:      handleTelemetry(data: data, packet: packet)
+        case .paxcounterApp:     handlePaxCounter(data: data, packet: packet)
+        case .tracerouteApp:     handleTraceroutePacket(data: data, packet: packet)
+        case .neighborinfoApp:   handleNeighborInfoPacket(data: data, packet: packet)
+        case .nodeStatusApp:     handleNodeStatusPacket(data: data, packet: packet)
+        default:
+            if SettingsService.shared.debugDevice {
+                AppLogger.shared.log("[Protocol] Unhandled portnum \(data.portnum) from \(String(format: "!%08x", packet.from))", debug: true)
+            }
+        }
+    }
+
+    /// Channels of the local node whose keys the client can use for channel crypto.
+    private func knownCryptoChannels() -> [ChannelCrypto.KnownChannel] {
+        var channels = Array(rawChannels.values)
+        if channels.isEmpty, tempChannels.targetNodeID == myNodeId {
+            channels = tempChannels.activeChannels
+        }
+        let lora = receivedConfigs[.lora].map(\.lora)
+        return ChannelCrypto.knownChannels(from: channels, loraConfig: lora)
     }
 
     nonisolated static func hopCount(hopStart: UInt32, hopLimit: UInt32) -> Int {
@@ -2042,8 +2070,14 @@ final class MeshtasticProtocolService {
         )
     }
 
-    /// Send a traceroute request to a target node
-    func sendTraceroute(to targetNodeId: UInt32) async -> Bool {
+    /// Send a traceroute request to a target node.
+    ///
+    /// With `rfOnly` the request is pre-encrypted with the primary channel key so the
+    /// OK_TO_MQTT bit inside the payload stays cleared: for plaintext packets the firmware
+    /// ORs its own `config_ok_to_mqtt` into the bitfield, but it transmits pre-encrypted
+    /// payloads untouched, so MQTT gateways refuse to uplink the request. Falls back to
+    /// the normal request when the primary key is unknown or its channel hash is 0.
+    func sendTraceroute(to targetNodeId: UInt32, rfOnly: Bool = false) async -> Bool {
         let packetId = UInt32.random(in: UInt32(UInt8.max)..<UInt32.max)
 
         let routeDiscovery = Meshtastic_RouteDiscovery()
@@ -2056,12 +2090,22 @@ final class MeshtasticProtocolService {
         data.payload = payload
         data.wantResponse = true
 
-        var packet = Meshtastic_MeshPacket()
-        packet.id = packetId
-        packet.to = targetNodeId
-        packet.hopLimit = 7
-        packet.wantAck = true
-        packet.decoded = data
+        var packet: Meshtastic_MeshPacket
+        var isRFOnlyPacket = false
+        if rfOnly, let rfOnlyPacket = rfOnlyTraceroutePacket(data: data, to: targetNodeId, packetId: packetId) {
+            packet = rfOnlyPacket
+            isRFOnlyPacket = true
+        } else {
+            if rfOnly {
+                AppLogger.shared.log("[Traceroute] RF-only request not possible; sending a normal request", debug: true)
+            }
+            packet = Meshtastic_MeshPacket()
+            packet.id = packetId
+            packet.to = targetNodeId
+            packet.hopLimit = 7
+            packet.wantAck = true
+            packet.decoded = data
+        }
 
         // Record pending traceroute
         let targetName = nodeDisplayName(targetNodeId)
@@ -2081,8 +2125,51 @@ final class MeshtasticProtocolService {
             return false
         }
 
-        AppLogger.shared.log("[Traceroute] Request sent to \(targetName) (packetId=\(packetId))", debug: true)
+        let mode = isRFOnlyPacket ? " (RF only, ok_to_mqtt=0)" : ""
+        AppLogger.shared.log("[Traceroute] Request sent to \(targetName) (packetId=\(packetId))\(mode)", debug: true)
         return true
+    }
+
+    /// Builds the pre-encrypted RF-only traceroute request (Windows `TrySendHfOnlyTracerouteAsync`),
+    /// or nil when it cannot be built (unknown own node, no primary key, channel hash 0).
+    private func rfOnlyTraceroutePacket(data: Meshtastic_Data, to targetNodeId: UInt32, packetId: UInt32) -> Meshtastic_MeshPacket? {
+        guard myNodeId != 0 else { return nil }
+        let primaryIndex = rawChannels.values.first(where: { $0.role == .primary }).map { Int($0.index) } ?? 0
+        guard let primary = knownCryptoChannels().first(where: { $0.index == primaryIndex }) else { return nil }
+        return Self.rfOnlyTraceroutePacket(
+            data: data, from: myNodeId, to: targetNodeId, packetId: packetId, primaryChannel: primary
+        )
+    }
+
+    nonisolated static func rfOnlyTraceroutePacket(
+        data: Meshtastic_Data,
+        from ownNodeId: UInt32,
+        to targetNodeId: UInt32,
+        packetId: UInt32,
+        primaryChannel: ChannelCrypto.KnownChannel
+    ) -> Meshtastic_MeshPacket? {
+        // The firmware treats channel 0 of an outgoing packet as a channel index, not a hash.
+        let hash = primaryChannel.hash
+        guard hash != 0 else { return nil }
+
+        var requestData = data
+        // Bit 0 = OK_TO_MQTT (deliberately cleared), bit 1 = WANT_RESPONSE.
+        requestData.bitfield = 1 << 1
+        guard let plaintext = try? requestData.serializedData(),
+              let ciphertext = ChannelCrypto.encrypt(
+                  plaintext, for: primaryChannel, packetId: packetId, fromNode: ownNodeId, toNode: targetNodeId
+              ) else { return nil }
+
+        var packet = Meshtastic_MeshPacket()
+        packet.from = ownNodeId // the nonce depends on it
+        packet.to = targetNodeId
+        packet.id = packetId
+        packet.channel = UInt32(hash)
+        packet.encrypted = ciphertext
+        packet.wantAck = false
+        packet.hopLimit = 7
+        packet.hopStart = 7
+        return packet
     }
 
     // MARK: - Device Config (admin requests)

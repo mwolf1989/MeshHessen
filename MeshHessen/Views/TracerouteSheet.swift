@@ -15,6 +15,7 @@ struct TracerouteSheet: View {
     @State private var newestPerNodePair = false
     @State private var selection = TracerouteSelection()
     @State private var isRequesting = false
+    @State private var rfOnly = false
     @State private var requestStartedAt: Date?
     @State private var requestTask: Task<Void, Never>?
     @State private var operationMessage: String?
@@ -51,6 +52,7 @@ struct TracerouteSheet: View {
             TracerouteHeader(
                 targetName: targetName,
                 isRequesting: isRequesting,
+                rfOnly: $rfOnly,
                 onRun: runTraceroute,
                 onDone: dismiss.callAsFunction
             )
@@ -187,7 +189,7 @@ struct TracerouteSheet: View {
         operationMessage = String(localized: "Waiting for traceroute response…")
 
         requestTask = Task { @MainActor in
-            let wasSent = await coordinator.sendTraceroute(to: targetNodeId)
+            let wasSent = await coordinator.sendTraceroute(to: targetNodeId, rfOnly: rfOnly)
             guard wasSent else {
                 requestStartedAt = nil
                 isRequesting = false
@@ -304,6 +306,7 @@ struct TracerouteSheet: View {
 private struct TracerouteHeader: View {
     let targetName: String
     let isRequesting: Bool
+    @Binding var rfOnly: Bool
     let onRun: () -> Void
     let onDone: () -> Void
 
@@ -318,6 +321,10 @@ private struct TracerouteHeader: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Toggle("RF only (do not route via MQTT)", isOn: $rfOnly)
+                .toggleStyle(.checkbox)
+                .disabled(isRequesting)
+                .help("Sends the request pre-encrypted with the primary channel key and the OK-to-MQTT flag cleared, so MQTT gateways do not forward it and the result shows the pure radio path. Falls back to a normal traceroute if the primary channel key is unknown.")
             Button(action: onRun) {
                 ZStack {
                     Label("Run Traceroute", systemImage: "arrow.triangle.swap")

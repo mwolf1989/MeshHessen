@@ -159,11 +159,12 @@ enum AESCCM {
 }
 
 /// AES-CTR with a 16-byte big-endian counter block (Meshtastic channel PSK scheme).
-/// Kept for channel decryption (plan 015); moved unchanged from `PkiDecryptionService`.
+/// Used by client-side channel decryption (`ChannelCrypto`).
 enum AESCTR {
-    /// AES-256-CTR using CommonCrypto. Encryption and decryption are the same operation.
+    /// AES-128- or AES-256-CTR using CommonCrypto (key length 16 or 32).
+    /// Encryption and decryption are the same operation.
     static func crypt(key: Data, nonce: Data, ciphertext: Data) -> Data? {
-        guard key.count == 32, nonce.count == 16 else { return nil }
+        guard key.count == kCCKeySizeAES128 || key.count == kCCKeySizeAES256, nonce.count == 16 else { return nil }
 
         var cryptor: CCCryptorRef?
         let status = key.withUnsafeBytes { keyPtr in

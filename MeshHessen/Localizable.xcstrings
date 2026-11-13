@@ -19130,6 +19130,26 @@
           }
         }
       }
+    },
+    "RF only (do not route via MQTT)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur Funk (nicht über MQTT leiten)"
+          }
+        }
+      }
+    },
+    "Sends the request pre-encrypted with the primary channel key and the OK-to-MQTT flag cleared, so MQTT gateways do not forward it and the result shows the pure radio path. Falls back to a normal traceroute if the primary channel key is unknown." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sendet die Anfrage vorverschlüsselt mit dem Schlüssel des Primärkanals und gelöschtem OK-to-MQTT-Flag, sodass MQTT-Gateways sie nicht weiterleiten und das Ergebnis den reinen Funkpfad zeigt. Ist der Schlüssel des Primärkanals unbekannt, wird ein normaler Traceroute gesendet."
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
