@@ -187,9 +187,8 @@ struct RequestEchoView: View {
                 NSApp.activate(ignoringOtherApps: true)
             },
             sendDirectMessage: { nodeId in
-                appState.ensureDMConversation(for: nodeId)
-                appState.dmTargetNodeId = nodeId
-                openWindow(id: "dm")
+                coordinator.openDirectMessage(nodeId: nodeId, openWindow: openWindow)
+                NSApp.activate(ignoringOtherApps: true)
             },
             showRequestRoute: { record in showRequestRoute(record) }
         )
