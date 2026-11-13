@@ -20,6 +20,7 @@ struct TelemetryView: View {
     @State private var rfCollectionStart: Date?
     @State private var traceroutes: [TracerouteResult] = []
     @State private var loadGeneration = 0
+    @State private var linkProfile: LinkProfileRequest?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -141,6 +142,13 @@ struct TelemetryView: View {
                             .foregroundStyle(.secondary)
                         ForEach(rfNeighbors.prefix(20)) { neighbor in
                             RfNeighborRow(neighbor: neighbor, name: neighborName(neighbor.neighborId))
+                                .contentShape(.rect)
+                                .contextMenu {
+                                    LinkProfileMenuButton(
+                                        request: linkProfileRequest(to: neighbor.neighborId),
+                                        onOpen: { linkProfile = $0 }
+                                    )
+                                }
                         }
                     } else if !directContacts.isEmpty {
                         Divider()
@@ -161,6 +169,13 @@ struct TelemetryView: View {
                                     .foregroundStyle(.secondary)
                             }
                             .font(.caption)
+                            .contentShape(.rect)
+                            .contextMenu {
+                                LinkProfileMenuButton(
+                                    request: linkProfileRequest(to: contact.nodeId),
+                                    onOpen: { linkProfile = $0 }
+                                )
+                            }
                         }
                     }
                 }
@@ -171,6 +186,9 @@ struct TelemetryView: View {
         .frame(minWidth: 500, minHeight: 400)
         .onAppear { loadStats() }
         .onChange(of: selectedDays) { loadStats() }
+        .sheet(item: $linkProfile) { request in
+            LinkProfileSheet(request: request)
+        }
         .onReceive(NotificationCenter.default.publisher(
             for: .telemetryDatabaseDidClear,
             object: TelemetryDatabaseService.shared
@@ -235,6 +253,16 @@ struct TelemetryView: View {
 
     private func neighborName(_ id: UInt32) -> String {
         appState.node(forId: id)?.name ?? String(format: "!%08x", id)
+    }
+
+    /// Link profile between the node shown here and one of its neighbours.
+    private func linkProfileRequest(to neighborId: UInt32) -> LinkProfileRequest {
+        LinkProfileRequest(
+            startName: nodeName,
+            start: LinkProfileRequest.position(of: nodeId, in: appState),
+            endName: neighborName(neighborId),
+            end: LinkProfileRequest.position(of: neighborId, in: appState)
+        )
     }
 
     private var pathChangeCount: Int {
