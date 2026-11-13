@@ -56,6 +56,9 @@ struct MeshHessenApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: .incomingDirectMessage)) { note in
                     handleIncomingDM(note)
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .openMessageNotificationTarget)) { note in
+                    handleOpenMessageTarget(note)
+                }
                 .onOpenURL { url in
                     coordinator.router.route(url: url)
                 }
@@ -169,39 +172,51 @@ struct MeshHessenApp: App {
 
     // MARK: - Incoming DM Handler
 
+    /// Sound, Dock bounce and (window style) the DM window for a live incoming DM.
+    /// The system notification is posted by `MessageNotificationService`.
     private func handleIncomingDM(_ notification: Notification) {
         guard let partnerId = notification.userInfo?["partnerId"] as? UInt32 else { return }
         let msg = notification.userInfo?["message"] as? MessageItem
         let senderName = msg?.from ?? "Node \(partnerId)"
+        let messageDate = notification.userInfo?["messageDate"] as? Date ?? Date()
+        let isInitializing = notification.userInfo?["isInitializing"] as? Bool ?? false
+
+        guard MessageNotificationService.isLive(
+            messageDate: messageDate,
+            now: Date(),
+            isInitializing: isInitializing
+        ) else {
+            AppLogger.shared.log("[App] Backlog DM from \(senderName) (\(partnerId)) — no alert", debug: true)
+            return
+        }
 
         AppLogger.shared.log("[App] Incoming DM from \(senderName) (\(partnerId))", debug: true)
 
-        // Set target node so DMWindowView auto-selects the conversation
-        coordinator.appState.dmTargetNodeId = partnerId
+        // Window style: open / bring the DM window to front on this conversation.
+        // Inline style reads DMs in the Messages tab; never pop up the window.
+        if !settings.dmStyleIsInline {
+            coordinator.appState.dmTargetNodeId = partnerId
+            openWindow(id: "dm")
+        }
 
-        // Open / bring DM window to front
-        openWindow(id: "dm")
-
-        // Play notification sound
         NSSound(named: "Blow")?.play()
-
-        // Bounce dock icon to attract attention
         NSApp.requestUserAttention(.criticalRequest)
-
-        // Post system notification for background awareness
-        postSystemNotification(for: msg, partnerId: partnerId)
     }
 
-    private func postSystemNotification(for message: MessageItem?, partnerId: UInt32) {
-        let senderName = message?.from ?? "Node \(partnerId)"
-        let notification = AppNotification(
-            identifier: "dm-\(partnerId)-\(Date().timeIntervalSince1970)",
-            title: String(localized: "DM from \(senderName)"),
-            body: message?.message ?? String(localized: "New direct message"),
-            categoryIdentifier: "INCOMING_DM"
-        )
-        Task {
-            await SystemNotificationService.shared.deliver(notification)
+    /// Clicking a message notification: show the channel or conversation it names.
+    private func handleOpenMessageTarget(_ notification: Notification) {
+        guard let value = notification.object as? String,
+              let target = MessagesSidebarSelection(storageValue: value)
+        else { return }
+        switch target {
+        case .directMessage(let nodeId):
+            coordinator.openDirectMessage(nodeId: nodeId, openWindow: openWindow)
+        case .allChannels, .channel:
+            coordinator.appState.selectedTab = .messages
+            if case .channel(let index) = target {
+                coordinator.appState.selectedChannelIndex = index
+            }
+            coordinator.appState.messagesSidebarRequest = target
         }
     }
 }
@@ -209,13 +224,30 @@ struct MeshHessenApp: App {
 // MARK: - Notification Presentation
 
 /// By default macOS suppresses notification banners while the app is in the
-/// foreground. Explicit presentation keeps incoming DMs visible in every app state.
+/// foreground. Explicit presentation keeps notifications visible in every app state.
 private final class NotificationPresentationDelegate: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
         [.banner, .list, .sound]
+    }
+
+    /// Clicking a notification activates the app; message notifications also
+    /// select their channel or conversation.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        let target = response.notification.request.content.userInfo[
+            MessageNotificationService.targetUserInfoKey
+        ] as? String
+        await MainActor.run {
+            NSApp.activate(ignoringOtherApps: true)
+            if let target {
+                NotificationCenter.default.post(name: .openMessageNotificationTarget, object: target)
+            }
+        }
     }
 }
 

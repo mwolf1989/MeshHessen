@@ -854,6 +854,9 @@ final class MeshtasticProtocolService {
             AppLogger.shared.log("[MSG] From: \(from) To: \(String(format: "%08x", packet.to)) CH:\(packet.channel) MQTT:\(packet.viaMqtt) Bell:\(hasAlertBell) | \(text)", debug: true)
         }
 
+        let messageDate = MessageNotificationService.messageDate(rxTime: packet.rxTime, now: Date())
+        let isOwn = packet.from == myNodeId
+
         // Is it a DM?
         let isBroadcast = packet.to == 0xFFFFFFFF || packet.to == 0
         if !isBroadcast && (packet.to == myNodeId || packet.from == myNodeId) {
@@ -864,13 +867,27 @@ final class MeshtasticProtocolService {
             MessageLogger.shared.logDirectMessage(msg, partnerName: from,
                 partnerNodeId: packet.from == myNodeId ? packet.to : packet.from)
             if hasAlertBell { triggerAlertBell(msg) }
-            // Notify for incoming DMs (not self-sent)
-            if packet.from != myNodeId {
+            MessageNotificationService.shared.handleIncoming(
+                msg,
+                conversation: String(localized: "Direct message"),
+                target: .directMessage(partnerNodeId),
+                messageDate: messageDate,
+                isOwn: isOwn,
+                isInitializing: isInitializing
+            )
+            // Sound / Dock bounce / DM window for incoming DMs (not self-sent);
+            // the receiver skips backlog using `messageDate` and `isInitializing`.
+            if !isOwn {
                 let partnerId = packet.from
                 NotificationCenter.default.post(
                     name: .incomingDirectMessage,
                     object: nil,
-                    userInfo: ["partnerId": partnerId, "message": msg]
+                    userInfo: [
+                        "partnerId": partnerId,
+                        "message": msg,
+                        "messageDate": messageDate,
+                        "isInitializing": isInitializing,
+                    ]
                 )
             }
         } else {
@@ -878,6 +895,14 @@ final class MeshtasticProtocolService {
             MessageLogger.shared.logChannelMessage(msg)
             deliver(msg)
             if hasAlertBell { triggerAlertBell(msg) }
+            MessageNotificationService.shared.handleIncoming(
+                msg,
+                conversation: msg.channelName,
+                target: msg.hasKnownChannel ? .channel(msg.channelIndex) : .allChannels,
+                messageDate: messageDate,
+                isOwn: isOwn,
+                isInitializing: isInitializing
+            )
         }
     }
 
