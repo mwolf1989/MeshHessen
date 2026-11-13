@@ -19600,6 +19600,696 @@
           }
         }
       }
+    },
+    "NodeInfo" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NodeInfo"
+          }
+        }
+      }
+    },
+    "Remote admin" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fernverwaltung"
+          }
+        }
+      }
+    },
+    "device metrics" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gerätedaten"
+          }
+        }
+      }
+    },
+    "environment data" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Umweltdaten"
+          }
+        }
+      }
+    },
+    "air-quality data" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luftqualitäts-Daten"
+          }
+        }
+      }
+    },
+    "power metrics" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strom-Daten"
+          }
+        }
+      }
+    },
+    "mesh statistics" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mesh-Statistiken"
+          }
+        }
+      }
+    },
+    "host metrics" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Host-Daten"
+          }
+        }
+      }
+    },
+    "health data" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gesundheitsdaten"
+          }
+        }
+      }
+    },
+    "generic" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "allgemein"
+          }
+        }
+      }
+    },
+    "✓ reply expected (%@)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "✓ Antwort erwartet (%@)"
+          }
+        }
+      }
+    },
+    "✓ reply expected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "✓ Antwort erwartet"
+          }
+        }
+      }
+    },
+    "✕ no reply (no position)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "✕ keine Antwort (keine Position)"
+          }
+        }
+      }
+    },
+    "? depends on sensors" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "? je nach Sensorik"
+          }
+        }
+      }
+    },
+    "🔐 only with admin authorisation" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🔐 nur mit Admin-Berechtigung"
+          }
+        }
+      }
+    },
+    "Casual (“KELL is tracing the path to us!”)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Locker („KELL verfolgt den Weg zu uns!“)"
+          }
+        }
+      }
+    },
+    "Factual (“Traceroute request from KELL”)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sachlich („Traceroute-Anfrage von KELL“)"
+          }
+        }
+      }
+    },
+    "🔎 %@ is asking for our %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🔎 %1$@ fragt nach unseren %2$@."
+          }
+        }
+      }
+    },
+    "Telemetry request (%@) received from %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telemetrie-Anfrage (%1$@) von %2$@ empfangen"
+          }
+        }
+      }
+    },
+    "👋 %@ wants to get to know us." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "👋 %@ möchte uns kennenlernen."
+          }
+        }
+      }
+    },
+    "📍 %@ is asking where we are." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "📍 %@ fragt nach unserem Standort."
+          }
+        }
+      }
+    },
+    "🔋 %@ is asking how our node is doing." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🔋 %@ fragt, wie es unserem Node geht."
+          }
+        }
+      }
+    },
+    "🛰️ %@ is tracing the radio path to us!" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🛰️ %@ verfolgt den Funkweg zu uns!"
+          }
+        }
+      }
+    },
+    "🛠️ %@ is knocking on our remote admin." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🛠️ %@ klopft an unserer Fernverwaltung an."
+          }
+        }
+      }
+    },
+    "NodeInfo request received from %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NodeInfo-Anfrage von %@ empfangen"
+          }
+        }
+      }
+    },
+    "Position request received from %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Positions-Anfrage von %@ empfangen"
+          }
+        }
+      }
+    },
+    "Telemetry request received from %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telemetrie-Anfrage von %@ empfangen"
+          }
+        }
+      }
+    },
+    "Traceroute request received from %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Traceroute-Anfrage von %@ empfangen"
+          }
+        }
+      }
+    },
+    "Admin packet received from %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Admin-Paket von %@ empfangen"
+          }
+        }
+      }
+    },
+    "☁ MQTT" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "☁ MQTT"
+          }
+        }
+      }
+    },
+    "direct" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "direkt"
+          }
+        }
+      }
+    },
+    "Funk-Echo (requests to us/h)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Funk-Echo (Anfragen an uns/h)"
+          }
+        }
+      }
+    },
+    "requests/h" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anfragen/h"
+          }
+        }
+      }
+    },
+    "Funk-Echo" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Funk-Echo"
+          }
+        }
+      }
+    },
+    "📡 Show Funk-Echo (requests other stations send to your node)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "📡 Funk-Echo anzeigen (Anfragen anderer Stationen an deinen Node)"
+          }
+        }
+      }
+    },
+    "Message style" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meldungsstil"
+          }
+        }
+      }
+    },
+    "System notification on new Funk-Echo requests" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Systembenachrichtigung bei neuen Funk-Echo-Anfragen"
+          }
+        }
+      }
+    },
+    "🔕 Quiet mode (no pulse, popover or notification; the journal keeps running)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🔕 Ruhemodus (keine Puls-, Popover- oder Systemmeldungen; das Journal läuft weiter)"
+          }
+        }
+      }
+    },
+    "Only the request is visible to this app — whether and how your node replies cannot be observed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese App sieht nur die Anfrage — ob und wie dein Node antwortet, lässt sich nicht beobachten."
+          }
+        }
+      }
+    },
+    "Funk-Echo: requests other stations sent to your node — click opens the journal" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Funk-Echo: Anfragen anderer Stationen an deinen Node — Klick öffnet das Journal"
+          }
+        }
+      }
+    },
+    "%lld new requests" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld neue Anfragen"
+          }
+        }
+      }
+    },
+    "Quiet mode" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ruhemodus"
+          }
+        }
+      }
+    },
+    "Open journal" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Journal öffnen"
+          }
+        }
+      }
+    },
+    "📡 Who's pinging us?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "📡 Wer funkt mich an?"
+          }
+        }
+      }
+    },
+    "Funk-Echo is locked" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Funk-Echo ist gesperrt"
+          }
+        }
+      }
+    },
+    "Unlock kiosk mode to view the Funk-Echo journal." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entsperre den Kiosk-Modus, um das Funk-Echo-Journal zu sehen."
+          }
+        }
+      }
+    },
+    "View" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ansicht"
+          }
+        }
+      }
+    },
+    "Range" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeitraum"
+          }
+        }
+      }
+    },
+    "Last 24 h" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzte 24 h"
+          }
+        }
+      }
+    },
+    "Last 7 days" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzte 7 Tage"
+          }
+        }
+      }
+    },
+    "Last 30 days" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzte 30 Tage"
+          }
+        }
+      }
+    },
+    "All types" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Typen"
+          }
+        }
+      }
+    },
+    "Filter by node (name, short name or !hex)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nach Node filtern (Name, Kurzname oder !hex)"
+          }
+        }
+      }
+    },
+    "📜 Journal" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "📜 Journal"
+          }
+        }
+      }
+    },
+    "📊 Statistics" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "📊 Statistik"
+          }
+        }
+      }
+    },
+    "No requests" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Anfragen"
+          }
+        }
+      }
+    },
+    "No requests recorded yet — as soon as another station wants something from your node, it shows up here." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Anfragen erfasst — sobald eine andere Station etwas von deinem Node wissen will, erscheint sie hier."
+          }
+        }
+      }
+    },
+    "Node info" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Node-Info"
+          }
+        }
+      }
+    },
+    "📍 Show on map" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "📍 Auf Karte zeigen"
+          }
+        }
+      }
+    },
+    "Send DM" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DM senden"
+          }
+        }
+      }
+    },
+    "Today" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heute"
+          }
+        }
+      }
+    },
+    "Yesterday" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestern"
+          }
+        }
+      }
+    },
+    "via %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "via %@"
+          }
+        }
+      }
+    },
+    "Curiosity radar · %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neugier-Radar · %@"
+          }
+        }
+      }
+    },
+    "Requests" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anfragen"
+          }
+        }
+      }
+    },
+    "Stations" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stationen"
+          }
+        }
+      }
+    },
+    "Traces" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Traces"
+          }
+        }
+      }
+    },
+    "What did the others want to know?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was wollten die anderen wissen?"
+          }
+        }
+      }
+    },
+    "Most curious node: %@ · %lld requests" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neugierigster Node: %@ · %lld Anfragen"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

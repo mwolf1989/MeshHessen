@@ -6,6 +6,8 @@ struct MeshStatusIndicatorsView: View {
     @Environment(AppCoordinator.self) private var coordinator
     @State private var meshHealth: TelemetryMeshHealthSummary?
     @State private var refreshGeneration = 0
+    @State private var settings = SettingsService.shared
+    @State private var kioskState = KioskState.shared
 
     var body: some View {
         HStack(spacing: 5) {
@@ -33,6 +35,9 @@ struct MeshStatusIndicatorsView: View {
                 title: String(localized: "Mesh Health"),
                 detail: meshDetail
             )
+            if settings.funkEchoEnabled, !kioskState.isFeatureLocked(.funkEcho) {
+                RequestEchoIndicator()
+            }
             statusIndicator(
                 symbol: "cloud.sun.fill",
                 color: weatherColor,

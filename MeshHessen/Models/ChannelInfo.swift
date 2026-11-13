@@ -10,6 +10,9 @@ struct ChannelInfo: Identifiable, Equatable {
     var downlinkEnabled: Bool
     /// Firmware 2.8: channel uses AEAD (AES-CCM) instead of AES-CTR.
     var useAead: Bool = false
+    /// Bits of position precision sent on this channel (`module_settings.position_precision`;
+    /// 1…31 coarsen the position, 0 and 32 are treated as full precision). In memory only.
+    var positionPrecision: Int = 0
 
     /// Display name including MQTT indicator
     var displayName: String {

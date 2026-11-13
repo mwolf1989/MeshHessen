@@ -11,6 +11,8 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
     case airUtilTx = "air_util_tx"
     case uptimeSeconds = "uptime_seconds"
     case packetCount = "packet_count"
+    /// Requests per hour other stations sent to our node (from the Funk-Echo journal).
+    case funkEcho = "funk_echo"
 
     case temperature
     case relativeHumidity = "relative_humidity"
@@ -146,6 +148,7 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
         case .airUtilTx: return String(localized: "TX Utilization")
         case .uptimeSeconds: return String(localized: "Uptime")
         case .packetCount: return String(localized: "Packets per Hour")
+        case .funkEcho: return String(localized: "Funk-Echo (requests to us/h)")
         case .temperature: return String(localized: "Temperature")
         case .relativeHumidity: return String(localized: "Relative Humidity")
         case .barometricPressure: return String(localized: "Barometric Pressure")
@@ -302,6 +305,7 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
         case .hostLoad1, .hostLoad5, .hostLoad15: return ""
         case .healthHeartRate: return "bpm"
         case .lightningStrikeCount1Hour: return "/h"
+        case .funkEcho: return String(localized: "requests/h")
         case .lightningDistance: return "km"
         case .soilPH, .waterPH: return "pH"
         case .electricalConductivity: return "mS/cm"
@@ -332,6 +336,7 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
         case .healthHeartRate: return 30...220
         case .radiation: return 0...100
         case .lightningStrikeCount1Hour: return 0...30
+        case .funkEcho: return 0...20
         case .lightningDistance: return 0...40
         case .soilPH, .waterPH: return 0...14
         case .electricalConductivity: return 0...10
@@ -351,7 +356,7 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
         .snr, .rssi, .battery, .voltage, .channelUtilization,
         .airUtilTx, .temperature, .relativeHumidity,
         .barometricPressure, .packetCount, .radiation,
-        .lightningStrikeCount1Hour, .lightningDistance, .soilPH,
+        .lightningStrikeCount1Hour, .lightningDistance, .soilPH, .funkEcho,
     ]
 
     /// Unit shown to the user. Radiation is stored in µR/h and can be displayed in µSv/h.

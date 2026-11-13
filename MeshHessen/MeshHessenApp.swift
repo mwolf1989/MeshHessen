@@ -137,6 +137,22 @@ struct MeshHessenApp: App {
         .windowStyle(.titleBar)
         .defaultSize(width: 560, height: 360)
 
+        // MARK: - Funk-Echo
+        Window("Funk-Echo", id: "request-echo") {
+            RequestEchoView()
+                .font(settings.scaledBodyFont)
+                .environment(\.locale, settings.appLocale)
+                .preferredColorScheme(settings.preferredColorScheme)
+                .environment(\.appState, coordinator.appState)
+                .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                .environment(\.persistenceController, persistenceController)
+                .environment(coordinator)
+                .environment(\.dynamicTypeSize, settings.dynamicTypeSize)
+        }
+        .windowStyle(.titleBar)
+        .defaultSize(width: 680, height: 620)
+        .windowResizability(.contentMinSize)
+
         // MARK: - Telemetry Chart Windows
         WindowGroup("Telemetry Charts", for: TelemetryChartWindowRequest.self) { request in
             if let request = request.wrappedValue {

@@ -762,6 +762,64 @@ final class SettingsService {
         set { telemetryRetentionDays = newValue.rawValue }
     }
 
+    // MARK: - Funk-Echo
+
+    /// Show requests other stations send to our node (indicator + journal).
+    var funkEchoEnabled: Bool {
+        get {
+            access(keyPath: \.funkEchoEnabled)
+            return defaults.object(forKey: "funkEchoEnabled") as? Bool ?? true
+        }
+        set {
+            withMutation(keyPath: \.funkEchoEnabled) {
+                defaults.set(newValue, forKey: "funkEchoEnabled")
+            }
+        }
+    }
+
+    /// Message style: `casual` or `factual`.
+    var funkEchoTone: String {
+        get {
+            access(keyPath: \.funkEchoTone)
+            return defaults.string(forKey: "funkEchoTone") ?? RequestEchoTone.casual.rawValue
+        }
+        set {
+            withMutation(keyPath: \.funkEchoTone) {
+                defaults.set(newValue, forKey: "funkEchoTone")
+            }
+        }
+    }
+
+    var funkEchoToneValue: RequestEchoTone {
+        RequestEchoTone(rawValue: funkEchoTone) ?? .casual
+    }
+
+    /// Post a system notification for new requests while the app is in the background.
+    var funkEchoNotifications: Bool {
+        get {
+            access(keyPath: \.funkEchoNotifications)
+            return defaults.bool(forKey: "funkEchoNotifications")
+        }
+        set {
+            withMutation(keyPath: \.funkEchoNotifications) {
+                defaults.set(newValue, forKey: "funkEchoNotifications")
+            }
+        }
+    }
+
+    /// Quiet mode: no pulse, popover or notification; the journal keeps recording.
+    var funkEchoQuiet: Bool {
+        get {
+            access(keyPath: \.funkEchoQuiet)
+            return defaults.bool(forKey: "funkEchoQuiet")
+        }
+        set {
+            withMutation(keyPath: \.funkEchoQuiet) {
+                defaults.set(newValue, forKey: "funkEchoQuiet")
+            }
+        }
+    }
+
     /// Display radiation in µSv/h instead of the stored µR/h (display only).
     var radiationInSievert: Bool {
         get {

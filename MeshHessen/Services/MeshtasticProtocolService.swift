@@ -740,6 +740,7 @@ final class MeshtasticProtocolService {
         switch packet.payloadVariant {
         case .decoded(let data):
             noteGoodChannel(for: packet)
+            recordRequestEcho(packet)
             dispatchDecoded(data, packet: packet)
         case .encrypted(let ciphertext):
             // TCP echoes our own sent packets back. For PKI-encrypted DMs the node
@@ -768,6 +769,7 @@ final class MeshtasticProtocolService {
                         var decryptedPacket = packet
                         decryptedPacket.decoded = decoded
                         AppLogger.shared.log("[PKI] Decrypted packet from \(nodeDisplayName(packet.from)) portnum=\(decoded.portnum)", debug: true)
+                        recordRequestEcho(decryptedPacket)
                         // Re-enter dispatch with decoded payload
                         dispatchDecoded(decoded, packet: decryptedPacket)
                         break
@@ -795,6 +797,7 @@ final class MeshtasticProtocolService {
                         + "(hash=\(packet.channel), channel=\(result.channelIndex), portnum=\(result.data.portnum))",
                     debug: true
                 )
+                recordRequestEcho(decryptedPacket)
                 dispatchDecoded(result.data, packet: decryptedPacket)
                 break
             }
@@ -1812,7 +1815,8 @@ final class MeshtasticProtocolService {
             role: channel.role == .primary ? "PRIMARY" : "SECONDARY",
             uplinkEnabled: s.uplinkEnabled,
             downlinkEnabled: s.downlinkEnabled,
-            useAead: s.useAead
+            useAead: s.useAead,
+            positionPrecision: Int(s.moduleSettings.positionPrecision)
         )
     }
 
@@ -2269,6 +2273,48 @@ final class MeshtasticProtocolService {
     /// Such packets must not be stored as results; the firmware answers them on its own.
     nonisolated static func isIncomingRequest(_ data: Meshtastic_Data, to: UInt32, myNodeId: UInt32) -> Bool {
         myNodeId != 0 && to == myNodeId && data.wantResponse && data.requestID == 0
+    }
+
+    // MARK: - Funk-Echo
+
+    /// Records a request another station sent to us (journal + indicator). The connect
+    /// backlog is skipped, otherwise every reconnect would flood the journal.
+    /// The traceroute/telemetry handlers keep their own `isIncomingRequest` guard, so
+    /// requests are never stored as results even while this feature is off.
+    private func recordRequestEcho(_ packet: Meshtastic_MeshPacket) {
+        guard !isInitializing,
+              SettingsService.shared.funkEchoEnabled,
+              let event = RequestEchoClassifier.classify(myNodeId: myNodeId, packet: packet)
+        else { return }
+
+        let expected = RequestEchoExpectation.compute(
+            type: event.type,
+            detail: event.detail,
+            hasOwnPosition: hasOwnPosition,
+            channelPrecisionBits: requestChannelPrecision(event.channel)
+        )
+        telemetryDatabase.upsertRequestEcho(event, expected: expected)
+        appState?.registerRequestEcho(event)
+        AppLogger.shared.log(
+            "[FunkEcho] \(event.type.rawValue)\(event.detail.map { "/\($0)" } ?? "") request from "
+                + "\(String(format: "!%08x", event.fromId)) (hops=\(event.hops.map(String.init) ?? "?"), "
+                + "mqtt=\(event.viaMqtt))",
+            debug: true
+        )
+    }
+
+    private var hasOwnPosition: Bool {
+        guard let own = appState?.node(forId: myNodeId),
+              let latitude = own.latitude, let longitude = own.longitude else { return false }
+        return latitude != 0 || longitude != 0
+    }
+
+    /// Position precision of the channel a request arrived on. Only indices 0…7 name a
+    /// channel slot; anything else (hash/PKI) falls back to full precision.
+    private func requestChannelPrecision(_ channel: UInt32) -> UInt32 {
+        guard channel <= 7,
+              let info = appState?.channels.first(where: { $0.id == Int(channel) }) else { return 32 }
+        return UInt32(clamping: info.positionPrecision)
     }
 
     private func handleTraceroutePacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
