@@ -345,6 +345,108 @@ enum TriangulationDataProvider {
 
     // MARK: Database
 
+    /// Everything that does not depend on the chosen target, loaded once per sheet.
+    struct Context: Sendable {
+        let myNodeId: UInt32
+        let positions: [UInt32: TriangulationPosition]
+        let names: [UInt32: String]
+        let noiseFloors: [UInt32: Double]
+        /// Self-calibrated model, or `.default` when the data is too thin.
+        let fittedCalibration: TriangulationService.Calibration
+        /// Offered targets, sorted by name.
+        let candidates: [UInt32]
+    }
+
+    /// Positions (live first, then the last 30 days of `node_positions`), noise floors,
+    /// self-calibration and the candidate targets.
+    static func loadContext(
+        livePositions: [UInt32: TriangulationPosition],
+        names: [UInt32: String],
+        myNodeId: UInt32,
+        initialTargetId: UInt32,
+        database: TelemetryDatabaseService,
+        now: Date = Date()
+    ) async -> Context {
+        var positions = livePositions
+        for (nodeId, stored) in await database.latestNodePositions(maxAgeDays: historyDays)
+        where positions[nodeId] == nil {
+            positions[nodeId] = TriangulationPosition(latitude: stored.latitude, longitude: stored.longitude)
+        }
+        let noiseFloors = await database.latestNoiseFloors()
+        let rows = await database.rfLinkSnrRows(since: now.addingTimeInterval(-Double(historyDays) * 86_400))
+        let calibration = TriangulationService.fitCalibration(
+            calibrationSamples(rows: rows, positions: positions, noiseFloors: noiseFloors)
+        )
+        var candidates = candidateTargets(rows: rows, positions: positions)
+        candidates.insert(initialTargetId)
+        func name(_ id: UInt32) -> String { names[id] ?? String(format: "!%08x", id) }
+        return Context(
+            myNodeId: myNodeId,
+            positions: positions,
+            names: names,
+            noiseFloors: noiseFloors,
+            fittedCalibration: calibration,
+            candidates: candidates.sorted {
+                name($0).localizedCaseInsensitiveCompare(name($1)) == .orderedAscending
+            }
+        )
+    }
+
+    /// Loads the target's links, builds the anchors and solves. Nil = too few anchors.
+    static func triangulate(
+        targetId: UInt32,
+        context: Context,
+        calibration: TriangulationService.Calibration,
+        overrides: [UInt32: TriangulationNodeOverride] = [:],
+        database: TelemetryDatabaseService,
+        terrain: any TriangulationTerrainSource = NoTriangulationTerrain(),
+        now: Date = Date()
+    ) async -> TriangulationOutcome? {
+        let links = await loadLinks(targetId: targetId, myNodeId: context.myNodeId, database: database, now: now)
+        let input = TriangulationInput(
+            targetId: targetId,
+            myNodeId: context.myNodeId,
+            positions: context.positions,
+            links: links,
+            noiseFloors: context.noiseFloors,
+            names: context.names,
+            overrides: overrides
+        )
+        let anchors = anchors(
+            for: input,
+            calibration: calibration,
+            reportedPositionName: String(localized: "reported position")
+        )
+        let outcome = await solve(
+            targetId: targetId,
+            anchors: anchors,
+            calibration: calibration,
+            targetAntennaHeightM: overrides[targetId]?.antennaHeightM ?? TriangulationService.defaultAntennaHeightM,
+            terrain: terrain
+        )
+        if let outcome {
+            let estimate = outcome.estimate
+            AppLogger.shared.log(String(
+                format: "[Triangulation] !%08x: %d anchors → est %.5f,%.5f ±%.1f km%@ (model: %@, terrain: %@)",
+                targetId,
+                outcome.anchors.count,
+                estimate.lat,
+                estimate.lon,
+                estimate.uncertaintyKm,
+                estimate.hasAlternative
+                    ? String(format: " ALT %.5f,%.5f", estimate.altLat ?? 0, estimate.altLon ?? 0)
+                    : "",
+                calibration.isFitted
+                    ? String(format: "self-calibrated P1km=%.1f n=%.2f σ=%.1f R²=%.2f from %d links",
+                             calibration.p1Km, calibration.exponent, calibration.sigmaDb, calibration.r2,
+                             calibration.samples)
+                    : "default",
+                outcome.usedTerrain ? "DEM" : "flat"
+            ))
+        }
+        return outcome
+    }
+
     /// Robust per-partner signal values of the target from the last 30 days: trimmed
     /// medians of `rf_link_obs` / own `packet_rx` receptions, falling back to the
     /// `rf_links` snapshot (SNR) or the latest direct contact (own RSSI).
