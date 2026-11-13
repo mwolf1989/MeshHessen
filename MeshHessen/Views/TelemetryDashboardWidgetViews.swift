@@ -35,14 +35,14 @@ struct TelemetryDashboardWidgetCard: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(hasActiveAlarm ? Color.red.opacity(0.08) : Color.clear)
+        .background(cardZoneColor?.opacity(hasActiveAlarm ? 0.08 : 0.05) ?? Color.clear)
         .background(.background)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay {
             RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(
-                    hasActiveAlarm ? Color.red : Color.secondary.opacity(0.2),
-                    lineWidth: hasActiveAlarm ? 2 : 1
+                    cardZoneColor ?? Color.secondary.opacity(0.2),
+                    lineWidth: cardZoneColor == nil ? 1 : 2
                 )
         }
         .shadow(color: .black.opacity(0.07), radius: 4, y: 2)
@@ -78,7 +78,7 @@ struct TelemetryDashboardWidgetCard: View {
                 .lineLimit(1)
             if let alarmReading {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(cardZoneColor ?? .red)
                     .help(alarmDescription(for: alarmReading))
                     .accessibilityLabel(alarmDescription(for: alarmReading))
             }
@@ -141,32 +141,39 @@ struct TelemetryDashboardWidgetCard: View {
         }
     }
 
-    private var alarmReading: (state: TelemetryAlarmState, point: TelemetrySeriesPoint)? {
-        guard widget.hasAlarm else { return nil }
+    /// The most severe non-ok zone among the latest value of every node.
+    private var alarmReading: (zone: TelemetryZone, point: TelemetrySeriesPoint)? {
+        guard widget.hasZones else { return nil }
+        var worst: (zone: TelemetryZone, point: TelemetrySeriesPoint)?
         for point in snapshot.latestByNode.values.sorted(by: { $0.nodeId < $1.nodeId }) {
-            let state = TelemetryAlarmEvaluator.state(
-                value: point.value,
-                minimum: widget.alarmMinimum,
-                maximum: widget.alarmMaximum
-            )
-            if state != .normal { return (state, point) }
+            let zone = widget.zone(for: point.value)
+            if zone.severity > (worst?.zone.severity ?? 0) { worst = (zone, point) }
         }
-        return nil
+        return worst
     }
 
-    private var hasActiveAlarm: Bool { alarmReading != nil }
+    private var hasActiveAlarm: Bool { alarmReading?.zone.isAlarm == true }
+
+    private var cardZoneColor: Color? {
+        guard let alarmReading else { return nil }
+        return alarmReading.zone.isAlarm ? .red : .orange
+    }
 
     private func alarmDescription(
-        for reading: (state: TelemetryAlarmState, point: TelemetrySeriesPoint)
+        for reading: (zone: TelemetryZone, point: TelemetrySeriesPoint)
     ) -> String {
         let node = nodeNames[reading.point.nodeId]
             ?? TelemetryDashboardNode.fallbackName(for: reading.point.nodeId)
-        switch reading.state {
-        case .belowMinimum:
-            return String(localized: "\(node) is below the alarm minimum")
-        case .aboveMaximum:
-            return String(localized: "\(node) is above the alarm maximum")
-        case .normal:
+        switch reading.zone {
+        case .alarmLow:
+            return String(localized: "\(node) is at or below the alarm limit")
+        case .alarmHigh:
+            return String(localized: "\(node) is at or above the alarm limit")
+        case .warnLow:
+            return String(localized: "\(node) is at or below the warning limit")
+        case .warnHigh:
+            return String(localized: "\(node) is at or above the warning limit")
+        case .ok:
             return String(localized: "\(node) is within the normal range")
         }
     }
@@ -257,6 +264,7 @@ private struct DashboardLineChart: View {
         if points.isEmpty {
             DashboardNoData()
         } else {
+            let zoneLayout = self.zoneLayout
             Chart {
                 ForEach(points) { point in
                     if area {
@@ -283,15 +291,8 @@ private struct DashboardLineChart: View {
                     .foregroundStyle(by: .value("Node", "\(nodeLabel(point.nodeId)) Ø"))
                     .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                 }
-                if let threshold = widget.threshold {
-                    RuleMark(y: .value(String(localized: "Threshold"), threshold))
-                        .foregroundStyle(.red)
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                        .annotation(position: .top, alignment: .trailing) {
-                            Text("\(threshold, format: .number.precision(.fractionLength(1)))")
-                                .font(.caption2)
-                                .foregroundStyle(.red)
-                        }
+                if let zoneLayout {
+                    DashboardZoneMarks(layout: zoneLayout, valueAxis: .vertical)
                 }
             }
             .chartXAxis {
@@ -302,8 +303,12 @@ private struct DashboardLineChart: View {
                 }
             }
             .chartYAxis { AxisMarks(position: .leading) }
-            .modifier(DashboardMetricScale(widget: widget))
+            .modifier(DashboardMetricScale(widget: widget, zoneLayout: zoneLayout))
         }
+    }
+
+    private var zoneLayout: TelemetryZoneLayout? {
+        TelemetryZoneLayout(widget: widget, values: points.map(\.value))
     }
 
     private func nodeLabel(_ nodeId: UInt32) -> String {
@@ -334,17 +339,28 @@ private struct DashboardBarChart: View {
         if aggregates.isEmpty {
             DashboardNoData()
         } else {
-            Chart(aggregates) { point in
-                BarMark(
-                    x: .value(String(localized: "Day"), point.date, unit: .day),
-                    y: .value(widget.metric.displayName, point.value)
-                )
-                .foregroundStyle(by: .value(
-                    "Node",
-                    nodeNames[point.nodeId]
-                        ?? TelemetryDashboardNode.fallbackName(for: point.nodeId)
-                ))
-                .position(by: .value("Node-ID", point.nodeId))
+            let aggregates = self.aggregates
+            let zoneLayout = TelemetryZoneLayout(
+                widget: widget,
+                values: aggregates.map(\.value),
+                includeZero: true
+            )
+            Chart {
+                ForEach(aggregates) { point in
+                    BarMark(
+                        x: .value(String(localized: "Day"), point.date, unit: .day),
+                        y: .value(widget.metric.displayName, point.value)
+                    )
+                    .foregroundStyle(by: .value(
+                        "Node",
+                        nodeNames[point.nodeId]
+                            ?? TelemetryDashboardNode.fallbackName(for: point.nodeId)
+                    ))
+                    .position(by: .value("Node-ID", point.nodeId))
+                }
+                if let zoneLayout {
+                    DashboardZoneMarks(layout: zoneLayout, valueAxis: .vertical)
+                }
             }
             .chartXAxis {
                 AxisMarks(values: .automatic) { _ in
@@ -353,7 +369,7 @@ private struct DashboardBarChart: View {
                     AxisValueLabel(format: .dateTime.day().month(.abbreviated))
                 }
             }
-            .modifier(DashboardMetricScale(widget: widget))
+            .modifier(DashboardMetricScale(widget: widget, zoneLayout: zoneLayout))
         }
     }
 }
@@ -367,17 +383,23 @@ private struct DashboardScatterChart: View {
         if points.isEmpty {
             DashboardNoData()
         } else {
-            Chart(points) { point in
-                PointMark(
-                    x: .value(String(localized: "Time"), point.timestamp),
-                    y: .value(widget.metric.displayName, point.value)
-                )
-                .foregroundStyle(by: .value(
-                    "Node",
-                    nodeNames[point.nodeId]
-                        ?? TelemetryDashboardNode.fallbackName(for: point.nodeId)
-                ))
-                .symbolSize(28)
+            let zoneLayout = TelemetryZoneLayout(widget: widget, values: points.map(\.value))
+            Chart {
+                ForEach(points) { point in
+                    PointMark(
+                        x: .value(String(localized: "Time"), point.timestamp),
+                        y: .value(widget.metric.displayName, point.value)
+                    )
+                    .foregroundStyle(by: .value(
+                        "Node",
+                        nodeNames[point.nodeId]
+                            ?? TelemetryDashboardNode.fallbackName(for: point.nodeId)
+                    ))
+                    .symbolSize(28)
+                }
+                if let zoneLayout {
+                    DashboardZoneMarks(layout: zoneLayout, valueAxis: .vertical)
+                }
             }
             .chartXAxis {
                 AxisMarks(values: .automatic) { _ in
@@ -386,7 +408,7 @@ private struct DashboardScatterChart: View {
                     AxisValueLabel(format: .dateTime.day().month(.abbreviated))
                 }
             }
-            .modifier(DashboardMetricScale(widget: widget))
+            .modifier(DashboardMetricScale(widget: widget, zoneLayout: zoneLayout))
         }
     }
 }
@@ -410,21 +432,20 @@ private struct DashboardGauge: View {
 
     var body: some View {
         if let latest {
+            let range = self.range
+            let zoneColor = widget.zoneColor(for: latest.value)
             VStack(spacing: 8) {
-                Gauge(value: min(max(latest.value, range.lowerBound), range.upperBound), in: range) {
-                    Text(widget.metric.displayName)
-                } currentValueLabel: {
-                    Text(latest.value, format: .number.precision(.fractionLength(1)))
-                        .font(.title2.monospacedDigit())
-                } minimumValueLabel: {
-                    Text(range.lowerBound, format: .number.precision(.fractionLength(0)))
-                } maximumValueLabel: {
-                    Text(range.upperBound, format: .number.precision(.fractionLength(0)))
-                }
-                .gaugeStyle(.accessoryCircular)
-                .tint(.accentColor)
-                .scaleEffect(1.35)
-                .padding(18)
+                DashboardZoneDial(
+                    value: latest.value,
+                    range: range,
+                    segments: widget.zoneSegments(in: range),
+                    tint: zoneColor ?? .accentColor,
+                    valueColor: zoneColor ?? .primary
+                )
+                .frame(width: 112, height: 112)
+                .padding(12)
+                .accessibilityLabel(widget.metric.displayName)
+                .accessibilityValue(Text(latest.value, format: .number.precision(.fractionLength(1))))
 
                 Text(widget.displayUnit)
                     .font(.caption)
@@ -458,6 +479,7 @@ private struct DashboardStat: View {
                 Text(latest.value, format: .number.precision(.fractionLength(1)))
                     .font(.system(.largeTitle, design: .rounded).weight(.light))
                     .monospacedDigit()
+                    .foregroundStyle(widget.zoneColor(for: latest.value) ?? .primary)
                 Text(widget.displayUnit)
                     .font(.headline)
                     .foregroundStyle(.secondary)
@@ -528,17 +550,26 @@ private struct DashboardHistogram: View {
         if bins.isEmpty {
             DashboardNoData()
         } else {
-            Chart(bins) { bin in
-                BarMark(
-                    xStart: .value(String(localized: "From"), bin.lowerBound),
-                    xEnd: .value(String(localized: "To"), bin.upperBound),
-                    y: .value(String(localized: "Count"), bin.count)
-                )
-                .foregroundStyle(.green.gradient)
+            let zoneLayout = TelemetryZoneLayout(
+                widget: widget,
+                values: bins.flatMap { [$0.lowerBound, $0.upperBound] }
+            )
+            Chart {
+                ForEach(bins) { bin in
+                    BarMark(
+                        xStart: .value(String(localized: "From"), bin.lowerBound),
+                        xEnd: .value(String(localized: "To"), bin.upperBound),
+                        y: .value(String(localized: "Count"), bin.count)
+                    )
+                    .foregroundStyle(.green.gradient)
+                }
+                if let zoneLayout {
+                    DashboardZoneMarks(layout: zoneLayout, valueAxis: .horizontal)
+                }
             }
             .chartXAxisLabel(widget.displayUnit)
             .chartYAxisLabel("Messungen")
-            .modifier(DashboardHistogramScale(widget: widget))
+            .modifier(DashboardHistogramScale(widget: widget, zoneLayout: zoneLayout))
         }
     }
 }
@@ -551,20 +582,29 @@ private struct DashboardCandlestick: View {
         if candles.isEmpty {
             DashboardNoData()
         } else {
-            Chart(candles) { candle in
-                RuleMark(
-                    x: .value(String(localized: "Day"), candle.date, unit: .day),
-                    yStart: .value(String(localized: "Low"), candle.low),
-                    yEnd: .value(String(localized: "High"), candle.high)
-                )
-                .foregroundStyle(color(for: candle))
-                RectangleMark(
-                    x: .value(String(localized: "Day"), candle.date, unit: .day),
-                    yStart: .value(String(localized: "dashboard.candlestick.open", defaultValue: "Open"), candle.open),
-                    yEnd: .value(String(localized: "dashboard.candlestick.close", defaultValue: "Close"), candle.close),
-                    width: .fixed(8)
-                )
-                .foregroundStyle(color(for: candle))
+            let zoneLayout = TelemetryZoneLayout(
+                widget: widget,
+                values: candles.flatMap { [$0.low, $0.high] }
+            )
+            Chart {
+                if let zoneLayout {
+                    DashboardZoneMarks(layout: zoneLayout, valueAxis: .vertical)
+                }
+                ForEach(candles) { candle in
+                    RuleMark(
+                        x: .value(String(localized: "Day"), candle.date, unit: .day),
+                        yStart: .value(String(localized: "Low"), candle.low),
+                        yEnd: .value(String(localized: "High"), candle.high)
+                    )
+                    .foregroundStyle(color(for: candle))
+                    RectangleMark(
+                        x: .value(String(localized: "Day"), candle.date, unit: .day),
+                        yStart: .value(String(localized: "dashboard.candlestick.open", defaultValue: "Open"), candle.open),
+                        yEnd: .value(String(localized: "dashboard.candlestick.close", defaultValue: "Close"), candle.close),
+                        width: .fixed(8)
+                    )
+                    .foregroundStyle(color(for: candle))
+                }
             }
             .chartXAxis {
                 AxisMarks(values: .automatic) { _ in
@@ -574,7 +614,7 @@ private struct DashboardCandlestick: View {
                 }
             }
             .chartYAxisLabel(widget.displayUnit)
-            .modifier(DashboardMetricScale(widget: widget))
+            .modifier(DashboardMetricScale(widget: widget, zoneLayout: zoneLayout))
         }
     }
 
@@ -864,12 +904,16 @@ private struct HealthStateIndicator: View {
     }
 }
 
+/// With zones the domain comes from the zone layout (data plus bounds), so the
+/// alarm bands end exactly at the plot edge; otherwise charts auto-scale unless
+/// the user set a display range.
 private struct DashboardMetricScale: ViewModifier {
     let widget: TelemetryDashboardWidget
+    let zoneLayout: TelemetryZoneLayout?
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if let range = widget.explicitDisplayRange {
+        if let range = zoneLayout?.domain ?? widget.explicitDisplayRange {
             content.chartYScale(domain: range)
         } else {
             content
@@ -879,13 +923,140 @@ private struct DashboardMetricScale: ViewModifier {
 
 private struct DashboardHistogramScale: ViewModifier {
     let widget: TelemetryDashboardWidget
+    let zoneLayout: TelemetryZoneLayout?
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if let range = widget.explicitDisplayRange {
+        if let range = zoneLayout?.domain ?? widget.explicitDisplayRange {
             content.chartXScale(domain: range)
         } else {
             content
+        }
+    }
+}
+
+// MARK: - Zones
+
+/// Warn (orange) and alarm (red) rule lines plus translucent red bands beyond
+/// each alarm bound. `valueAxis` is the axis that carries the metric.
+private struct DashboardZoneMarks: ChartContent {
+    let layout: TelemetryZoneLayout
+    let valueAxis: Axis
+
+    var body: some ChartContent {
+        if valueAxis == .vertical {
+            ForEach(Array(layout.alarmBands.enumerated()), id: \.offset) { _, band in
+                RectangleMark(
+                    yStart: .value(String(localized: "Alarm zone"), band.lowerBound),
+                    yEnd: .value(String(localized: "Alarm zone"), band.upperBound)
+                )
+                .foregroundStyle(Color.red.opacity(0.1))
+            }
+            ForEach(layout.warnLines, id: \.self) { bound in
+                RuleMark(y: .value(String(localized: "Warning limit"), bound))
+                    .foregroundStyle(Color.orange)
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            }
+            ForEach(layout.alarmLines, id: \.self) { bound in
+                RuleMark(y: .value(String(localized: "Alarm limit"), bound))
+                    .foregroundStyle(Color.red)
+                    .lineStyle(StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
+            }
+        } else {
+            ForEach(Array(layout.alarmBands.enumerated()), id: \.offset) { _, band in
+                RectangleMark(
+                    xStart: .value(String(localized: "Alarm zone"), band.lowerBound),
+                    xEnd: .value(String(localized: "Alarm zone"), band.upperBound)
+                )
+                .foregroundStyle(Color.red.opacity(0.1))
+            }
+            ForEach(layout.warnLines, id: \.self) { bound in
+                RuleMark(x: .value(String(localized: "Warning limit"), bound))
+                    .foregroundStyle(Color.orange)
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            }
+            ForEach(layout.alarmLines, id: \.self) { bound in
+                RuleMark(x: .value(String(localized: "Alarm limit"), bound))
+                    .foregroundStyle(Color.red)
+                    .lineStyle(StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
+            }
+        }
+    }
+}
+
+/// A 270° gauge dial with the value arc inside and an outer ring that marks the
+/// ok, warn and alarm ranges of the scale.
+private struct DashboardZoneDial: View {
+    let value: Double
+    let range: ClosedRange<Double>
+    let segments: [TelemetryZoneSegment]
+    let tint: Color
+    let valueColor: Color
+
+    private static let sweep = 0.75
+    private static let trackWidth: CGFloat = 10
+    private static let ringWidth: CGFloat = 4
+    private static let ringGap: CGFloat = 4
+
+    var body: some View {
+        ZStack {
+            ZStack {
+                arc(from: range.lowerBound, to: range.upperBound)
+                    .stroke(Color.secondary.opacity(0.2), style: trackStyle)
+                arc(from: range.lowerBound, to: value)
+                    .stroke(tint, style: trackStyle)
+                ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+                    arc(from: segment.range.lowerBound, to: segment.range.upperBound)
+                        .stroke(segment.zone.color, style: StrokeStyle(lineWidth: Self.ringWidth))
+                        .padding(-(Self.trackWidth + Self.ringWidth) / 2 - Self.ringGap)
+                }
+            }
+            .rotationEffect(.degrees(135))
+
+            Text(value, format: .number.precision(.fractionLength(1)))
+                .font(.title2.monospacedDigit())
+                .foregroundStyle(valueColor)
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+                .padding(.horizontal, Self.trackWidth + 4)
+
+            VStack {
+                Spacer()
+                HStack {
+                    Text(range.lowerBound, format: .number.precision(.fractionLength(0)))
+                    Spacer()
+                    Text(range.upperBound, format: .number.precision(.fractionLength(0)))
+                }
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var trackStyle: StrokeStyle {
+        StrokeStyle(lineWidth: Self.trackWidth, lineCap: .round)
+    }
+
+    private func arc(from start: Double, to end: Double) -> some Shape {
+        Circle().trim(
+            from: fraction(start) * Self.sweep,
+            to: max(fraction(start), fraction(end)) * Self.sweep
+        )
+    }
+
+    private func fraction(_ value: Double) -> Double {
+        let span = range.upperBound - range.lowerBound
+        guard span > 0, value.isFinite else { return 0 }
+        return min(1, max(0, (value - range.lowerBound) / span))
+    }
+}
+
+private extension TelemetryZone {
+    var color: Color {
+        switch self {
+        case .ok: return .green
+        case .warnLow, .warnHigh: return .orange
+        case .alarmLow, .alarmHigh: return .red
         }
     }
 }
@@ -935,5 +1106,10 @@ private extension TelemetryDashboardWidget {
     var displayedEffectiveRange: ClosedRange<Double>? {
         explicitDisplayRange
             ?? metric.displaySuggestedRange(radiationInSievert: SettingsService.shared.radiationInSievert)
+    }
+
+    /// Zone colour for a displayed value, or nil (neutral) when no bounds are set.
+    func zoneColor(for value: Double) -> Color? {
+        hasZones ? zone(for: value).color : nil
     }
 }

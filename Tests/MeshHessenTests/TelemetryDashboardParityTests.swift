@@ -475,14 +475,164 @@ struct TelemetryDashboardModelTests {
         #expect(invalid.alarmMaximum == nil)
     }
 
-    @Test("Alarm evaluator rearms only after returning to normal")
-    func alarmEvaluation() {
-        #expect(TelemetryAlarmEvaluator.state(value: -1, minimum: 0, maximum: 30) == .belowMinimum)
-        #expect(TelemetryAlarmEvaluator.state(value: 15, minimum: 0, maximum: 30) == .normal)
-        #expect(TelemetryAlarmEvaluator.state(value: 31, minimum: 0, maximum: 30) == .aboveMaximum)
-        #expect(TelemetryAlarmEvaluator.shouldNotify(previous: .normal, current: .aboveMaximum))
-        #expect(!TelemetryAlarmEvaluator.shouldNotify(previous: .aboveMaximum, current: .aboveMaximum))
-        #expect(!TelemetryAlarmEvaluator.shouldNotify(previous: .belowMinimum, current: .aboveMaximum))
+    private func zone(
+        _ value: Double,
+        warnLow: Double? = nil,
+        warnHigh: Double? = nil,
+        alarmLow: Double? = nil,
+        alarmHigh: Double? = nil
+    ) -> TelemetryZone {
+        TelemetryAlarmEvaluator.zone(
+            value: value,
+            warnMinimum: warnLow,
+            warnMaximum: warnHigh,
+            alarmMinimum: alarmLow,
+            alarmMaximum: alarmHigh
+        )
+    }
+
+    @Test("Zone bounds are inclusive")
+    func zoneBoundsAreInclusive() {
+        #expect(zone(30, alarmHigh: 30) == .alarmHigh)
+        #expect(zone(29.9, alarmHigh: 30) == .ok)
+        #expect(zone(0, alarmLow: 0) == .alarmLow)
+        #expect(zone(5, warnLow: 5) == .warnLow)
+        #expect(zone(25, warnHigh: 25) == .warnHigh)
+        #expect(zone(15, warnLow: 5, warnHigh: 25, alarmLow: 0, alarmHigh: 30) == .ok)
+        #expect(zone(-1, warnLow: 5, warnHigh: 25, alarmLow: 0, alarmHigh: 30) == .alarmLow)
+        #expect(zone(3, warnLow: 5, warnHigh: 25, alarmLow: 0, alarmHigh: 30) == .warnLow)
+        #expect(zone(27, warnLow: 5, warnHigh: 25, alarmLow: 0, alarmHigh: 30) == .warnHigh)
+        #expect(zone(31, warnLow: 5, warnHigh: 25, alarmLow: 0, alarmHigh: 30) == .alarmHigh)
+    }
+
+    @Test("Alarm bounds win over warn bounds")
+    func alarmWinsOverWarn() {
+        #expect(zone(40, warnHigh: 30, alarmHigh: 35) == .alarmHigh)
+        #expect(zone(30, warnHigh: 30, alarmHigh: 30) == .alarmHigh)
+        #expect(zone(-5, warnLow: 0, alarmLow: -2) == .alarmLow)
+        #expect(zone(10, warnLow: 10, alarmLow: 10) == .alarmLow)
+    }
+
+    @Test("Non-finite values are ok and missing bounds are ignored")
+    func nonFiniteAndMissingBounds() {
+        #expect(zone(.nan, alarmLow: 0, alarmHigh: 30) == .ok)
+        #expect(zone(.infinity, alarmHigh: 30) == .ok)
+        #expect(zone(-.infinity, alarmLow: 0) == .ok)
+        #expect(zone(1_000_000) == .ok)
+        #expect(zone(50, warnHigh: .nan, alarmHigh: nil) == .ok)
+    }
+
+    @Test("Every zone change notifies, staying in a zone does not")
+    func zoneTransitionsNotify() {
+        #expect(TelemetryAlarmEvaluator.shouldNotify(previous: .ok, current: .warnHigh))
+        #expect(TelemetryAlarmEvaluator.shouldNotify(previous: .warnHigh, current: .alarmHigh))
+        #expect(TelemetryAlarmEvaluator.shouldNotify(previous: .alarmHigh, current: .ok))
+        #expect(TelemetryAlarmEvaluator.shouldNotify(previous: .alarmLow, current: .alarmHigh))
+        #expect(!TelemetryAlarmEvaluator.shouldNotify(previous: .ok, current: .ok))
+        #expect(!TelemetryAlarmEvaluator.shouldNotify(previous: .alarmHigh, current: .alarmHigh))
+        #expect(TelemetryZone.ok.severity == 0)
+        #expect(TelemetryZone.warnLow.severity == 1)
+        #expect(TelemetryZone.alarmHigh.severity == 2)
+    }
+
+    @Test("Legacy threshold migrates to the high alarm bound on decode")
+    func legacyThresholdMigration() throws {
+        let id = UUID()
+        let legacy = Data("""
+        {"id":"\(id.uuidString)","type":"line","metric":"temperature","nodeIds":[1],
+         "days":7,"title":"Old","width":420,"height":300,"threshold":80,"showMovingAverage":false}
+        """.utf8)
+        let migrated = try JSONDecoder().decode(TelemetryDashboardWidget.self, from: legacy)
+        #expect(migrated.alarmMaximum == 80)
+        #expect(migrated.threshold == nil)
+        #expect(migrated.warnMinimum == nil)
+        #expect(migrated.warnMaximum == nil)
+        #expect(migrated.alarmMinimum == nil)
+
+        let withZones = Data("""
+        {"id":"\(id.uuidString)","threshold":80,"warnMaximum":60}
+        """.utf8)
+        let kept = try JSONDecoder().decode(TelemetryDashboardWidget.self, from: withZones)
+        #expect(kept.threshold == 80)
+        #expect(kept.warnMaximum == 60)
+        #expect(kept.alarmMaximum == nil)
+    }
+
+    @Test("Widgets without zone keys decode and zones round-trip")
+    func zoneCodableRoundTrip() throws {
+        let minimal = Data(#"{"type":"gauge","metric":"battery","nodeIds":[3]}"#.utf8)
+        let decoded = try JSONDecoder().decode(TelemetryDashboardWidget.self, from: minimal)
+        #expect(decoded.type == .gauge)
+        #expect(!decoded.hasZones)
+
+        let widget = TelemetryDashboardWidget(
+            metric: .temperature,
+            warnMinimum: 5,
+            warnMaximum: 25,
+            alarmMinimum: 0,
+            alarmMaximum: 30
+        )
+        let restored = try JSONDecoder().decode(
+            TelemetryDashboardWidget.self,
+            from: JSONEncoder().encode(widget)
+        )
+        #expect(restored == widget)
+        #expect(restored.zone(for: 27) == .warnHigh)
+    }
+
+    @Test("Inverted warn bounds are discarded like inverted alarm bounds")
+    func invertedWarnBounds() {
+        let widget = TelemetryDashboardWidget(warnMinimum: 20, warnMaximum: 10, alarmMaximum: 30)
+        #expect(widget.warnMinimum == nil)
+        #expect(widget.warnMaximum == nil)
+        #expect(widget.alarmMaximum == 30)
+    }
+
+    @Test("Gauge zone segments are clipped to the scale in painting order")
+    func gaugeZoneSegments() {
+        let widget = TelemetryDashboardWidget(
+            warnMinimum: 20,
+            warnMaximum: 70,
+            alarmMinimum: 10,
+            alarmMaximum: 150
+        )
+        let segments = widget.zoneSegments(in: 0...100)
+        #expect(segments == [
+            TelemetryZoneSegment(zone: .ok, range: 0...100),
+            TelemetryZoneSegment(zone: .warnLow, range: 0...20),
+            TelemetryZoneSegment(zone: .warnHigh, range: 70...100),
+            TelemetryZoneSegment(zone: .alarmLow, range: 0...10),
+        ])
+        #expect(TelemetryDashboardWidget().zoneSegments(in: 0...100).isEmpty)
+    }
+
+    @Test("Chart zone layout covers data and bounds and runs alarm bands to the edge")
+    func chartZoneLayout() throws {
+        let widget = TelemetryDashboardWidget(warnMaximum: 25, alarmMinimum: 0, alarmMaximum: 30)
+        let layout = try #require(TelemetryZoneLayout(widget: widget, values: [10, 20]))
+        #expect(layout.domain.lowerBound < 0)
+        #expect(layout.domain.upperBound > 30)
+        #expect(layout.warnLines == [25])
+        #expect(layout.alarmLines == [0, 30])
+        #expect(layout.alarmBands == [
+            layout.domain.lowerBound...0,
+            30...layout.domain.upperBound,
+        ])
+
+        let ranged = TelemetryDashboardWidget(
+            displayMinimum: 5,
+            displayMaximum: 28,
+            warnMaximum: 25,
+            alarmMinimum: 0,
+            alarmMaximum: 30
+        )
+        let clipped = try #require(TelemetryZoneLayout(widget: ranged, values: [10]))
+        #expect(clipped.domain == 5...28)
+        #expect(clipped.warnLines == [25])
+        #expect(clipped.alarmLines.isEmpty)
+        #expect(clipped.alarmBands.isEmpty)
+
+        #expect(TelemetryZoneLayout(widget: TelemetryDashboardWidget(), values: [1]) == nil)
     }
 
     @Test("Layout engine packs cards into stable width-aware rows")
@@ -524,6 +674,10 @@ private actor RecordingNotificationDelivery: SystemNotificationDelivering {
 
     func deliveredCount() -> Int {
         notifications.count
+    }
+
+    func titles() -> [String] {
+        notifications.map(\.title)
     }
 }
 
@@ -622,10 +776,11 @@ struct TelemetryDashboardStoreTests {
         #expect(restored.metric == .temperature)
         #expect(restored.nodeIds == [7])
         #expect(restored.days == 30)
-        #expect(restored.threshold == 22)
+        // The legacy threshold becomes the high alarm bound once the zone keys are gone.
+        #expect(restored.threshold == nil)
         #expect(restored.showMovingAverage)
         #expect(restored.displayMinimum == nil)
-        #expect(restored.alarmMaximum == nil)
+        #expect(restored.alarmMaximum == 22)
 
         let encoded = try #require(
             JSONSerialization.jsonObject(with: migrated.encodedState()) as? [String: Any]
@@ -633,7 +788,7 @@ struct TelemetryDashboardStoreTests {
         #expect(encoded["schemaVersion"] as? Int == 2)
     }
 
-    @Test("Identical alarms coalesce, persist and rearm after recovery")
+    @Test("Identical zone rules coalesce, persist and notify on every zone change")
     func alarmPersistenceAndDebouncing() async throws {
         let (suite, defaults) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -692,6 +847,45 @@ struct TelemetryDashboardStoreTests {
             timestamp: Date(timeIntervalSince1970: 5),
             values: [.temperature: -1]
         ))
-        #expect(await restartedRecorder.deliveredCount() == 1)
+        // Recovery to ok and the new low alarm each notify.
+        #expect(await restartedRecorder.deliveredCount() == 2)
+        #expect(await restartedRecorder.titles().first?.hasPrefix("✅") == true)
+        #expect(await restartedRecorder.titles().last?.hasPrefix("🚨") == true)
+    }
+
+    @Test("First ok reading after launch is silent; warn, alarm and recovery each notify once")
+    func zoneTransitionNotifications() async throws {
+        let (suite, defaults) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = TelemetryDashboardStore(defaults: defaults, storageKey: "zone-dashboards")
+        store.addWidget(TelemetryDashboardWidget(
+            type: .stat,
+            metric: .temperature,
+            nodeIds: [7],
+            title: "Greenhouse",
+            warnMaximum: 25,
+            alarmMaximum: 30
+        ))
+        let recorder = RecordingNotificationDelivery()
+        let service = TelemetryAlarmService(
+            dashboardStore: store,
+            defaults: defaults,
+            stateStorageKey: "zone-state",
+            notifications: recorder,
+            radiationInSievert: { false }
+        )
+        for (index, value) in [20.0, 21, 25, 26, 30, 31, 20, 19].enumerated() {
+            await service.process(TelemetrySampleBatch(
+                nodeID: 7,
+                timestamp: Date(timeIntervalSince1970: Double(index)),
+                values: [.temperature: value]
+            ))
+        }
+        let titles = await recorder.titles()
+        #expect(titles.count == 3)
+        #expect(titles[0].hasPrefix("⚠"))
+        #expect(titles[0].contains("Greenhouse"))
+        #expect(titles[1].hasPrefix("🚨"))
+        #expect(titles[2].hasPrefix("✅"))
     }
 }
