@@ -135,6 +135,16 @@ final class MeshtasticProtocolService {
     private static let pendingPositionLifetime: TimeInterval = 6 * 3_600
     private var pendingPositions: [UInt32: PendingPosition] = [:]
 
+    // Late PKI decryption (plan 016): undecryptable DMs to us wait here for the
+    // sender's public key; automatic NodeInfo requests are rate-limited.
+    private var pendingPki = PendingPkiMessageBuffer()
+    private var nodeInfoRequestThrottle = NodeInfoRequestThrottle()
+    private var recentInfoRequests = RecentInfoRequestTracker()
+    /// Last valid channel index (0–7) a packet from each node was decoded on.
+    private var lastGoodChannel: [UInt32: UInt32] = [:]
+    /// Our public key from SecurityConfig, sent in NodeInfo requests.
+    private var ownSecurityPublicKey: Data?
+
     // Device identity details that may arrive before the own NodeInfo; re-applied
     // whenever `appState.myNodeInfo` is (re)created.
     private var lastDeviceMetadata: Meshtastic_DeviceMetadata?
@@ -261,6 +271,7 @@ final class MeshtasticProtocolService {
         rawChannels.removeAll()
         rawOwner = nil
         clearDeviceInfoCache()
+        lastGoodChannel.removeAll()
         receiveBuffer = Data()
         myNodeId = 0
         consecutiveTextChunks = 0
@@ -354,6 +365,7 @@ final class MeshtasticProtocolService {
         isInitializing = false
         Task { await self.backfillStoredPositions() }
         Task { await self.backfillStoredNodeStatuses() }
+        if gotBasicInfo { restorePendingPkiFromHistory() }
 
         // 10. Start the heartbeat: keeps the firmware's client API open and
         //     lets the link watchdog detect a silently dead link.
@@ -724,6 +736,7 @@ final class MeshtasticProtocolService {
 
         switch packet.payloadVariant {
         case .decoded(let data):
+            noteGoodChannel(for: packet)
             switch data.portnum {
             case .textMessageApp:    handleTextMessage(data: data, packet: packet)
             case .positionApp:       handlePosition(data: data, packet: packet)
@@ -792,7 +805,7 @@ final class MeshtasticProtocolService {
                 let from = nodeDisplayName(packet.from)
                 AppLogger.shared.log("[MSG] Encrypted from \(from) CH-hash:\(packet.channel) MQTT:\(packet.viaMqtt) PKI:\(packet.pkiEncrypted)", debug: true)
             }
-            handleEncryptedPacket(packet)
+            handleEncryptedPacket(packet, ciphertext: ciphertext)
         default:
             break
         }
@@ -816,19 +829,25 @@ final class MeshtasticProtocolService {
             return
         }
 
-        guard var text = String(bytes: data.payload, encoding: .utf8) else {
+        guard let parsed = Self.chatText(from: data.payload) else {
             AppLogger.shared.log("[Protocol] Text message decode failed from \(String(format: "!%08x", packet.from))", debug: SettingsService.shared.debugDevice)
             return
         }
-
-        // Strip BEL character (0x07) used as alert trigger
-        let hasAlertBell = text.contains("\u{0007}") || text.contains("🔔")
-        text = text.replacingOccurrences(of: "\u{0007}", with: "")
-        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = parsed.text
+        let hasAlertBell = parsed.hasAlertBell
 
         let ts = formatTime()
         let from = nodeDisplayName(packet.from)
         let node = appState?.node(forId: packet.from)
+        if node == nil, !isInitializing, myNodeId != 0, packet.from != myNodeId {
+            // Unknown sender: ask for its NodeInfo so the name (and key) resolves.
+            // A DM to us is low-volume; channel senders also get the global burst guard.
+            requestNodeInfoIfAllowed(
+                node: packet.from,
+                channel: packet.channel,
+                burstGuard: packet.to != myNodeId
+            )
+        }
 
         let msg = MessageItem(
             packetId: packet.id == 0 ? nil : packet.id,
@@ -881,13 +900,37 @@ final class MeshtasticProtocolService {
         }
     }
 
-    private func handleEncryptedPacket(_ packet: Meshtastic_MeshPacket) {
+    /// Chat text of a text-message payload with the alert bell (BEL 0x07) stripped.
+    nonisolated static func chatText(from payload: Data) -> (text: String, hasAlertBell: Bool)? {
+        guard let raw = String(bytes: payload, encoding: .utf8) else { return nil }
+        let hasAlertBell = raw.contains("\u{0007}") || raw.contains("🔔")
+        let text = raw
+            .replacingOccurrences(of: "\u{0007}", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (text, hasAlertBell)
+    }
+
+    private func handleEncryptedPacket(_ packet: Meshtastic_MeshPacket, ciphertext: Data) {
+        let route = EncryptedPacketRoute.route(
+            from: packet.from,
+            to: packet.to,
+            myNodeId: myNodeId,
+            hasRecentInfoRequest: recentInfoRequests.hasRecentRequest(to: packet.from)
+        )
+        if route == .ignoreForeignUnicast {
+            AppLogger.shared.log(
+                "[PKI] Ignoring overheard encrypted unicast \(String(format: "!%08x", packet.from)) → \(String(format: "!%08x", packet.to))",
+                debug: true
+            )
+            return
+        }
+
         let channelIndex = Self.resolvedChannelIndex(
             for: packet.channel,
             isEncrypted: true
         )
         let node = appState?.node(forId: packet.from)
-        let message = MessageItem(
+        var message = MessageItem(
             packetId: packet.id == 0 ? nil : packet.id,
             time: formatTime(),
             from: nodeDisplayName(packet.from),
@@ -906,19 +949,292 @@ final class MeshtasticProtocolService {
             receivedRssi: packet.viaMqtt || packet.rxRssi == 0 ? nil : Int(packet.rxRssi)
         )
 
-        let isBroadcast = packet.to == 0xFFFFFFFF || packet.to == 0
-        if !isBroadcast && (packet.to == myNodeId || packet.from == myNodeId) {
-            let partnerNodeId = packet.from == myNodeId ? packet.to : packet.from
-            appState?.addOrUpdateDM(message, myNodeId: myNodeId, partnerNodeId: partnerNodeId)
+        switch route {
+        case .ignoreForeignUnicast:
+            return
+        case .channelFeed:
+            deliver(message)
+        case .directMessageFromUs:
+            appState?.addOrUpdateDM(message, myNodeId: myNodeId, partnerNodeId: packet.to)
             coreDataStore?.upsertMessage(
                 message,
                 isDirect: true,
-                partnerNodeId: partnerNodeId,
-                partnerName: nodeDisplayName(partnerNodeId)
+                partnerNodeId: packet.to,
+                partnerName: nodeDisplayName(packet.to)
             )
-        } else {
-            deliver(message)
+        case .directMessageToUs(let showPlaceholder):
+            // Keep the ciphertext: it is decrypted once the sender's key arrives.
+            message.cipher = ciphertext
+            pendingPki.add(PendingPkiEntry(
+                packetId: packet.id,
+                from: packet.from,
+                to: packet.to,
+                channel: packet.channel,
+                blob: ciphertext,
+                receivedAt: Date(),
+                messageId: showPlaceholder ? message.id : nil
+            ))
+            guard showPlaceholder else {
+                // Most likely the answer to an explicit info request, not chat.
+                AppLogger.shared.log(
+                    "[PKI] Encrypted reply from \(nodeDisplayName(packet.from)) buffered silently (recent info request)",
+                    debug: true
+                )
+                return
+            }
+            appState?.addOrUpdateDM(message, myNodeId: myNodeId, partnerNodeId: packet.from)
+            coreDataStore?.upsertMessage(
+                message,
+                isDirect: true,
+                partnerNodeId: packet.from,
+                partnerName: nodeDisplayName(packet.from)
+            )
+            requestNodeInfoIfAllowed(node: packet.from, channel: packet.channel, burstGuard: false)
         }
+    }
+
+    // MARK: - Late PKI Decryption
+
+    /// `MeshPacket.channel` value for entries whose receive channel is unknown
+    /// (restored from history); resolves to the node's last good channel.
+    private static let unknownPacketChannel = UInt32.max
+
+    private func noteGoodChannel(for packet: Meshtastic_MeshPacket) {
+        guard packet.from != 0, packet.from != myNodeId, packet.channel <= 7 else { return }
+        lastGoodChannel[packet.from] = packet.channel
+    }
+
+    /// Sends an automatic NodeInfo request (carrying our own key) when the throttle allows it.
+    private func requestNodeInfoIfAllowed(
+        node: UInt32,
+        channel: UInt32?,
+        force: Bool = false,
+        burstGuard: Bool
+    ) {
+        guard myNodeId != 0, node != 0, node != myNodeId, node != EncryptedPacketRoute.broadcastAddress else {
+            return
+        }
+        guard nodeInfoRequestThrottle.shouldRequest(node: node, force: force, burstGuard: burstGuard) else {
+            AppLogger.shared.log(
+                "[NodeInfoReq] Skipped \(String(format: "!%08x", node)) (rate-limited)",
+                debug: SettingsService.shared.debugDevice
+            )
+            return
+        }
+        Task {
+            let sent = await self.sendInfoRequest(.userInfo, to: node, channel: channel)
+            AppLogger.shared.log(
+                "[NodeInfoReq] Automatic request to \(String(format: "!%08x", node)) sent=\(sent) force=\(force)",
+                debug: true
+            )
+        }
+    }
+
+    /// Our own `User` for NodeInfo requests: the device's owner record when cached,
+    /// completed from `myNodeInfo` and our public key.
+    private func makeOwnUser() -> Meshtastic_User {
+        let myInfo = appState?.myNodeInfo
+        return Self.makeOwnUser(
+            base: rawOwner,
+            myNodeId: myNodeId,
+            longName: myInfo?.longName ?? "",
+            shortName: myInfo?.shortName ?? "",
+            hardwareModelRaw: myInfo?.hardwareModelRaw ?? 0,
+            fallbackPublicKey: ownSecurityPublicKey ?? NodeKeyService.shared.publicKey(for: myNodeId)
+        )
+    }
+
+    nonisolated static func makeOwnUser(
+        base: Meshtastic_User?,
+        myNodeId: UInt32,
+        longName: String,
+        shortName: String,
+        hardwareModelRaw: Int,
+        fallbackPublicKey: Data?
+    ) -> Meshtastic_User {
+        var user = base ?? Meshtastic_User()
+        let idHex = String(format: "!%08x", myNodeId)
+        user.id = idHex
+        if user.longName.isEmpty {
+            user.longName = longName.isEmpty ? idHex : longName
+        }
+        if user.shortName.isEmpty {
+            user.shortName = shortName.isEmpty ? String(idHex.suffix(4)) : shortName
+        }
+        if user.hwModel == .unset, hardwareModelRaw != 0,
+           let model = Meshtastic_HardwareModel(rawValue: hardwareModelRaw) {
+            user.hwModel = model
+        }
+        if user.isLicensed {
+            // Licensed (ham) operators must not use PKI.
+            user.publicKey = Data()
+        } else if user.publicKey.count != 32, let fallbackPublicKey, fallbackPublicKey.count == 32 {
+            user.publicKey = fallbackPublicKey
+        }
+        return user
+    }
+
+    /// Decrypts a buffered PKC blob and parses it as `Meshtastic_Data`.
+    nonisolated static func decryptPendingEntry(
+        _ entry: PendingPkiEntry,
+        senderPublicKey: Data,
+        using service: PkiDecryptionService = .shared
+    ) -> Meshtastic_Data? {
+        guard let plaintext = service.tryDecrypt(
+            ciphertext: entry.blob,
+            senderPublicKey: senderPublicKey,
+            fromNode: entry.from,
+            packetId: entry.packetId
+        ) else { return nil }
+        return try? Meshtastic_Data(serializedBytes: plaintext)
+    }
+
+    private func knownPublicKey(for node: UInt32, announcedKey: Data?) -> Data? {
+        if let stored = NodeKeyService.shared.publicKey(for: node), stored.count == 32 { return stored }
+        if let live = appState?.node(forId: node)?.publicKey, live.count == 32 { return live }
+        if let announcedKey, announcedKey.count == 32 { return announcedKey }
+        return nil
+    }
+
+    /// Decrypts every buffered packet of `node` once its public key is known.
+    private func retryPendingPki(for node: UInt32, announcedKey: Data? = nil) {
+        guard pendingPki.count(for: node) > 0,
+              PkiDecryptionService.shared.hasPrivateKey,
+              let senderKey = knownPublicKey(for: node, announcedKey: announcedKey)
+        else { return }
+
+        let resolved = pendingPki.resolve(for: node) { entry in
+            Self.decryptPendingEntry(entry, senderPublicKey: senderKey)
+        }
+        for (entry, data) in resolved {
+            AppLogger.shared.log(
+                "[PKI] Late-decrypted packet from \(nodeDisplayName(node)) portnum=\(data.portnum)",
+                debug: true
+            )
+            dispatchLateDecrypted(data, entry: entry)
+        }
+    }
+
+    /// After our private key loads: sweep all buffered packets whose sender key is known.
+    private func retryAllPendingPkiWithKnownKeys() {
+        guard PkiDecryptionService.shared.hasPrivateKey else { return }
+        for node in pendingPki.nodeIds {
+            retryPendingPki(for: node)
+        }
+    }
+
+    /// Re-buffers restored DMs that still carry ciphertext, so late decryption
+    /// also works across restarts, and asks one still-unknown sender for its key.
+    private func restorePendingPkiFromHistory() {
+        guard let appState, myNodeId != 0 else { return }
+        var senders = Set<UInt32>()
+        for (partnerId, conversation) in appState.dmConversations where partnerId != myNodeId {
+            for message in conversation.messages where message.canRetryDecrypt && message.fromId == partnerId {
+                guard let entry = pendingEntry(for: message) else { continue }
+                pendingPki.add(entry)
+                senders.insert(partnerId)
+            }
+        }
+        guard !senders.isEmpty else { return }
+        retryAllPendingPkiWithKnownKeys()
+        for sender in senders.sorted() where pendingPki.count(for: sender) > 0 {
+            requestNodeInfoIfAllowed(node: sender, channel: nil, burstGuard: true)
+        }
+    }
+
+    private func pendingEntry(for message: MessageItem) -> PendingPkiEntry? {
+        guard let blob = message.cipher, !blob.isEmpty,
+              let packetId = message.packetId,
+              message.fromId != 0
+        else { return nil }
+        return PendingPkiEntry(
+            packetId: packetId,
+            from: message.fromId,
+            to: myNodeId,
+            channel: Self.unknownPacketChannel,
+            blob: blob,
+            receivedAt: Date(),
+            messageId: message.id
+        )
+    }
+
+    /// 🔑 action: decrypt now with the known key, otherwise force a NodeInfo request.
+    func retryDecryption(of message: MessageItem) {
+        guard message.canRetryDecrypt, let entry = pendingEntry(for: message) else {
+            AppLogger.shared.log("[PKI] Retry skipped: message has no stored ciphertext", debug: true)
+            return
+        }
+        pendingPki.add(entry)
+        retryPendingPki(for: entry.from)
+        if pendingPki.contains(packetId: entry.packetId, for: entry.from) {
+            requestNodeInfoIfAllowed(node: entry.from, channel: nil, force: true, burstGuard: false)
+        }
+    }
+
+    /// Routes a late-decrypted packet by portnum: text updates the placeholder in
+    /// place, everything else goes through the normal handlers.
+    private func dispatchLateDecrypted(_ data: Meshtastic_Data, entry: PendingPkiEntry) {
+        var packet = Meshtastic_MeshPacket()
+        packet.from = entry.from
+        packet.to = entry.to
+        packet.id = entry.packetId
+        packet.channel = EncryptedPacketRoute.nodeInfoRequestChannel(
+            requested: entry.channel,
+            lastGoodChannel: lastGoodChannel[entry.from]
+        )
+        packet.pkiEncrypted = true
+        packet.decoded = data
+
+        switch data.portnum {
+        case .textMessageApp:
+            if data.emoji != 0 || !applyLateDecryptedText(data, entry: entry) {
+                handleTextMessage(data: data, packet: packet)
+            }
+        case .positionApp:       handlePosition(data: data, packet: packet)
+        case .nodeinfoApp:       handleNodeInfoPacket(data: data, packet: packet)
+        case .routingApp:        handleRoutingPacket(data: data, packet: packet)
+        case .telemetryApp:      handleTelemetry(data: data, packet: packet)
+        case .paxcounterApp:     handlePaxCounter(data: data, packet: packet)
+        case .tracerouteApp:     handleTraceroutePacket(data: data, packet: packet)
+        case .nodeStatusApp:     handleNodeStatusPacket(data: data, packet: packet)
+        default:
+            AppLogger.shared.log("[PKI] Late-decrypted portnum \(data.portnum) not handled", debug: true)
+        }
+    }
+
+    /// Replaces the encrypted placeholder bubble with the decrypted text in
+    /// `AppState` and Core Data. Returns `false` when there is no placeholder.
+    private func applyLateDecryptedText(_ data: Meshtastic_Data, entry: PendingPkiEntry) -> Bool {
+        guard let appState,
+              let conversation = appState.dmConversations[entry.from],
+              let placeholder = conversation.messages.first(where: {
+                  (entry.messageId != nil && $0.id == entry.messageId)
+                      || ($0.isEncrypted && $0.fromId == entry.from && $0.packetId == entry.packetId)
+              }),
+              let parsed = Self.chatText(from: data.payload)
+        else { return false }
+
+        let hasAlertBell = parsed.hasAlertBell
+        let message = placeholder.applyingLateDecryption(
+            text: parsed.text,
+            hasAlertBell: hasAlertBell,
+            replyToPacketId: data.replyID == 0 ? nil : data.replyID
+        )
+        appState.addOrUpdateDM(message, myNodeId: myNodeId, partnerNodeId: entry.from)
+        coreDataStore?.upsertMessage(
+            message,
+            isDirect: true,
+            partnerNodeId: entry.from,
+            partnerName: nodeDisplayName(entry.from)
+        )
+        MessageLogger.shared.logDirectMessage(message, partnerName: message.from, partnerNodeId: entry.from)
+        if hasAlertBell { triggerAlertBell(message) }
+        NotificationCenter.default.post(
+            name: .incomingDirectMessage,
+            object: nil,
+            userInfo: ["partnerId": entry.from, "message": message]
+        )
+        return true
     }
 
     // MARK: - Emoji Reaction
@@ -1347,6 +1663,7 @@ final class MeshtasticProtocolService {
         // A User packet never carries a position: persist the merged node so
         // the stored coordinates, battery and SNR are not overwritten with nil.
         coreDataStore?.upsertNode(appState?.node(forId: nodeId) ?? node)
+        retryPendingPki(for: nodeId, announcedKey: user.publicKey)
     }
 
     // MARK: - NodeInfo (from NodeInfo message)
@@ -1404,6 +1721,7 @@ final class MeshtasticProtocolService {
         appState?.upsertNode(node, refreshNodeDatabaseFlags: true)
         applyPendingPosition(to: info.num)
         coreDataStore?.upsertNode(appState?.node(forId: info.num) ?? node)
+        retryPendingPki(for: info.num, announcedKey: user.publicKey)
 
         AppLogger.shared.log("[Protocol] NodeInfo: \(node.name) (\(node.nodeId))", debug: SettingsService.shared.debugDevice)
     }
@@ -1538,8 +1856,12 @@ final class MeshtasticProtocolService {
         case .security:
             receivedConfigs[.security] = config
             let sec = config.security
+            if sec.publicKey.count == 32 {
+                ownSecurityPublicKey = sec.publicKey
+            }
             if !sec.privateKey.isEmpty {
                 PkiDecryptionService.shared.setPrivateKey(sec.privateKey)
+                retryAllPendingPkiWithKnownKeys()
             }
             AppLogger.shared.log("[Protocol] Config: Security (pubKey=\(sec.publicKey.count)B, privKey=\(sec.privateKey.count)B)", debug: SettingsService.shared.debugDevice)
         case .sessionkey:
@@ -3460,7 +3782,27 @@ final class MeshtasticProtocolService {
     }
 
     @discardableResult
-    func requestNodeInfo(_ type: NodeInfoRequestType, from destinationId: UInt32) async -> Bool {
+    func requestNodeInfo(
+        _ type: NodeInfoRequestType,
+        from destinationId: UInt32,
+        channel: UInt32? = nil
+    ) async -> Bool {
+        // An encrypted reply within the next 30 s answers this request, not a chat message.
+        recentInfoRequests.note(node: destinationId)
+        if type == .userInfo {
+            _ = nodeInfoRequestThrottle.shouldRequest(node: destinationId, force: true, burstGuard: false)
+        }
+        return await sendInfoRequest(type, to: destinationId, channel: channel)
+    }
+
+    /// Sends an info request. A user-info request carries our own `User` (with our
+    /// public key) so the node can reply PKI-encrypted and learns our key.
+    @discardableResult
+    private func sendInfoRequest(
+        _ type: NodeInfoRequestType,
+        to destinationId: UInt32,
+        channel: UInt32?
+    ) async -> Bool {
         guard myNodeId != 0, destinationId != 0 else { return false }
 
         let data: Meshtastic_Data
@@ -3468,7 +3810,8 @@ final class MeshtasticProtocolService {
             data = try Self.makeNodeInfoRequestData(
                 type,
                 destinationId: destinationId,
-                timestamp: UInt32(clamping: Int(Date().timeIntervalSince1970))
+                timestamp: UInt32(clamping: Int(Date().timeIntervalSince1970)),
+                ownUser: type == .userInfo ? makeOwnUser() : nil
             )
         } catch {
             AppLogger.shared.log("[Protocol] Could not encode \(type.rawValue) request: \(error.localizedDescription)")
@@ -3478,7 +3821,10 @@ final class MeshtasticProtocolService {
         var packet = Meshtastic_MeshPacket()
         packet.from = myNodeId
         packet.to = destinationId
-        packet.channel = 0
+        packet.channel = EncryptedPacketRoute.nodeInfoRequestChannel(
+            requested: channel,
+            lastGoodChannel: lastGoodChannel[destinationId]
+        )
         packet.id = UInt32.random(in: 1..<UInt32.max)
         packet.wantAck = false
         packet.hopLimit = 7
@@ -3495,7 +3841,8 @@ final class MeshtasticProtocolService {
     nonisolated static func makeNodeInfoRequestData(
         _ type: NodeInfoRequestType,
         destinationId: UInt32,
-        timestamp: UInt32
+        timestamp: UInt32,
+        ownUser: Meshtastic_User? = nil
     ) throws -> Meshtastic_Data {
         var data = Meshtastic_Data()
         data.wantResponse = true
@@ -3504,6 +3851,9 @@ final class MeshtasticProtocolService {
         switch type {
         case .userInfo:
             data.portnum = .nodeinfoApp
+            if let ownUser {
+                data.payload = try ownUser.serializedData()
+            }
 
         case .position:
             var position = Meshtastic_Position()
@@ -3961,6 +4311,7 @@ final class MeshtasticProtocolService {
         isDisconnecting = true
         rawChannels.removeAll()
         rawOwner = nil
+        ownSecurityPublicKey = nil
         pendingPositions.removeAll()
         clearDeviceInfoCache()
         stopHeartbeat()
@@ -4277,7 +4628,7 @@ final class MeshtasticProtocolService {
     }
 
     private func nodeDisplayName(_ nodeId: UInt32) -> String {
-        appState?.node(forId: nodeId)?.name ?? String(format: "!%08x", nodeId)
+        appState?.node(forId: nodeId)?.name ?? NodeInfo.placeholderName(for: nodeId)
     }
 
     private func nodeForTelemetry(senderID: UInt32) -> NodeInfo {
