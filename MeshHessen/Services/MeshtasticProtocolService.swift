@@ -2128,6 +2128,68 @@ final class MeshtasticProtocolService {
         AppLogger.shared.log("[Protocol] Requested DeviceMetadata", debug: SettingsService.shared.debugDevice)
     }
 
+    // MARK: - Firmware update (admin commands; no callers yet — see plans 025/026)
+
+    /// ESP32 only: asks the firmware to reboot into the OTA loader (`.otaWifi` or `.otaBle`). The loader
+    /// later refuses any image whose SHA-256 differs from `sha256`. The firmware answers with a
+    /// ClientNotification ("Rebooting to … OTA" or a reason it cannot). Returns false when the hash is
+    /// not 32 bytes, no session key is available, or the message could not be sent.
+    @discardableResult
+    func sendOtaRequest(mode: Meshtastic_OTAMode, sha256: Data) async -> Bool {
+        guard sha256.count == 32 else {
+            AppLogger.shared.log("[OTA] ota_request refused: SHA-256 must be 32 bytes, got \(sha256.count)")
+            return false
+        }
+        await ensureSessionKey()
+        guard let admin = Self.makeOtaRequestAdmin(mode: mode, sha256: sha256, sessionPasskey: sessionPasskey) else {
+            AppLogger.shared.log("[OTA] ota_request not sent: no session key")
+            return false
+        }
+        let sent = await sendAdminMessage(admin)
+        let hex = sha256.map { String(format: "%02x", $0) }.joined()
+        AppLogger.shared.log("[OTA] ota_request sent=\(sent) (mode=\(mode), hash=\(hex))")
+        return sent
+    }
+
+    /// nRF52 / RP2040: reboots into the USB (UF2 mass-storage / serial) bootloader. Not for Bluetooth
+    /// DFU — that is triggered through the device's DFU GATT service.
+    @discardableResult
+    func enterDfuMode() async -> Bool {
+        await ensureSessionKey()
+        guard let admin = Self.makeEnterDfuModeAdmin(sessionPasskey: sessionPasskey) else {
+            AppLogger.shared.log("[DFU] enter_dfu_mode_request not sent: no session key")
+            return false
+        }
+        let sent = await sendAdminMessage(admin)
+        AppLogger.shared.log("[DFU] enter_dfu_mode_request sent=\(sent)")
+        return sent
+    }
+
+    /// Pure builder for `sendOtaRequest`; nil when the hash is not 32 bytes or the passkey is empty.
+    nonisolated static func makeOtaRequestAdmin(
+        mode: Meshtastic_OTAMode,
+        sha256: Data,
+        sessionPasskey: Data
+    ) -> Meshtastic_AdminMessage? {
+        guard sha256.count == 32, !sessionPasskey.isEmpty else { return nil }
+        var event = Meshtastic_AdminMessage.OTAEvent()
+        event.rebootOtaMode = mode
+        event.otaHash = sha256
+        var admin = Meshtastic_AdminMessage()
+        admin.otaRequest = event
+        admin.sessionPasskey = sessionPasskey
+        return admin
+    }
+
+    /// Pure builder for `enterDfuMode`; nil when the passkey is empty.
+    nonisolated static func makeEnterDfuModeAdmin(sessionPasskey: Data) -> Meshtastic_AdminMessage? {
+        guard !sessionPasskey.isEmpty else { return nil }
+        var admin = Meshtastic_AdminMessage()
+        admin.enterDfuModeRequest = true
+        admin.sessionPasskey = sessionPasskey
+        return admin
+    }
+
     // MARK: - Display mirror (firmware 2.8, local connection only)
 
     /// Starts or stops continuous display mirroring. Unlike most admin bool verbs,
