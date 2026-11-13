@@ -21130,6 +21130,166 @@
           }
         }
       }
+    },
+    "Show environment data on the map" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Umweltdaten auf der Karte anzeigen"
+          }
+        }
+      }
+    },
+    "Shows sensor readings that nodes report (temperature, humidity, pressure and more)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeigt Messwerte, die Nodes liefern (Temperatur, Feuchte, Luftdruck u. v. m.)."
+          }
+        }
+      }
+    },
+    "Value Boxes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Messwert-Boxen"
+          }
+        }
+      }
+    },
+    "Value boxes at nodes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Messwert-Boxen an den Nodes"
+          }
+        }
+      }
+    },
+    "Heatmap overlay" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heatmap-Überlagerung"
+          }
+        }
+      }
+    },
+    "Heatmap metric" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heatmap-Metrik"
+          }
+        }
+      }
+    },
+    "No data for this metric in the last 48 hours." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Daten für diese Metrik in den letzten 48 Stunden."
+          }
+        }
+      }
+    },
+    "Include Nodes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nodes einbeziehen"
+          }
+        }
+      }
+    },
+    "Deselect a node that measures nonsense – it disappears from boxes and heatmap." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Node abwählen, wenn er Unsinn misst – er verschwindet aus Boxen und Heatmap."
+          }
+        }
+      }
+    },
+    "No nodes with environment data received yet." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Nodes mit Umweltdaten empfangen."
+          }
+        }
+      }
+    },
+    "Interpolated between sensors" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zwischen Sensoren interpoliert"
+          }
+        }
+      }
+    },
+    "Off" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus"
+          }
+        }
+      }
+    },
+    "Always visible" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Immer sichtbar"
+          }
+        }
+      }
+    },
+    "On hover" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beim Überfahren"
+          }
+        }
+      }
+    },
+    "Environment Data" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Umweltdaten"
+          }
+        }
+      }
+    },
+    "Environment data on the map: value boxes, heatmap, metric and node selection" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Umweltdaten auf der Karte: Messwert-Boxen, Heatmap, Metrik und Node-Auswahl"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

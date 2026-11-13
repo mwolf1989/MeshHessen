@@ -820,6 +820,80 @@ final class SettingsService {
         }
     }
 
+    // MARK: - Environment Map Overlay
+
+    /// Master switch: environment sensor data (value boxes, heatmap) on the map.
+    var showEnvironmentData: Bool {
+        get {
+            access(keyPath: \.showEnvironmentData)
+            return defaults.bool(forKey: "showEnvironmentData")
+        }
+        set {
+            withMutation(keyPath: \.showEnvironmentData) {
+                defaults.set(newValue, forKey: "showEnvironmentData")
+            }
+        }
+    }
+
+    /// When the value boxes next to sensor nodes are shown.
+    var environmentBoxMode: EnvironmentBoxMode {
+        get {
+            access(keyPath: \.environmentBoxMode)
+            return EnvironmentBoxMode(rawValue: defaults.string(forKey: "environmentBoxMode") ?? "") ?? .always
+        }
+        set {
+            withMutation(keyPath: \.environmentBoxMode) {
+                defaults.set(newValue.rawValue, forKey: "environmentBoxMode")
+            }
+        }
+    }
+
+    /// Interpolated colour surface for the selected metric.
+    var environmentShowHeatmap: Bool {
+        get {
+            access(keyPath: \.environmentShowHeatmap)
+            return defaults.bool(forKey: "environmentShowHeatmap")
+        }
+        set {
+            withMutation(keyPath: \.environmentShowHeatmap) {
+                defaults.set(newValue, forKey: "environmentShowHeatmap")
+            }
+        }
+    }
+
+    /// Heatmap metric (`EnvironmentMetric.key`); unknown keys fall back to temperature.
+    var environmentMetricKey: String {
+        get {
+            access(keyPath: \.environmentMetricKey)
+            let key = defaults.string(forKey: "environmentMetricKey")
+            return EnvironmentMetricInfo.metric(forKey: key)?.key ?? EnvironmentMetricInfo.defaultMetric.key
+        }
+        set {
+            withMutation(keyPath: \.environmentMetricKey) {
+                let key = EnvironmentMetricInfo.metric(forKey: newValue)?.key ?? EnvironmentMetricInfo.defaultMetric.key
+                defaults.set(key, forKey: "environmentMetricKey")
+            }
+        }
+    }
+
+    var environmentMetric: EnvironmentMetric {
+        EnvironmentMetricInfo.metric(forKey: environmentMetricKey) ?? EnvironmentMetricInfo.defaultMetric
+    }
+
+    /// Nodes left out of value boxes and heatmap (e.g. a sensor that measures nonsense).
+    var environmentExcludedNodeIds: Set<UInt32> {
+        get {
+            access(keyPath: \.environmentExcludedNodeIds)
+            let stored = defaults.array(forKey: "environmentExcludedNodeIds") as? [NSNumber] ?? []
+            return Set(stored.map(\.uint32Value))
+        }
+        set {
+            withMutation(keyPath: \.environmentExcludedNodeIds) {
+                defaults.set(newValue.sorted().map { NSNumber(value: $0) }, forKey: "environmentExcludedNodeIds")
+            }
+        }
+    }
+
     // MARK: - Messaging
 
     static let dmStyleWindow = "window"

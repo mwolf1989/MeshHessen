@@ -26,6 +26,7 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
     let neighborColorMode: NeighborLineColorMode
     let showTraceroutes: Bool
     let emergencyOverlayEnabled: Bool
+    var environmentOverlay: EnvironmentOverlay?
     let onSendDM: (UInt32) -> Void
     let onShowNodeInfo: (UInt32) -> Void
     let onToggleFavorite: (UInt32) -> Void
@@ -101,6 +102,8 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
         private var loadedStyleURL: String?
         private var lastFocusNodeId: UInt32?
         private var lastSnapshotFingerprint = ""
+        /// Revision of the environment overlay last sent to JS; `nil` = unknown (resend), -1 = cleared.
+        private var lastEnvironmentRevision: Int?
 
         init(_ parent: VectorMeshMapViewRepresentable) {
             self.parent = parent
@@ -133,6 +136,7 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
             }
 
             scheduleSnapshotPush()
+            pushEnvironmentIfNeeded()
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -182,7 +186,9 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
                 mapReady = true
                 readyTimeoutTask?.cancel()
                 lastSnapshotFingerprint = ""
+                lastEnvironmentRevision = nil
                 pushSnapshot()
+                pushEnvironmentIfNeeded()
             case "viewport":
                 updateViewport(from: payload)
             case "nodeclick":
@@ -279,6 +285,67 @@ struct VectorMeshMapViewRepresentable: NSViewRepresentable {
                 "return setOverlay('em-', enabled);",
                 arguments: ["enabled": parent.emergencyOverlayEnabled]
             )
+        }
+
+        // MARK: Environment overlay
+
+        /// Sends boxes and surface only when the overlay revision changed (the overlay is
+        /// computed off the main actor by `MapView`; nothing runs here while it is switched off).
+        private func pushEnvironmentIfNeeded() {
+            guard mapReady else { return }
+            let revision = parent.environmentOverlay?.revision ?? -1
+            guard revision != lastEnvironmentRevision else { return }
+            lastEnvironmentRevision = revision
+
+            guard let overlay = parent.environmentOverlay else {
+                call("return clearEnv();")
+                return
+            }
+            let dark = parent.configuration.source == .dark
+            let boxes: [[String: Any]] = overlay.boxes.map { box in
+                [
+                    "id": box.nodeId,
+                    "lon": box.longitude,
+                    "lat": box.latitude,
+                    "title": box.title,
+                    "lines": box.lines,
+                    "time": box.time,
+                    "dark": dark,
+                ]
+            }
+            call(
+                "return setEnvBoxes(items, mode);",
+                arguments: ["items": boxes, "mode": overlay.boxMode.rawValue]
+            )
+            if let surface = overlay.surface {
+                call("return setEnvSurface(payload);", arguments: ["payload": environmentSurfacePayload(surface)])
+            } else {
+                call("return setEnvSurface(null);")
+            }
+        }
+
+        private func environmentSurfacePayload(_ surface: EnvironmentSurface) -> [String: Any] {
+            let image = surface.image
+            func round5(_ value: Double) -> Double { (value * 100_000).rounded() / 100_000 }
+            func segments(_ list: [EnvironmentSegment]) -> [[Double]] {
+                list.map { $0.asArray.map(round5) }
+            }
+            return [
+                "image": surface.pngDataURI,
+                "w": image.width,
+                "h": image.height,
+                "coords": [
+                    [image.minLongitude, image.maxLatitude],   // NW
+                    [image.maxLongitude, image.maxLatitude],   // NE
+                    [image.maxLongitude, image.minLatitude],   // SE
+                    [image.minLongitude, image.minLatitude],   // SW
+                ],
+                "contours": segments(surface.contours),
+                "border": segments(surface.border),
+                "labels": surface.labels.map { label in
+                    ["lon": round5(label.longitude), "lat": round5(label.latitude), "t": label.text] as [String: Any]
+                },
+            ]
         }
 
         private func effectiveStationName() -> String {
