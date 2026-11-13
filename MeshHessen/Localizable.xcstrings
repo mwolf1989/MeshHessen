@@ -19380,6 +19380,206 @@
           }
         }
       }
+    },
+    "The file is not a valid configuration backup." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Datei ist keine gültige Konfigurationssicherung."
+          }
+        }
+      }
+    },
+    "The file is not a configuration backup (no \"config\" section)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Datei ist keine Konfigurationssicherung (kein Abschnitt „config“)."
+          }
+        }
+      }
+    },
+    "The backup section \"%@\" could not be read." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Sicherungsabschnitt „%@“ konnte nicht gelesen werden."
+          }
+        }
+      }
+    },
+    "Backup saved." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sicherung gespeichert."
+          }
+        }
+      }
+    },
+    "Create Backup…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sicherung erstellen…"
+          }
+        }
+      }
+    },
+    "Restore Backup…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sicherung wiederherstellen…"
+          }
+        }
+      }
+    },
+    "The file contains channel keys and, for this node, its private key. Store it safely." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Datei enthält die Kanalschlüssel und, für diesen Knoten, seinen privaten Schlüssel. Bewahre sie sicher auf."
+          }
+        }
+      }
+    },
+    "Configuration Backup" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konfigurationssicherung"
+          }
+        }
+      }
+    },
+    "Connect to a node to create or restore a backup." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbinde dich mit einem Knoten, um eine Sicherung zu erstellen oder wiederherzustellen."
+          }
+        }
+      }
+    },
+    "The device already matches the backup; nothing was written." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Gerät entspricht bereits der Sicherung; es wurde nichts geschrieben."
+          }
+        }
+      }
+    },
+    "%lld sections written; the device will reboot." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Abschnitte geschrieben; das Gerät startet neu."
+          }
+        }
+      }
+    },
+    "Restore Configuration?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konfiguration wiederherstellen?"
+          }
+        }
+      }
+    },
+    "Source node" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quellknoten"
+          }
+        }
+      }
+    },
+    "Created" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erstellt"
+          }
+        }
+      }
+    },
+    "Backup firmware" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware der Sicherung"
+          }
+        }
+      }
+    },
+    "Device firmware" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware des Geräts"
+          }
+        }
+      }
+    },
+    "This backup belongs to a different node. Security keys will not be restored." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Sicherung gehört zu einem anderen Knoten. Die Sicherheitsschlüssel werden nicht wiederhergestellt."
+          }
+        }
+      }
+    },
+    "This backup belongs to a different node." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Sicherung gehört zu einem anderen Knoten."
+          }
+        }
+      }
+    },
+    "Settings in the backup replace the device's settings. The device usually reboots afterwards." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Einstellungen der Sicherung ersetzen die Einstellungen des Geräts. Das Gerät startet danach meist neu."
+          }
+        }
+      }
+    },
+    "Restore" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiederherstellen"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

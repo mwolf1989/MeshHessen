@@ -424,6 +424,36 @@ final class AppCoordinator {
         }
     }
 
+    // MARK: - Configuration backup
+
+    func exportConfigurationBackup(
+        progress: ((AdminConfigurationLoadProgress) -> Void)? = nil
+    ) async throws -> ConfigBackupFile {
+        let timeout = Duration.seconds(SettingsService.shared.remoteAdminTimeoutSeconds)
+        return try await protocol_.exportConfigurationBackup(timeout: timeout, progress: progress)
+    }
+
+    /// Restores a backup onto the local node. The commit usually reboots the
+    /// device, so the resulting disconnect is expected (cleared by its timer).
+    @discardableResult
+    func restoreConfigurationBackup(
+        _ file: ConfigBackupFile,
+        progress: ((AdminConfigurationLoadProgress) -> Void)? = nil
+    ) async throws -> MeshConfigurationDiff {
+        do {
+            let timeout = Duration.seconds(SettingsService.shared.remoteAdminTimeoutSeconds)
+            return try await protocol_.restoreConfigurationBackup(
+                file,
+                timeout: timeout,
+                progress: progress,
+                willWrite: { [weak self] in self?.expectSettingsWriteDisconnect() }
+            )
+        } catch {
+            clearExpectedSettingsWriteDisconnect()
+            throw error
+        }
+    }
+
     @discardableResult
     func performAdminAction(_ action: AdminNodeAction, on target: AdminTarget) async throws -> Bool {
         let timeout = Duration.seconds(SettingsService.shared.remoteAdminTimeoutSeconds)
