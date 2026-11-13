@@ -143,6 +143,21 @@ struct VirtualNodeReplayCacheTests {
         #expect(envelopes[7].configCompleteID == 0xAABBCCDD)
     }
 
+    @Test("Mesh Beacon module config is cached and replayed")
+    func meshBeaconReplay() throws {
+        var cache = VirtualNodeReplayCache()
+        var moduleConfig = Meshtastic_ModuleConfig()
+        var beacon = Meshtastic_ModuleConfig.MeshBeaconConfig()
+        beacon.broadcastMessage = "Hallo Hessen"
+        moduleConfig.meshBeacon = beacon
+        var envelope = Meshtastic_FromRadio()
+        envelope.moduleConfig = moduleConfig
+        #expect(try ingest(envelope, into: &cache))
+
+        let replay = try replayEnvelopes(cache, wantConfigID: 5)
+        #expect(replay.contains { $0.moduleConfig.meshBeacon.broadcastMessage == "Hallo Hessen" })
+    }
+
     @Test("New frames replace the same replay category")
     func replayReplacement() throws {
         var cache = VirtualNodeReplayCache()
