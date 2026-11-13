@@ -316,8 +316,8 @@ final class AppCoordinator {
         await protocol_.sendEmojiReaction(emoji, toPacketId: toPacketId, toNodeId: toNodeId, channelIndex: channelIndex)
     }
 
-    func sendTraceroute(to nodeId: UInt32) async -> Bool {
-        await protocol_.sendTraceroute(to: nodeId)
+    func sendTraceroute(to nodeId: UInt32, rfOnly: Bool = false) async -> Bool {
+        await protocol_.sendTraceroute(to: nodeId, rfOnly: rfOnly)
     }
 
     var tracerouteResults: [TracerouteResult] {
