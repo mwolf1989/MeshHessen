@@ -1,5 +1,7 @@
 import Foundation
 
+import SwiftProtobuf
+
 // MARK: - Request Type
 
 /// Kind of a directed request another station sent to our node ("Funk-Echo").
