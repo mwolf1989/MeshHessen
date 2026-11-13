@@ -420,9 +420,7 @@ struct NodesTabView: View {
     }
 
     private func openDirectMessage(to node: NodeInfo) {
-        appState.ensureDMConversation(for: node.id)
-        appState.dmTargetNodeId = node.id
-        openWindow(id: "dm")
+        coordinator.openDirectMessage(nodeId: node.id, openWindow: openWindow)
     }
 
     private func copyToPasteboard(_ value: String) {

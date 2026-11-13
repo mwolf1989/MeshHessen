@@ -275,9 +275,7 @@ struct MapView: View {
     }
 
     private func openDirectMessage(_ nodeId: UInt32) {
-        appState.ensureDMConversation(for: nodeId)
-        appState.dmTargetNodeId = nodeId
-        openWindow(id: "dm")
+        coordinator.openDirectMessage(nodeId: nodeId, openWindow: openWindow)
     }
 
     private func showNode(_ nodeId: UInt32) {
