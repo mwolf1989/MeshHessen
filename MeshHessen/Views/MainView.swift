@@ -224,7 +224,7 @@ struct MainView: View {
             get: { appState.selectedTab },
             set: { appState.selectedTab = $0 }
         )) {
-            ChannelTabsView()
+            MessagesSidebarView()
                 .tabItem { Label("Messages", systemImage: "envelope") }
                 .tag(MainTab.messages)
 
@@ -519,12 +519,13 @@ struct MainView: View {
         }
         switch navigationState.messages {
         case .channels(let channelId, _):
-            if let channelId { appState.selectedChannelIndex = channelId }
+            if let channelId {
+                appState.selectedChannelIndex = channelId
+                appState.messagesSidebarRequest = .channel(channelId)
+            }
         case .directMessages(let userNum, _):
             if let userNum {
-                appState.ensureDMConversation(for: userNum)
-                appState.dmTargetNodeId = userNum
-                openWindow(id: "dm")
+                coordinator.openDirectMessage(nodeId: userNum, openWindow: openWindow)
             }
         case nil:
             break

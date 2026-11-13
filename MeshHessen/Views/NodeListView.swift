@@ -43,9 +43,7 @@ struct NodeListView: View {
                     .contextMenu {
                         Button("Show Info…") { showNodeInfo = node }
                         Button("Send Direct Message") {
-                            appState.ensureDMConversation(for: node.id)
-                            appState.dmTargetNodeId = node.id
-                            openWindow(id: "dm")
+                            coordinator.openDirectMessage(nodeId: node.id, openWindow: openWindow)
                         }
                         Button("Show on Map") {
                             coordinator.router.navigateToNodeOnMap(nodeNum: node.id)

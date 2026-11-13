@@ -80,7 +80,9 @@ struct DMWindowView: View {
     }
 }
 
-private struct DMConversationView: View {
+/// One direct-message conversation: history, composer, SOS. Used by the DM window
+/// and inline in the Messages tab sidebar.
+struct DMConversationView: View {
     let conversation: DirectMessageConversation
     let coordinator: AppCoordinator
     @Environment(\.appState) private var appState
@@ -376,7 +378,7 @@ private struct DMConversationView: View {
 
 // MARK: - Display Name
 
-private extension DirectMessageConversation {
+extension DirectMessageConversation {
     /// The partner's current node name, so titles follow renames; falls back to the stored name.
     @MainActor
     func displayName(in appState: AppState) -> String {

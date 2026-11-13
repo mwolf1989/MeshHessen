@@ -425,9 +425,7 @@ struct MessageBubbleView: View {
             Divider()
             if senderNode.id != appState.myNodeInfo?.nodeId {
                 Button {
-                    appState.ensureDMConversation(for: senderNode.id)
-                    appState.dmTargetNodeId = senderNode.id
-                    openWindow(id: "dm")
+                    coordinator.openDirectMessage(nodeId: senderNode.id, openWindow: openWindow)
                 } label: {
                     Label("Send Direct Message", systemImage: "bubble.left")
                 }

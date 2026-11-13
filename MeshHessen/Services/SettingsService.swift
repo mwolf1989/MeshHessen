@@ -820,6 +820,42 @@ final class SettingsService {
         }
     }
 
+    // MARK: - Messaging
+
+    static let dmStyleWindow = "window"
+    static let dmStyleInline = "inline"
+
+    /// Where direct messages are read: `"window"` (separate DM window, default)
+    /// or `"inline"` (in the Messages tab sidebar).
+    var dmStyle: String {
+        get {
+            access(keyPath: \.dmStyle)
+            let value = defaults.string(forKey: "dmStyle")
+            return value == Self.dmStyleInline ? Self.dmStyleInline : Self.dmStyleWindow
+        }
+        set {
+            withMutation(keyPath: \.dmStyle) {
+                defaults.set(newValue == Self.dmStyleInline ? Self.dmStyleInline : Self.dmStyleWindow, forKey: "dmStyle")
+            }
+        }
+    }
+
+    var dmStyleIsInline: Bool { dmStyle == Self.dmStyleInline }
+
+    /// System notifications for new channel and direct messages while the app is in the background.
+    var messageNotificationsEnabled: Bool {
+        get {
+            access(keyPath: \.messageNotificationsEnabled)
+            guard defaults.object(forKey: "messageNotificationsEnabled") != nil else { return true }
+            return defaults.bool(forKey: "messageNotificationsEnabled")
+        }
+        set {
+            withMutation(keyPath: \.messageNotificationsEnabled) {
+                defaults.set(newValue, forKey: "messageNotificationsEnabled")
+            }
+        }
+    }
+
     /// Display radiation in µSv/h instead of the stored µR/h (display only).
     var radiationInSievert: Bool {
         get {

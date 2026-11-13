@@ -20290,6 +20290,76 @@
           }
         }
       }
+    },
+    "Direct messages" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Direktnachrichten"
+          }
+        }
+      }
+    },
+    "Separate window" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Separates Fenster"
+          }
+        }
+      }
+    },
+    "Inline in Messages tab" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Im Nachrichten-Tab"
+          }
+        }
+      }
+    },
+    "Notify about new messages" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über neue Nachrichten benachrichtigen"
+          }
+        }
+      }
+    },
+    "No conversations yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Unterhaltungen"
+          }
+        }
+      }
+    },
+    "%lld new messages" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld neue Nachrichten"
+          }
+        }
+      }
+    },
+    "Direct message" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Direktnachricht"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

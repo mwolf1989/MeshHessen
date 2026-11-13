@@ -58,6 +58,23 @@ final class AppState {
         dmConversations.values.filter { $0.hasUnread }.count
     }
 
+    /// Unread messages per DM partner since the conversation last became unread.
+    /// Only meaningful while `hasUnread` is true; reset when it turns true again.
+    var dmUnreadCounts: [UInt32: Int] = [:]
+
+    /// Unread count for the sidebar badge: nil when read, 0 when unread but the
+    /// count is unknown (e.g. restored from storage).
+    func dmUnreadBadgeCount(for nodeId: UInt32) -> Int? {
+        guard dmConversations[nodeId]?.hasUnread == true else { return nil }
+        return dmUnreadCounts[nodeId] ?? 0
+    }
+
+    // MARK: - Messages sidebar
+    /// DM partner currently shown inline in the Messages tab (nil when a channel view is shown).
+    var activeInlineDMNodeId: UInt32?
+    /// One-shot request for the Messages sidebar to select an entry; consumed by the sidebar.
+    var messagesSidebarRequest: MessagesSidebarSelection?
+
     // MARK: - Alert Bell
     var activeAlertBell: MessageItem?
     var showAlertBell: Bool = false
@@ -144,7 +161,9 @@ final class AppState {
 
         // Increment unread counter for incoming messages that arrive in an inactive channel
         let isOwn = msg.fromId != 0 && msg.fromId == myNodeInfo?.nodeId
-        let isActive = selectedTab == .messages && msg.channelIndex == selectedChannelIndex
+        let isActive = selectedTab == .messages
+            && activeInlineDMNodeId == nil
+            && msg.channelIndex == selectedChannelIndex
         if markUnread && !isOwn && !isActive {
             channelUnreadCounts[msg.channelIndex, default: 0] += 1
         }
@@ -232,6 +251,7 @@ final class AppState {
                 nodeId: partnerId, nodeName: partnerName, colorHex: colorHex
             )
         }
+        var isNewMessage = false
         if let existing = dmConversations[partnerId]?.messages.firstIndex(where: {
             $0.persistenceKey(in: storageContext) == persistenceKey
         }) {
@@ -240,10 +260,16 @@ final class AppState {
             }
         } else {
             dmConversations[partnerId]?.messages.append(msg)
+            isNewMessage = true
         }
-        // Only mark unread for incoming messages, not our own
-        if markUnread && msg.fromId != myNodeId {
-            dmConversations[partnerId]?.hasUnread = true
+        // Only mark unread for incoming messages, not our own, and not while
+        // the conversation is open inline in the Messages tab.
+        let isShownInline = selectedTab == .messages && activeInlineDMNodeId == partnerId
+        if markUnread && msg.fromId != myNodeId && !isShownInline,
+           let conversation = dmConversations[partnerId] {
+            if !conversation.hasUnread { dmUnreadCounts[partnerId] = 0 }
+            conversation.hasUnread = true
+            if isNewMessage { dmUnreadCounts[partnerId, default: 0] += 1 }
         }
     }
 
@@ -571,8 +597,37 @@ final class AppState {
         channelMessages.removeAll()
         allMessages.removeAll()
         dmConversations.removeAll()
+        dmUnreadCounts.removeAll()
         activeAlertBell = nil
         showAlertBell = false
+    }
+}
+
+/// An entry of the Messages tab sidebar.
+enum MessagesSidebarSelection: Hashable, Sendable {
+    case allChannels
+    case channel(Int)
+    case directMessage(UInt32)
+
+    /// Compact string form for `@SceneStorage` and notification user info.
+    var storageValue: String {
+        switch self {
+        case .allChannels: return "all"
+        case .channel(let index): return "ch:\(index)"
+        case .directMessage(let nodeId): return "dm:\(nodeId)"
+        }
+    }
+
+    init?(storageValue: String) {
+        if storageValue == "all" {
+            self = .allChannels
+        } else if storageValue.hasPrefix("ch:"), let index = Int(storageValue.dropFirst(3)) {
+            self = .channel(index)
+        } else if storageValue.hasPrefix("dm:"), let nodeId = UInt32(storageValue.dropFirst(3)) {
+            self = .directMessage(nodeId)
+        } else {
+            return nil
+        }
     }
 }
 

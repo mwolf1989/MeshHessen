@@ -453,6 +453,11 @@ private struct DataSettingsPane: View {
                 }
                 .disabled(!settings.messageHistoryEnabled)
                 Toggle("Show encrypted messages", isOn: $settings.showEncryptedMessages)
+                Picker("Direct messages", selection: $settings.dmStyle) {
+                    Text("Separate window").tag(SettingsService.dmStyleWindow)
+                    Text("Inline in Messages tab").tag(SettingsService.dmStyleInline)
+                }
+                Toggle("Notify about new messages", isOn: $settings.messageNotificationsEnabled)
             }
 
             Section("Telemetry") {
