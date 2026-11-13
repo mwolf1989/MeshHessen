@@ -308,6 +308,53 @@ struct SecureDfuTransportTests {
         #expect(first.received[SecureDfuObjectType.data] == firmware)
     }
 
+    @Test("A stray receipt at the end of an object is not taken as the next command's answer")
+    func strayReceiptSkipped() async throws {
+        // 4096 B at 103 B per packet = 40 packets, so with PRN 10 the device also sends a receipt after the
+        // last packet of each full object — formatted exactly like the CALCULATE_CHECKSUM answer.
+        let peer = SecureBootloaderPeer()
+        let firmware = dfuTestImage(10_000)
+        _ = try await run(peer, firmware: firmware, maxWriteLength: 103)
+        #expect(peer.received[SecureDfuObjectType.data] == firmware)
+        #expect(peer.executed[SecureDfuObjectType.data] == 10_000)
+    }
+}
+
+// MARK: - Scan criteria (pure; no Bluetooth)
+
+@Suite("DFU scan criteria")
+struct DfuScanCriteriaTests {
+    private let mesh = UUID()
+    private let other = UUID()
+
+    @Test("Bootloader criteria match DFU services, DFU names and the former mesh peripheral")
+    func bootloaderMatches() {
+        let criteria = BleScanCriteria.nordicBootloader(previous: mesh)
+        #expect(criteria.matches(id: other, name: nil, services: [SecureDfuUuids.service]))
+        #expect(criteria.matches(id: other, name: nil, services: [LegacyDfuUuids.service]))
+        #expect(criteria.matches(id: other, name: "AdaDFU", services: []))
+        #expect(criteria.matches(id: mesh, name: nil, services: []))
+        #expect(!criteria.matches(id: other, name: "Meshtastic_1234", services: [GattUUID("6ba1b218-15a8-461f-9fa8-5dcae273eafd")]))
+    }
+
+    @Test("ESP32 loader criteria match the loader service or the former peripheral only")
+    func loaderMatches() {
+        let criteria = BleScanCriteria.esp32Loader(previous: nil)
+        #expect(criteria.matches(id: other, name: nil, services: [BleOtaTransport.serviceUUID]))
+        #expect(!criteria.matches(id: other, name: "ESP32 OTA", services: []))
+    }
+
+    @Test("A known identifier beats a stronger unknown signal")
+    func bestCandidate() {
+        let criteria = BleScanCriteria.nordicBootloader(previous: mesh)
+        let near = DfuScanHit(id: other, name: "DfuTarg", advertisedServices: [SecureDfuUuids.service], rssi: -40)
+        let known = DfuScanHit(id: mesh, name: nil, advertisedServices: [], rssi: -80)
+        let far = DfuScanHit(id: UUID(), name: "AdaDFU", advertisedServices: [], rssi: -90)
+        #expect(criteria.best(of: [near, known, far]) == known)
+        #expect(criteria.best(of: [far, near]) == near)
+        #expect(criteria.best(of: []) == nil)
+    }
+
     @Test("ABORT is 0x0C")
     func abort() async throws {
         let peer = SecureBootloaderPeer()
