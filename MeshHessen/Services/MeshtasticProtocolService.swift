@@ -2994,7 +2994,9 @@ final class MeshtasticProtocolService {
                     rainfall1Hour: env.hasRainfall1H ? Double(env.rainfall1H) : nil,
                     rainfall24Hours: env.hasRainfall24H ? Double(env.rainfall24H) : nil,
                     soilMoisture: env.hasSoilMoisture ? Double(env.soilMoisture) : nil,
-                    soilTemperature: env.hasSoilTemperature ? Double(env.soilTemperature) : nil
+                    soilTemperature: env.hasSoilTemperature ? Double(env.soilTemperature) : nil,
+                    lightningStrikeCount1Hour: Self.lightningStrikeCount(env),
+                    lightningDistance: Self.lightningDistance(env)
                 ),
                 latitude: lat, longitude: lon
             )
@@ -3192,9 +3194,19 @@ final class MeshtasticProtocolService {
                 longitude: lon
             )
 
-        case .soilWaterMetrics:
+        case .soilWaterMetrics(let soilWater):
+            let sample = Self.soilWaterSample(soilWater)
+            if !sample.values.isEmpty {
+                telemetryDatabase.insertSoilWaterTelemetry(
+                    nodeId: packet.from,
+                    timestamp: timestamp,
+                    sample: sample,
+                    latitude: lat,
+                    longitude: lon
+                )
+            }
             AppLogger.shared.log(
-                "[Protocol] SoilWaterMetrics from \(nodeDisplayName(packet.from)) (not handled)",
+                "[Protocol] SoilWaterMetrics from \(nodeDisplayName(packet.from)): \(sample.values.count) values",
                 debug: SettingsService.shared.debugDevice
             )
 
@@ -3204,6 +3216,43 @@ final class MeshtasticProtocolService {
                 debug: SettingsService.shared.debugDevice
             )
         }
+    }
+
+    // MARK: - Telemetry Extraction
+
+    /// A reported strike count is kept even when 0, so charts and alarms can fall back.
+    nonisolated static func lightningStrikeCount(_ env: Meshtastic_EnvironmentMetrics) -> Double? {
+        env.hasLightningStrikeCount1H ? Double(env.lightningStrikeCount1H) : nil
+    }
+
+    /// A storm distance of 0 means "no storm detected" and is dropped.
+    nonisolated static func lightningDistance(_ env: Meshtastic_EnvironmentMetrics) -> Double? {
+        guard env.hasLightningDistanceKm, env.lightningDistanceKm != 0 else { return nil }
+        return Double(env.lightningDistanceKm)
+    }
+
+    /// Every soil/water field is proto3-optional; only present fields are kept.
+    nonisolated static func soilWaterSample(_ metrics: Meshtastic_SoilWaterMetrics) -> SoilWaterTelemetrySample {
+        var values: [TelemetrySeriesMetric: Double] = [:]
+        func store(_ metric: TelemetrySeriesMetric, _ present: Bool, _ value: Float) {
+            if present { values[metric] = Double(value) }
+        }
+        store(.soilPH, metrics.hasSoilPh, metrics.soilPh)
+        store(.waterPH, metrics.hasPh, metrics.ph)
+        store(.electricalConductivity, metrics.hasElectricalConductivity, metrics.electricalConductivity)
+        store(.salinity, metrics.hasSalinity, metrics.salinity)
+        store(.nitrogen, metrics.hasNitrogen, metrics.nitrogen)
+        store(.phosphorus, metrics.hasPhosphorus, metrics.phosphorus)
+        store(.potassium, metrics.hasPotassium, metrics.potassium)
+        store(.dissolvedOxygen, metrics.hasDissolvedOxygen, metrics.dissolvedOxygen)
+        store(.orp, metrics.hasOrp, metrics.orp)
+        store(.chemicalOxygenDemand, metrics.hasChemicalOxygenDemand, metrics.chemicalOxygenDemand)
+        store(.biochemicalOxygenDemand, metrics.hasBiochemicalOxygenDemand, metrics.biochemicalOxygenDemand)
+        store(.turbidity, metrics.hasTurbidity, metrics.turbidity)
+        store(.nitrate, metrics.hasNitrate, metrics.nitrate)
+        store(.ammonium, metrics.hasAmmonium, metrics.ammonium)
+        store(.solarIrradiance, metrics.hasSolarIrradiance, metrics.solarIrradiance)
+        return SoilWaterTelemetrySample(values: values)
     }
 
     private func handlePaxCounter(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {

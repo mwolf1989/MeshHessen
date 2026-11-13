@@ -34,6 +34,24 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
     case rainfall24Hours = "rainfall_24h"
     case soilMoisture = "soil_moisture"
     case soilTemperature = "soil_temperature"
+    case lightningStrikeCount1Hour = "lightning_strike_count_1h"
+    case lightningDistance = "lightning_distance_km"
+
+    case soilPH = "soil_ph"
+    case waterPH = "water_ph"
+    case electricalConductivity = "electrical_conductivity"
+    case salinity
+    case nitrogen
+    case phosphorus
+    case potassium
+    case dissolvedOxygen = "dissolved_oxygen"
+    case orp
+    case chemicalOxygenDemand = "chemical_oxygen_demand"
+    case biochemicalOxygenDemand = "biochemical_oxygen_demand"
+    case turbidity
+    case nitrate
+    case ammonium
+    case solarIrradiance = "solar_irradiance"
 
     case pm10Standard = "pm10_standard"
     case pm25Standard = "pm25_standard"
@@ -150,6 +168,23 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
         case .rainfall24Hours: return String(localized: "Rainfall (24 h)")
         case .soilMoisture: return String(localized: "Soil Moisture")
         case .soilTemperature: return String(localized: "Soil Temperature")
+        case .lightningStrikeCount1Hour: return String(localized: "Lightning Strikes (1 h)")
+        case .lightningDistance: return String(localized: "Storm Distance")
+        case .soilPH: return String(localized: "Soil pH")
+        case .waterPH: return String(localized: "Water pH")
+        case .electricalConductivity: return String(localized: "Electrical Conductivity")
+        case .salinity: return String(localized: "Salinity")
+        case .nitrogen: return String(localized: "Nitrogen")
+        case .phosphorus: return String(localized: "Phosphorus")
+        case .potassium: return String(localized: "Potassium")
+        case .dissolvedOxygen: return String(localized: "Dissolved Oxygen")
+        case .orp: return String(localized: "Oxidation-Reduction Potential")
+        case .chemicalOxygenDemand: return String(localized: "Chemical Oxygen Demand")
+        case .biochemicalOxygenDemand: return String(localized: "Biochemical Oxygen Demand")
+        case .turbidity: return String(localized: "Turbidity")
+        case .nitrate: return String(localized: "Nitrate")
+        case .ammonium: return String(localized: "Ammonium")
+        case .solarIrradiance: return String(localized: "Solar Irradiance")
         case .pm10Standard: return String(localized: "PM1.0 (Standard)")
         case .pm25Standard: return String(localized: "PM2.5 (Standard)")
         case .pm100Standard: return String(localized: "PM10 (Standard)")
@@ -266,6 +301,17 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
              .hostDisk3FreeBytes, .localHeapTotalBytes, .localHeapFreeBytes: return "Byte"
         case .hostLoad1, .hostLoad5, .hostLoad15: return ""
         case .healthHeartRate: return "bpm"
+        case .lightningStrikeCount1Hour: return "/h"
+        case .lightningDistance: return "km"
+        case .soilPH, .waterPH: return "pH"
+        case .electricalConductivity: return "mS/cm"
+        case .salinity, .dissolvedOxygen, .chemicalOxygenDemand,
+             .biochemicalOxygenDemand: return "mg/l"
+        case .nitrogen, .phosphorus, .potassium: return "mg/kg"
+        case .orp: return "mV"
+        case .turbidity: return "NTU"
+        case .nitrate, .ammonium: return "ppm"
+        case .solarIrradiance: return "W/m²"
         default: return ""
         }
     }
@@ -284,6 +330,19 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
         case .iaq: return 0...500
         case .co2: return 0...5_000
         case .healthHeartRate: return 30...220
+        case .radiation: return 0...100
+        case .lightningStrikeCount1Hour: return 0...30
+        case .lightningDistance: return 0...40
+        case .soilPH, .waterPH: return 0...14
+        case .electricalConductivity: return 0...10
+        case .salinity: return 0...10_000
+        case .nitrogen, .phosphorus, .potassium: return 0...500
+        case .dissolvedOxygen: return 0...15
+        case .orp: return -500...500
+        case .chemicalOxygenDemand: return 0...200
+        case .biochemicalOxygenDemand, .turbidity, .nitrate: return 0...100
+        case .ammonium: return 0...50
+        case .solarIrradiance: return 0...1_200
         default: return nil
         }
     }
@@ -291,8 +350,35 @@ enum TelemetrySeriesMetric: String, CaseIterable, Codable, Hashable, Identifiabl
     static let windowsDashboardMetrics: [TelemetrySeriesMetric] = [
         .snr, .rssi, .battery, .voltage, .channelUtilization,
         .airUtilTx, .temperature, .relativeHumidity,
-        .barometricPressure, .packetCount,
+        .barometricPressure, .packetCount, .radiation,
+        .lightningStrikeCount1Hour, .lightningDistance, .soilPH,
     ]
+
+    /// Unit shown to the user. Radiation is stored in µR/h and can be displayed in µSv/h.
+    func displayUnit(radiationInSievert: Bool) -> String {
+        self == .radiation && radiationInSievert ? "µSv/h" : unit
+    }
+
+    /// Converts a stored value into the unit returned by `displayUnit(radiationInSievert:)`.
+    func displayValue(_ storedValue: Double, radiationInSievert: Bool) -> Double {
+        self == .radiation ? RadiationUnit.display(storedValue, inSievert: radiationInSievert) : storedValue
+    }
+
+    func displaySuggestedRange(radiationInSievert: Bool) -> ClosedRange<Double>? {
+        guard let range = suggestedRange else { return nil }
+        return displayValue(range.lowerBound, radiationInSievert: radiationInSievert)
+            ... displayValue(range.upperBound, radiationInSievert: radiationInSievert)
+    }
+}
+
+/// Radiation is stored in µR/h (as reported by the firmware). The RadSens convention
+/// 1 µSv/h = 100 µR/h converts it for display only.
+enum RadiationUnit {
+    static let microRoentgenPerMicroSievert = 100.0
+
+    static func display(_ microRoentgen: Double, inSievert: Bool) -> Double {
+        inSievert ? microRoentgen / microRoentgenPerMicroSievert : microRoentgen
+    }
 }
 
 struct TelemetrySeriesPoint: Identifiable, Hashable, Sendable {
@@ -340,6 +426,8 @@ struct EnvironmentTelemetrySample: Sendable {
     var rainfall24Hours: Double?
     var soilMoisture: Double?
     var soilTemperature: Double?
+    var lightningStrikeCount1Hour: Double?
+    var lightningDistance: Double?
 
     init(
         temperature: Double? = nil,
@@ -363,7 +451,9 @@ struct EnvironmentTelemetrySample: Sendable {
         rainfall1Hour: Double? = nil,
         rainfall24Hours: Double? = nil,
         soilMoisture: Double? = nil,
-        soilTemperature: Double? = nil
+        soilTemperature: Double? = nil,
+        lightningStrikeCount1Hour: Double? = nil,
+        lightningDistance: Double? = nil
     ) {
         self.temperature = temperature
         self.relativeHumidity = relativeHumidity
@@ -387,6 +477,25 @@ struct EnvironmentTelemetrySample: Sendable {
         self.rainfall24Hours = rainfall24Hours
         self.soilMoisture = soilMoisture
         self.soilTemperature = soilTemperature
+        self.lightningStrikeCount1Hour = lightningStrikeCount1Hour
+        self.lightningDistance = lightningDistance
+    }
+}
+
+/// Soil probe and water-quality sonde readings (Telemetry variant `soil_water_metrics`).
+struct SoilWaterTelemetrySample: Sendable {
+    /// Metrics stored in `soil_water_telemetry`, in column order.
+    static let metrics: [TelemetrySeriesMetric] = [
+        .soilPH, .waterPH, .electricalConductivity, .salinity, .nitrogen,
+        .phosphorus, .potassium, .dissolvedOxygen, .orp, .chemicalOxygenDemand,
+        .biochemicalOxygenDemand, .turbidity, .nitrate, .ammonium, .solarIrradiance,
+    ]
+
+    var values: [TelemetrySeriesMetric: Double]
+
+    init(values: [TelemetrySeriesMetric: Double] = [:]) {
+        let allowed = Set(Self.metrics)
+        self.values = values.filter { allowed.contains($0.key) }
     }
 }
 
