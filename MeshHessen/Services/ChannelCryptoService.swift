@@ -1,5 +1,7 @@
 import Foundation
 
+import SwiftProtobuf
+
 /// Client-side Meshtastic channel crypto (pure functions, no state).
 ///
 /// Packets relayed to the radio via MQTT on a channel whose downlink the radio does
