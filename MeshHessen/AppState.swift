@@ -77,7 +77,7 @@ final class AppState {
     @discardableResult
     func ensureDMConversation(for nodeId: UInt32) -> DirectMessageConversation {
         if let existing = dmConversations[nodeId] { return existing }
-        let name = nodes[nodeId]?.name ?? "Node \(nodeId)"
+        let name = nodes[nodeId]?.name ?? NodeInfo.placeholderName(for: nodeId)
         let color = nodes[nodeId]?.colorHex ?? ""
         let conv = DirectMessageConversation(nodeId: nodeId, nodeName: name, colorHex: color)
         dmConversations[nodeId] = conv
@@ -325,7 +325,13 @@ final class AppState {
     }
 
     private func mergeMessage(existing: MessageItem, incoming: MessageItem) -> MessageItem {
+        // A late encrypted copy of an already readable message must not turn it
+        // back into a placeholder.
+        if incoming.isEncrypted, !existing.isEncrypted, !existing.message.isEmpty {
+            return existing
+        }
         var merged = existing
+        merged.cipher = incoming.cipher
 
         if !incoming.message.isEmpty { merged.message = incoming.message }
         if !incoming.from.isEmpty { merged.from = incoming.from }
@@ -380,6 +386,12 @@ final class AppState {
     /// NodeDB-only flags (`isFavorite`, `isOwnNode`, `viaMqtt`) are only taken
     /// from device NodeDB snapshots (`refreshNodeDatabaseFlags`).
     func upsertNode(_ info: NodeInfo, refreshNodeDatabaseFlags: Bool = false) {
+        let previousName = nodes[info.id]?.name
+        defer {
+            if previousName.map({ NodeInfo.isPlaceholderName($0, for: info.id) }) ?? true {
+                applyResolvedSenderName(for: info.id)
+            }
+        }
         if let existing = nodes[info.id] {
             existing.shortName = info.shortName
             existing.longName = info.longName
@@ -425,6 +437,40 @@ final class AppState {
         }
         // Recalculate distance if we have own position and node GPS
         recalculateDistance(for: info.id)
+    }
+
+    /// Replaces placeholder sender names ("Meshtastic abcd", "!xxxxxxxx") of
+    /// existing messages and the DM conversation title once the node's real
+    /// name is known. Only display-name strings change.
+    private func applyResolvedSenderName(for nodeId: UInt32) {
+        guard let name = nodes[nodeId]?.name, !NodeInfo.isPlaceholderName(name, for: nodeId) else { return }
+        let needsRename: (MessageItem) -> Bool = {
+            $0.fromId == nodeId && NodeInfo.isPlaceholderName($0.from, for: nodeId)
+        }
+
+        if allMessages.contains(where: needsRename) {
+            for index in allMessages.indices where needsRename(allMessages[index]) {
+                allMessages[index].from = name
+            }
+        }
+        for (channelIndex, messages) in channelMessages where messages.contains(where: needsRename) {
+            channelMessages[channelIndex] = messages.map {
+                guard needsRename($0) else { return $0 }
+                var renamed = $0
+                renamed.from = name
+                return renamed
+            }
+        }
+        if let conversation = dmConversations[nodeId] {
+            if NodeInfo.isPlaceholderName(conversation.nodeName, for: nodeId) {
+                conversation.nodeName = name
+            }
+            if conversation.messages.contains(where: needsRename) {
+                for index in conversation.messages.indices where needsRename(conversation.messages[index]) {
+                    conversation.messages[index].from = name
+                }
+            }
+        }
     }
 
     /// Latitude and longitude both `0` is the firmware's "no fix" value, not a position.
