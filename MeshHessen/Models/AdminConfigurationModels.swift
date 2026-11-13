@@ -79,6 +79,7 @@ enum MeshModuleConfigCategory: String, CaseIterable, Identifiable, Sendable {
     case statusMessage
     case trafficManagement
     case tak
+    case meshBeacon
 
     var id: String { rawValue }
 
@@ -100,6 +101,7 @@ enum MeshModuleConfigCategory: String, CaseIterable, Identifiable, Sendable {
         case .statusMessage: return String(localized: "Status Message")
         case .trafficManagement: return String(localized: "Traffic Management")
         case .tak: return "TAK"
+        case .meshBeacon: return String(localized: "Mesh Beacon")
         }
     }
 
@@ -121,6 +123,7 @@ enum MeshModuleConfigCategory: String, CaseIterable, Identifiable, Sendable {
         case .statusMessage: return "quote.bubble"
         case .trafficManagement: return "arrow.triangle.branch"
         case .tak: return "shield.lefthalf.filled"
+        case .meshBeacon: return "dot.radiowaves.up.forward"
         }
     }
 
@@ -142,7 +145,24 @@ enum MeshModuleConfigCategory: String, CaseIterable, Identifiable, Sendable {
         case .statusMessage: return .statusmessageConfig
         case .trafficManagement: return .trafficmanagementConfig
         case .tak: return .takConfig
+        case .meshBeacon: return .meshbeaconConfig
         }
+    }
+
+    /// Modules introduced with firmware 2.8. Older firmware never answers
+    /// these requests, so asking costs a full per-category timeout.
+    var requiresFirmwareV28: Bool {
+        switch self {
+        case .tak, .meshBeacon: return true
+        default: return false
+        }
+    }
+
+    /// True only when `firmwareVersion` is known (parsable) and too old for
+    /// this module. An unknown version never counts as unsupported.
+    func isUnsupported(byFirmware firmwareVersion: String?) -> Bool {
+        guard requiresFirmwareV28, FirmwareVersion(firmwareVersion) != nil else { return false }
+        return !FirmwareCapabilities.supportsV28(firmwareVersion)
     }
 }
 
@@ -182,6 +202,13 @@ struct MeshConfigurationRequestSelection: Equatable, Sendable {
             includeCannedMessages: category == .cannedMessage,
             includeRingtone: category == .externalNotification
         )
+    }
+
+    /// Drops module categories the target firmware is known not to support.
+    func removingModules(unsupportedByFirmware firmwareVersion: String?) -> Self {
+        var result = self
+        result.moduleCategories = moduleCategories.filter { !$0.isUnsupported(byFirmware: firmwareVersion) }
+        return result
     }
 
     var isEmpty: Bool {
@@ -401,6 +428,7 @@ struct MeshConfigurationSnapshot: Equatable, Sendable {
     var statusMessage = Meshtastic_ModuleConfig.StatusMessageConfig()
     var trafficManagement = Meshtastic_ModuleConfig.TrafficManagementConfig()
     var tak = Meshtastic_ModuleConfig.TAKConfig()
+    var meshBeacon = Meshtastic_ModuleConfig.MeshBeaconConfig()
 
     var channels: [Meshtastic_Channel] = []
     var cannedMessageText = ""
@@ -471,6 +499,7 @@ struct MeshConfigurationSnapshot: Equatable, Sendable {
         case .statusMessage: config.statusmessage = statusMessage
         case .trafficManagement: config.trafficManagement = trafficManagement
         case .tak: config.tak = tak
+        case .meshBeacon: config.meshBeacon = meshBeacon
         }
         return config
     }
@@ -493,8 +522,7 @@ struct MeshConfigurationSnapshot: Equatable, Sendable {
         case .statusmessage(let value): statusMessage = value
         case .trafficManagement(let value): trafficManagement = value
         case .tak(let value): tak = value
-        // Firmware 2.8 MeshBeacon: not stored yet, same as before the proto update.
-        case .meshBeacon: break
+        case .meshBeacon(let value): meshBeacon = value
         case nil: break
         }
     }
@@ -657,5 +685,82 @@ enum AdminNodeAction: Equatable, Sendable {
             message.removeFixedPosition = true
         }
         return message
+    }
+}
+
+// MARK: - Module field limits
+
+extension Meshtastic_ModuleConfig.DetectionSensorConfig {
+    /// `DetectionSensorConfig.name` (nanopb max_size 20, minus the terminator).
+    static let nameMaxBytes = 19
+}
+
+extension Meshtastic_ModuleConfig.MeshBeaconConfig {
+    /// `broadcast_message` (nanopb max_size 61, minus the terminator).
+    static let broadcastMessageMaxBytes = 60
+    /// The firmware rejects broadcast intervals below one hour.
+    static let minimumBroadcastIntervalSecs: UInt32 = 3_600
+
+    func hasFlag(_ flag: Flags) -> Bool {
+        flags & UInt32(flag.rawValue) != 0
+    }
+
+    mutating func setFlag(_ flag: Flags, _ enabled: Bool) {
+        let bit = UInt32(flag.rawValue)
+        flags = enabled ? flags | bit : flags & ~bit
+    }
+}
+
+/// Selection of the Mesh Beacon offer channel in the native form.
+enum MeshBeaconOfferChannelChoice: Hashable, Sendable {
+    /// No channel is offered (`broadcast_offer_channel` cleared).
+    case none
+    /// Keep the offer channel as loaded from the node.
+    case unchanged
+    /// Offer name and PSK of the device channel with this index.
+    case channel(Int32)
+
+    static func current(
+        in config: Meshtastic_ModuleConfig.MeshBeaconConfig,
+        channels: [Meshtastic_Channel],
+        loaded: Meshtastic_ChannelSettings?
+    ) -> Self {
+        guard config.hasBroadcastOfferChannel else { return .none }
+        let offered = config.broadcastOfferChannel
+        if let match = channels.first(where: {
+            $0.settings.name == offered.name && $0.settings.psk == offered.psk
+        }) {
+            return .channel(match.index)
+        }
+        return .unchanged
+    }
+}
+
+extension Meshtastic_ModuleConfig.MeshBeaconConfig {
+    mutating func applyOfferChannel(
+        _ choice: MeshBeaconOfferChannelChoice,
+        channels: [Meshtastic_Channel],
+        loaded: Meshtastic_ChannelSettings?
+    ) {
+        switch choice {
+        case .none:
+            clearBroadcastOfferChannel()
+        case .unchanged:
+            if let loaded { broadcastOfferChannel = loaded }
+        case .channel(let index):
+            guard let channel = channels.first(where: { $0.index == index }) else { return }
+            var offer = Meshtastic_ChannelSettings()
+            offer.name = channel.settings.name
+            offer.psk = channel.settings.psk
+            broadcastOfferChannel = offer
+        }
+    }
+}
+
+extension ChannelPSKValidator {
+    /// Empty and one-byte PSKs select no encryption or a well-known default
+    /// key; anything longer is a channel-specific secret.
+    static func isCustomKey(_ psk: Data) -> Bool {
+        psk.count > 1
     }
 }

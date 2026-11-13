@@ -344,11 +344,19 @@ private struct NodeAdministrationView: View {
     /// Long-name byte limit of the node being configured: loaded metadata
     /// first, then the local node's firmware, else the legacy limit.
     private var longNameByteLimit: Int {
-        let loadedVersion = draft.metadata?.firmwareVersion
-        let firmwareVersion = loadedVersion?.isEmpty == false
-            ? loadedVersion
-            : (target.isRemote ? nil : appState.myNodeInfo?.firmwareVersion)
-        return UTF8Limits.longNameBytes(firmwareVersion: firmwareVersion)
+        UTF8Limits.longNameBytes(firmwareVersion: targetFirmwareVersion)
+    }
+
+    /// Firmware of the node being configured: loaded metadata first, then the
+    /// local node's firmware; nil when unknown.
+    private var targetFirmwareVersion: String? {
+        if let loaded = loadedMetadataFirmwareVersion { return loaded }
+        return target.isRemote ? nil : appState.myNodeInfo?.firmwareVersion
+    }
+
+    private var loadedMetadataFirmwareVersion: String? {
+        guard let version = draft.metadata?.firmwareVersion, !version.isEmpty else { return nil }
+        return version
     }
 
     private var fixedPositionEditor: some View {
@@ -450,6 +458,12 @@ private struct NodeAdministrationView: View {
                 available: draft.loadedModuleCategories.contains(category),
                 fields: moduleSchemaFields[category] ?? []
             )
+            if category.isUnsupported(byFirmware: targetFirmwareVersion),
+               !draft.loadedModuleCategories.contains(category) {
+                Label("Requires firmware 2.8 or newer.", systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            }
             typedModuleEditor(category)
             AdvancedProtobufJSONEditor(
                 text: $editorText,
@@ -518,7 +532,27 @@ private struct NodeAdministrationView: View {
             RangeTestConfigurationForm(config: $draft.rangeTest)
         case .serial:
             SerialConfigurationForm(config: $draft.serial)
-        default:
+        case .audio:
+            AudioConfigurationForm(config: $draft.audio)
+        case .remoteHardware:
+            RemoteHardwareConfigurationForm(config: $draft.remoteHardware)
+        case .ambientLighting:
+            AmbientLightingConfigurationForm(config: $draft.ambientLighting)
+        case .detectionSensor:
+            DetectionSensorConfigurationForm(config: $draft.detectionSensor)
+        case .paxcounter:
+            PaxcounterConfigurationForm(config: $draft.paxcounter)
+        case .tak:
+            TAKConfigurationForm(config: $draft.tak)
+        case .meshBeacon:
+            MeshBeaconConfigurationForm(
+                config: $draft.meshBeacon,
+                channels: draft.channels,
+                loadedOfferChannel: original.flatMap {
+                    $0.meshBeacon.hasBroadcastOfferChannel ? $0.meshBeacon.broadcastOfferChannel : nil
+                }
+            )
+        case .statusMessage, .trafficManagement:
             ContentUnavailableView(
                 "Advanced configuration",
                 systemImage: "curlybraces",
@@ -639,7 +673,10 @@ private struct NodeAdministrationView: View {
             loadProgress = nil
         }
         do {
-            let snapshot = try await coordinator.requestCompleteConfiguration(from: target) { progress in
+            let snapshot = try await coordinator.requestCompleteConfiguration(
+                from: target,
+                knownFirmwareVersion: loadedMetadataFirmwareVersion
+            ) { progress in
                 loadProgress = progress
             }
             original = snapshot
@@ -668,7 +705,8 @@ private struct NodeAdministrationView: View {
         do {
             let incoming = try await coordinator.requestCompleteConfiguration(
                 from: target,
-                selection: section.requestSelection
+                selection: section.requestSelection,
+                knownFirmwareVersion: loadedMetadataFirmwareVersion
             )
             var baseline = original ?? MeshConfigurationSnapshot()
             if section.isAvailable(in: incoming) {
@@ -974,6 +1012,7 @@ private struct NodeAdministrationView: View {
         case .trafficManagement:
             config.trafficManagement.unknownFields = draft.trafficManagement.unknownFields
         case .tak: config.tak.unknownFields = draft.tak.unknownFields
+        case .meshBeacon: config.meshBeacon.unknownFields = draft.meshBeacon.unknownFields
         }
     }
 
@@ -1035,7 +1074,7 @@ private struct NodeAdministrationView: View {
         case .statusmessage: return .statusMessage
         case .trafficManagement: return .trafficManagement
         case .tak: return .tak
-        case .meshBeacon: return nil
+        case .meshBeacon: return .meshBeacon
         case nil: return nil
         }
     }
@@ -1155,6 +1194,7 @@ private struct NodeAdministrationView: View {
         .statusMessage: ["node_status"],
         .trafficManagement: ["enabled", "position_dedup_enabled", "position_precision_bits", "position_min_interval_secs", "nodeinfo_direct_response", "nodeinfo_direct_response_max_hops", "rate_limit_enabled", "rate_limit_window_secs", "rate_limit_max_packets", "drop_unknown_enabled", "unknown_packet_threshold", "exhaust_hop_telemetry", "exhaust_hop_position", "router_preserve_hops"],
         .tak: ["team", "role"],
+        .meshBeacon: ["flags", "broadcast_message", "broadcast_interval_secs", "broadcast_offer_preset", "broadcast_offer_frequency_slot", "broadcast_offer_channel", "broadcast_offer_region", "broadcast_targets"],
     ]
 }
 
@@ -1862,6 +1902,325 @@ private struct SerialConfigurationForm: View {
         }
         .formStyle(.grouped)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct AudioConfigurationForm: View {
+    @Binding var config: Meshtastic_ModuleConfig.AudioConfig
+
+    var body: some View {
+        Form {
+            Section("Codec 2 audio") {
+                Toggle("Enabled", isOn: $config.codec2Enabled)
+                Picker("Bitrate", selection: $config.bitrate) {
+                    ForEach(Meshtastic_ModuleConfig.AudioConfig.Audio_Baud.allCases, id: \.rawValue) { value in
+                        Text(protobufValueLabel(value)).tag(value)
+                    }
+                }
+                UInt32ConfigurationField("PTT GPIO", value: $config.pttPin, range: 0...255)
+            }
+            Section("I²S pins") {
+                UInt32ConfigurationField("Word select (WS) GPIO", value: $config.i2SWs, range: 0...255)
+                UInt32ConfigurationField("Data out (SD) GPIO", value: $config.i2SSd, range: 0...255)
+                UInt32ConfigurationField("Data in (DIN) GPIO", value: $config.i2SDin, range: 0...255)
+                UInt32ConfigurationField("Clock (SCK) GPIO", value: $config.i2SSck, range: 0...255)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct RemoteHardwareConfigurationForm: View {
+    @Binding var config: Meshtastic_ModuleConfig.RemoteHardwareConfig
+
+    var body: some View {
+        Form {
+            Section("Remote hardware") {
+                Toggle("Enabled", isOn: $config.enabled)
+                Toggle("Allow undefined pin access", isOn: $config.allowUndefinedPinAccess)
+                if config.allowUndefinedPinAccess {
+                    Label(
+                        "Any mesh node allowed to send remote hardware commands can then switch every GPIO of this device.",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .foregroundStyle(.orange)
+                }
+                Text("The list of available pins is kept unchanged; edit it in the advanced protobuf JSON editor.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct AmbientLightingConfigurationForm: View {
+    @Binding var config: Meshtastic_ModuleConfig.AmbientLightingConfig
+
+    var body: some View {
+        Form {
+            Section("Ambient lighting") {
+                Toggle("LED on", isOn: $config.ledState)
+                UInt32ConfigurationField("Current", value: $config.current, range: 0...31)
+            }
+            Section("Color") {
+                UInt32ConfigurationField("Red", value: $config.red, range: 0...255)
+                UInt32ConfigurationField("Green", value: $config.green, range: 0...255)
+                UInt32ConfigurationField("Blue", value: $config.blue, range: 0...255)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct DetectionSensorConfigurationForm: View {
+    @Binding var config: Meshtastic_ModuleConfig.DetectionSensorConfig
+
+    private var maxNameBytes: Int { Meshtastic_ModuleConfig.DetectionSensorConfig.nameMaxBytes }
+
+    var body: some View {
+        Form {
+            Section("Sensor") {
+                Toggle("Enabled", isOn: $config.enabled)
+                TextField(
+                    "Name",
+                    text: Binding(
+                        get: { config.name },
+                        set: { config.name = UTF8Limits.clamp($0, maxBytes: maxNameBytes) }
+                    )
+                )
+                .textFieldStyle(.roundedBorder)
+                Text("\(config.name.utf8.count)/\(maxNameBytes) bytes")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                UInt32ConfigurationField("Monitor GPIO", value: $config.monitorPin, range: 0...255)
+                Picker("Trigger type", selection: $config.detectionTriggerType) {
+                    ForEach(
+                        Meshtastic_ModuleConfig.DetectionSensorConfig.TriggerType.allCases,
+                        id: \.rawValue
+                    ) { value in
+                        Text(protobufValueLabel(value)).tag(value)
+                    }
+                }
+                Toggle("Use internal pull-up", isOn: $config.usePullup)
+            }
+            Section("Broadcasts") {
+                Toggle("Send bell with message", isOn: $config.sendBell)
+                UInt32ConfigurationField(
+                    "Minimum broadcast interval (s)",
+                    value: $config.minimumBroadcastSecs,
+                    range: 0...86_400
+                )
+                UInt32ConfigurationField(
+                    "State broadcast interval (s)",
+                    value: $config.stateBroadcastSecs,
+                    range: 0...86_400
+                )
+                Text("A state broadcast interval of 0 only reports changes.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct PaxcounterConfigurationForm: View {
+    @Binding var config: Meshtastic_ModuleConfig.PaxcounterConfig
+
+    var body: some View {
+        Form {
+            Section("Pax counter") {
+                Toggle("Enabled", isOn: $config.enabled)
+                UInt32ConfigurationField(
+                    "Update interval (s)",
+                    value: $config.paxcounterUpdateInterval,
+                    range: 0...86_400
+                )
+            }
+            Section("Detection thresholds") {
+                Int32ConfigurationField("Wi-Fi RSSI threshold (dBm)", value: $config.wifiThreshold, range: -128...0)
+                Int32ConfigurationField("BLE RSSI threshold (dBm)", value: $config.bleThreshold, range: -128...0)
+                Text("Devices weaker than the threshold are not counted. 0 uses the firmware default.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct TAKConfigurationForm: View {
+    @Binding var config: Meshtastic_ModuleConfig.TAKConfig
+
+    var body: some View {
+        Form {
+            Section("TAK") {
+                Picker("Team", selection: $config.team) {
+                    ForEach(Meshtastic_Team.allCases, id: \.rawValue) { value in
+                        Text(protobufValueLabel(value)).tag(value)
+                    }
+                }
+                Picker("Role", selection: $config.role) {
+                    ForEach(Meshtastic_MemberRole.allCases, id: \.rawValue) { value in
+                        Text(protobufValueLabel(value)).tag(value)
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct MeshBeaconConfigurationForm: View {
+    typealias BeaconConfig = Meshtastic_ModuleConfig.MeshBeaconConfig
+    typealias OfferChannelChoice = MeshBeaconOfferChannelChoice
+
+    @Binding var config: BeaconConfig
+    let channels: [Meshtastic_Channel]
+    /// Offer channel as loaded from the node; backs the "Unchanged" choice.
+    let loadedOfferChannel: Meshtastic_ChannelSettings?
+
+    var body: some View {
+        Form {
+            Section("Mesh Beacon") {
+                Toggle("Listen for beacons", isOn: flag(.flagListenEnabled))
+                Toggle("Broadcast beacons", isOn: flag(.flagBroadcastEnabled))
+                Toggle("Legacy split (separate text message)", isOn: flag(.flagLegacySplit))
+            }
+            Section("Broadcast") {
+                TextField("Message", text: message)
+                    .textFieldStyle(.roundedBorder)
+                Text("\(config.broadcastMessage.utf8.count)/\(BeaconConfig.broadcastMessageMaxBytes) bytes")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                UInt32ConfigurationField(
+                    "Broadcast interval (s)",
+                    value: $config.broadcastIntervalSecs,
+                    range: BeaconConfig.minimumBroadcastIntervalSecs...UInt32.max
+                )
+                Text("At least 3600 seconds (one hour).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Offer") {
+                Picker("Offered modem preset", selection: offerPreset) {
+                    Text("Same as device").tag(Optional<Meshtastic_Config.LoRaConfig.ModemPreset>.none)
+                    ForEach(Meshtastic_Config.LoRaConfig.ModemPreset.allCases, id: \.rawValue) { value in
+                        Text(protobufValueLabel(value)).tag(Optional(value))
+                    }
+                }
+                UInt32ConfigurationField("Offered frequency slot", value: offerFrequencySlot, range: 0...UInt32.max)
+                Text("0 leaves the slot unset; the receiver derives it from region, channel name and preset.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Picker("Offered channel", selection: offerChannel) {
+                    Text("None").tag(OfferChannelChoice.none)
+                    if loadedOfferChannel != nil || offerChannel.wrappedValue == .unchanged {
+                        Text("Unchanged").tag(OfferChannelChoice.unchanged)
+                    }
+                    ForEach(activeChannels, id: \.index) { channel in
+                        Text(channelLabel(channel)).tag(OfferChannelChoice.channel(channel.index))
+                    }
+                }
+                if config.hasBroadcastOfferChannel,
+                   ChannelPSKValidator.isCustomKey(config.broadcastOfferChannel.psk) {
+                    Label(
+                        "The channel key is broadcast to everyone who hears the beacon.",
+                        systemImage: "exclamationmark.shield"
+                    )
+                    .foregroundStyle(.orange)
+                }
+            }
+            Section {
+                Label(
+                    "Broadcasting on a different modem preset retunes the radio; the node does not receive on its primary preset meanwhile. Not suitable for routers.",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .foregroundStyle(.orange)
+                Text("Broadcast targets are kept unchanged; edit them in the advanced protobuf JSON editor.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Bindings
+
+    private func flag(_ flag: BeaconConfig.Flags) -> Binding<Bool> {
+        Binding(
+            get: { config.hasFlag(flag) },
+            set: { config.setFlag(flag, $0) }
+        )
+    }
+
+    private var message: Binding<String> {
+        Binding(
+            get: { config.broadcastMessage },
+            set: { config.broadcastMessage = UTF8Limits.clamp($0, maxBytes: BeaconConfig.broadcastMessageMaxBytes) }
+        )
+    }
+
+    private var offerPreset: Binding<Meshtastic_Config.LoRaConfig.ModemPreset?> {
+        Binding(
+            get: { config.hasBroadcastOfferPreset ? config.broadcastOfferPreset : nil },
+            set: { value in
+                if let value {
+                    config.broadcastOfferPreset = value
+                } else {
+                    config.clearBroadcastOfferPreset()
+                }
+            }
+        )
+    }
+
+    private var offerFrequencySlot: Binding<UInt32> {
+        Binding(
+            get: { config.hasBroadcastOfferFrequencySlot ? config.broadcastOfferFrequencySlot : 0 },
+            set: { value in
+                if value == 0 {
+                    config.clearBroadcastOfferFrequencySlot()
+                } else {
+                    config.broadcastOfferFrequencySlot = value
+                }
+            }
+        )
+    }
+
+    private var offerChannel: Binding<OfferChannelChoice> {
+        Binding(
+            get: {
+                OfferChannelChoice.current(
+                    in: config,
+                    channels: activeChannels,
+                    loaded: loadedOfferChannel
+                )
+            },
+            set: { choice in
+                config.applyOfferChannel(choice, channels: activeChannels, loaded: loadedOfferChannel)
+            }
+        )
+    }
+
+    // MARK: - Private
+
+    private var activeChannels: [Meshtastic_Channel] {
+        channels.filter { $0.role != .disabled }.sorted { $0.index < $1.index }
+    }
+
+    private func channelLabel(_ channel: Meshtastic_Channel) -> String {
+        let name = channel.settings.name.isEmpty
+            ? String(localized: "Default")
+            : channel.settings.name
+        return "\(channel.index): \(name)"
     }
 }
 

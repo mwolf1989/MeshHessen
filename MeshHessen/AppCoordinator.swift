@@ -380,12 +380,14 @@ final class AppCoordinator {
     func requestCompleteConfiguration(
         from target: AdminTarget = .local,
         selection: MeshConfigurationRequestSelection = .all,
+        knownFirmwareVersion: String? = nil,
         progress: ((AdminConfigurationLoadProgress) -> Void)? = nil
     ) async throws -> MeshConfigurationSnapshot {
         let timeout = Duration.seconds(SettingsService.shared.remoteAdminTimeoutSeconds)
         return try await protocol_.requestCompleteConfiguration(
             from: target,
             selection: selection,
+            knownFirmwareVersion: knownFirmwareVersion,
             timeout: timeout,
             progress: progress
         )

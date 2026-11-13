@@ -1525,7 +1525,7 @@ final class MeshtasticProtocolService {
         case .tak:
             receivedModuleConfigs[MeshModuleConfigCategory.tak.rawValue] = moduleConfig
         case .meshBeacon:
-            AppLogger.shared.log("[Protocol] ModuleConfig: MeshBeacon (not handled)", debug: SettingsService.shared.debugDevice)
+            receivedModuleConfigs[MeshModuleConfigCategory.meshBeacon.rawValue] = moduleConfig
         case nil:
             AppLogger.shared.log("[Protocol] ModuleConfig received (empty)", debug: SettingsService.shared.debugDevice)
         }
@@ -2201,9 +2201,14 @@ final class MeshtasticProtocolService {
     /// Reads every core and module category supported by the generated schema.
     /// Unsupported categories remain marked as unavailable in the returned
     /// snapshot and are consequently excluded from later writes.
+    ///
+    /// Modules that need firmware 2.8 are skipped when the target's firmware
+    /// is known to be older: the local device's version, or for a remote node
+    /// `knownFirmwareVersion` (metadata loaded earlier). Unknown → not skipped.
     func requestCompleteConfiguration(
         from target: AdminTarget = .local,
-        selection: MeshConfigurationRequestSelection = .all,
+        selection requestedSelection: MeshConfigurationRequestSelection = .all,
+        knownFirmwareVersion: String? = nil,
         timeout: Duration = .seconds(30),
         progress: ((AdminConfigurationLoadProgress) -> Void)? = nil
     ) async throws -> MeshConfigurationSnapshot {
@@ -2214,6 +2219,12 @@ final class MeshtasticProtocolService {
             throw DeviceConfigError.invalidTarget
         }
 
+        let targetFirmwareVersion = target.isRemote
+            ? knownFirmwareVersion
+            : (appState?.myNodeInfo?.firmwareVersion).flatMap { $0.isEmpty ? nil : $0 }
+                ?? lastDeviceMetadata?.firmwareVersion
+                ?? knownFirmwareVersion
+        let selection = requestedSelection.removingModules(unsupportedByFirmware: targetFirmwareVersion)
         guard !selection.isEmpty else { return MeshConfigurationSnapshot() }
         var requestQueue: [(Meshtastic_AdminMessage, CompleteAdminRequestKind)] = []
 
@@ -2361,7 +2372,7 @@ final class MeshtasticProtocolService {
             )
         }
 
-        if selection == .all, !receivedResponse {
+        if requestedSelection == .all, !receivedResponse {
             throw DeviceConfigError.adminTimedOut(String(localized: "Read configuration"))
         }
 
@@ -2760,7 +2771,7 @@ final class MeshtasticProtocolService {
         case .statusmessage: return .statusMessage
         case .trafficManagement: return .trafficManagement
         case .tak: return .tak
-        case .meshBeacon: return nil
+        case .meshBeacon: return .meshBeacon
         case nil: return nil
         }
     }

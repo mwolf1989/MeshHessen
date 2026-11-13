@@ -301,6 +301,134 @@ struct AdminConfigurationParityTests {
         #expect(!AdminNodeAction.synchronizeTime(.now).expectsLocalDisconnect)
     }
 
+    // MARK: - Module forms and Mesh Beacon (plan 011)
+
+    @Test("A changed Mesh Beacon config is part of the diff; an unchanged one is not")
+    func meshBeaconDiff() {
+        var original = MeshConfigurationSnapshot()
+        original.loadedModuleCategories = [.meshBeacon, .tak]
+        original.meshBeacon.broadcastIntervalSecs = 3_600
+
+        #expect(MeshConfigurationDiff.between(original, and: original).isEmpty)
+
+        var updated = original
+        updated.meshBeacon.broadcastMessage = "Willkommen"
+        let diff = MeshConfigurationDiff.between(updated, and: original)
+        #expect(diff.changedModuleCategories == [.meshBeacon])
+        #expect(diff.labels.contains(MeshModuleConfigCategory.meshBeacon.title))
+    }
+
+    @Test("Mesh Beacon round-trips through ModuleConfig and keeps broadcast targets")
+    func meshBeaconRoundTrip() {
+        var snapshot = MeshConfigurationSnapshot()
+        snapshot.meshBeacon.flags = 3
+        snapshot.meshBeacon.broadcastTargets = [Meshtastic_ModuleConfig.MeshBeaconConfig.BroadcastTarget()]
+        let config = snapshot.moduleConfig(for: .meshBeacon)
+        #expect(config.meshBeacon.flags == 3)
+
+        var decoded = MeshConfigurationSnapshot()
+        decoded.apply(config)
+        #expect(decoded.meshBeacon == snapshot.meshBeacon)
+        #expect(MeshModuleConfigCategory.meshBeacon.requestType == .meshbeaconConfig)
+    }
+
+    @Test("Every module category has a title; only TAK and Mesh Beacon need firmware 2.8")
+    func moduleTitlesAndFirmwareGate() {
+        for category in MeshModuleConfigCategory.allCases {
+            #expect(!category.title.isEmpty)
+        }
+        #expect(MeshModuleConfigCategory.tak.requiresFirmwareV28)
+        #expect(MeshModuleConfigCategory.meshBeacon.requiresFirmwareV28)
+        #expect(!MeshModuleConfigCategory.serial.requiresFirmwareV28)
+        #expect(
+            Set(MeshModuleConfigCategory.allCases.filter(\.requiresFirmwareV28)) == [.tak, .meshBeacon]
+        )
+    }
+
+    @Test("Requests skip 2.8 modules only when the firmware is known to be older")
+    func firmwareGateSelection() {
+        let old = MeshConfigurationRequestSelection.all.removingModules(unsupportedByFirmware: "2.7.15.abc")
+        #expect(!old.moduleCategories.contains(.tak))
+        #expect(!old.moduleCategories.contains(.meshBeacon))
+        #expect(old.moduleCategories.contains(.serial))
+        #expect(old.requestCount == MeshConfigurationRequestSelection.all.requestCount - 2)
+
+        for firmware in [nil, "", "garbage", "2.8.0", "2.8.2.deadbee", "3.0.0"] as [String?] {
+            let selection = MeshConfigurationRequestSelection.all.removingModules(unsupportedByFirmware: firmware)
+            #expect(selection == .all)
+        }
+
+        #expect(MeshModuleConfigCategory.meshBeacon.isUnsupported(byFirmware: "2.7.0"))
+        #expect(!MeshModuleConfigCategory.meshBeacon.isUnsupported(byFirmware: nil))
+        #expect(!MeshModuleConfigCategory.serial.isUnsupported(byFirmware: "1.0.0"))
+    }
+
+    @Test("Mesh Beacon flags helper sets and clears single bits")
+    func meshBeaconFlags() {
+        var beacon = Meshtastic_ModuleConfig.MeshBeaconConfig()
+        beacon.setFlag(.flagListenEnabled, true)
+        beacon.setFlag(.flagBroadcastEnabled, true)
+        #expect(beacon.flags == 3)
+        #expect(beacon.hasFlag(.flagListenEnabled))
+        #expect(!beacon.hasFlag(.flagLegacySplit))
+
+        beacon.setFlag(.flagLegacySplit, true)
+        beacon.setFlag(.flagListenEnabled, false)
+        #expect(beacon.flags == 6)
+        beacon.setFlag(.flagListenEnabled, false)
+        #expect(beacon.flags == 6)
+    }
+
+    @Test("Mesh Beacon offer channel: none, unchanged and copy of a device channel")
+    func meshBeaconOfferChannel() {
+        var primary = Meshtastic_Channel()
+        primary.index = 0
+        primary.role = .primary
+        primary.settings.name = "MeshHessen"
+        primary.settings.psk = Data(repeating: 0x42, count: 32)
+        primary.settings.uplinkEnabled = true
+        var secondary = Meshtastic_Channel()
+        secondary.index = 2
+        secondary.role = .secondary
+        secondary.settings.name = "Team"
+        secondary.settings.psk = Data([0x01])
+        let channels = [primary, secondary]
+
+        var loaded = Meshtastic_ChannelSettings()
+        loaded.name = "Old"
+        loaded.psk = Data(repeating: 0x07, count: 16)
+
+        var beacon = Meshtastic_ModuleConfig.MeshBeaconConfig()
+        #expect(MeshBeaconOfferChannelChoice.current(in: beacon, channels: channels, loaded: nil) == .none)
+
+        beacon.applyOfferChannel(.channel(0), channels: channels, loaded: loaded)
+        #expect(beacon.hasBroadcastOfferChannel)
+        #expect(beacon.broadcastOfferChannel.name == "MeshHessen")
+        #expect(beacon.broadcastOfferChannel.psk == primary.settings.psk)
+        #expect(!beacon.broadcastOfferChannel.uplinkEnabled) // only name + PSK are copied
+        #expect(MeshBeaconOfferChannelChoice.current(in: beacon, channels: channels, loaded: loaded) == .channel(0))
+
+        beacon.applyOfferChannel(.unchanged, channels: channels, loaded: loaded)
+        #expect(beacon.broadcastOfferChannel == loaded)
+        #expect(MeshBeaconOfferChannelChoice.current(in: beacon, channels: channels, loaded: loaded) == .unchanged)
+
+        beacon.applyOfferChannel(.none, channels: channels, loaded: loaded)
+        #expect(!beacon.hasBroadcastOfferChannel)
+
+        #expect(ChannelPSKValidator.isCustomKey(primary.settings.psk))
+        #expect(!ChannelPSKValidator.isCustomKey(secondary.settings.psk))
+        #expect(!ChannelPSKValidator.isCustomKey(Data()))
+    }
+
+    @Test("Detection sensor name and beacon message limits are UTF-8 bytes")
+    func moduleStringLimits() {
+        #expect(Meshtastic_ModuleConfig.DetectionSensorConfig.nameMaxBytes == 19)
+        #expect(Meshtastic_ModuleConfig.MeshBeaconConfig.broadcastMessageMaxBytes == 60)
+        let clamped = UTF8Limits.clamp(String(repeating: "ä", count: 15), maxBytes: 19)
+        #expect(clamped.utf8.count <= 19)
+        #expect(clamped.count == 9)
+    }
+
     @Test("Time synchronization uses Unix seconds")
     func timeSynchronization() {
         let date = Date(timeIntervalSince1970: 1_700_000_123)
