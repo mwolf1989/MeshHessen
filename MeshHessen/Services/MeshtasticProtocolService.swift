@@ -1003,6 +1003,11 @@ final class MeshtasticProtocolService {
 
     // MARK: - Routing / ACK
 
+    /// Maps the firmware 2.8 `ack_proof_status` of a routing packet to the app model.
+    nonisolated static func ackProof(from status: Meshtastic_MeshPacket.AckProofStatus) -> AckProof {
+        AckProof(rawValue: status.rawValue) ?? .absent
+    }
+
     private func handleRoutingPacket(data: Meshtastic_Data, packet: Meshtastic_MeshPacket) {
         guard data.requestID != 0 else { return }
 
@@ -1066,7 +1071,8 @@ final class MeshtasticProtocolService {
         appState?.updateDeliveryState(
             requestId: data.requestID,
             state: deliveryState,
-            context: storageContext
+            context: storageContext,
+            ackProof: Self.ackProof(from: packet.ackProofStatus)
         )
         coreDataStore?.updateDeliveryState(
             requestId: data.requestID,
@@ -1357,6 +1363,9 @@ final class MeshtasticProtocolService {
         node.hopsAway = info.hopsAway > 0 ? Int(info.hopsAway) : (info.viaMqtt ? nil : 0)
         node.isFavorite = info.isFavorite
         node.isOwnNode = info.num == myNodeId
+        if FirmwareCapabilities.supportsV28(appState?.myNodeInfo?.firmwareVersion) {
+            node.heardOnCurrentLora = info.heardOnCurrentLora
+        }
 
         // Apply saved color/note from settings
         node.colorHex = SettingsService.shared.colorHex(for: info.num)
@@ -1414,7 +1423,7 @@ final class MeshtasticProtocolService {
             )
             return
         }
-        let info = channelInfo(from: channel)
+        let info = Self.channelInfo(from: channel)
         if let idx = appState?.channels.firstIndex(where: { $0.id == info.id }) {
             appState?.channels[idx] = info
         } else {
@@ -1429,7 +1438,7 @@ final class MeshtasticProtocolService {
         )
     }
 
-    private func channelInfo(from channel: Meshtastic_Channel) -> ChannelInfo {
+    nonisolated static func channelInfo(from channel: Meshtastic_Channel) -> ChannelInfo {
         let name = extractChannelName(channel)
         let s = channel.settings
         let pskBase64 = s.psk.base64EncodedString()
@@ -1439,7 +1448,8 @@ final class MeshtasticProtocolService {
             psk: pskBase64,
             role: channel.role == .primary ? "PRIMARY" : "SECONDARY",
             uplinkEnabled: s.uplinkEnabled,
-            downlinkEnabled: s.downlinkEnabled
+            downlinkEnabled: s.downlinkEnabled,
+            useAead: s.useAead
         )
     }
 
@@ -1460,7 +1470,7 @@ final class MeshtasticProtocolService {
                 uniquingKeysWith: { _, latest in latest }
             )
         }
-        let activeChannels = tempChannels.activeChannels.map { channelInfo(from: $0) }
+        let activeChannels = tempChannels.activeChannels.map { Self.channelInfo(from: $0) }
         appState?.channels = activeChannels
         activeChannels.forEach { coreDataStore?.upsertChannel($0) }
         coreDataStore?.removeChannelsNotIn(indices: Set(activeChannels.map(\.id)))
@@ -1479,7 +1489,7 @@ final class MeshtasticProtocolService {
         isCollectingChannelSnapshot = false
     }
 
-    private func extractChannelName(_ channel: Meshtastic_Channel) -> String {
+    private nonisolated static func extractChannelName(_ channel: Meshtastic_Channel) -> String {
         let s = channel.settings
         if !s.name.isEmpty { return s.name }
         if channel.role == .primary { return "Default" }
@@ -3755,7 +3765,7 @@ final class MeshtasticProtocolService {
         }
 
         AppLogger.shared.log(
-            "[Protocol] Cleaning up \(removed) duplicate channel(s): keeping \(desired.map { extractChannelName($0) })",
+            "[Protocol] Cleaning up \(removed) duplicate channel(s): keeping \(desired.map { Self.extractChannelName($0) })",
             debug: true
         )
 

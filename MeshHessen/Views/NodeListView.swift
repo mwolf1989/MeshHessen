@@ -232,6 +232,13 @@ private struct NodeRowView: View {
                             .help(node.status)
                             .accessibilityLabel(Text("Status: \(node.status)"))
                     }
+                    if node.heardOnCurrentLora == true {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                            .help("Heard directly by this radio on the current LoRa slot")
+                            .accessibilityLabel("Heard directly by this radio on the current LoRa slot")
+                    }
                 }
 
                 HStack(spacing: 4) {

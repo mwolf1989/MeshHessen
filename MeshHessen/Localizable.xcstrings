@@ -18548,6 +18548,230 @@
           }
         }
       }
+    },
+    "Receipt cryptographically verified" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empfang kryptografisch bestätigt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Receipt cryptographically verified"
+          }
+        }
+      }
+    },
+    "Receipt signature INVALID — possibly forged" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empfangssignatur UNGÜLTIG – möglicherweise gefälscht"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Receipt signature INVALID — possibly forged"
+          }
+        }
+      }
+    },
+    "Packet signatures" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paketsignaturen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Packet signatures"
+          }
+        }
+      }
+    },
+    "Signature policy" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signaturrichtlinie"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signature policy"
+          }
+        }
+      }
+    },
+    "Strict hides nodes running older firmware. Enforcement is done by the device (firmware 2.8+)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„Strikt“ blendet Nodes mit älterer Firmware aus. Die Durchsetzung übernimmt das Gerät (Firmware 2.8+)."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strict hides nodes running older firmware. Enforcement is done by the device (firmware 2.8+)."
+          }
+        }
+      }
+    },
+    "Compatible" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kompatibel"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compatible"
+          }
+        }
+      }
+    },
+    "Balanced" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausgewogen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Balanced"
+          }
+        }
+      }
+    },
+    "Strict" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strikt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strict"
+          }
+        }
+      }
+    },
+    "Heard directly by this radio on the current LoRa slot" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von diesem Funkgerät direkt im aktuellen LoRa-Slot gehört"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heard directly by this radio on the current LoRa slot"
+          }
+        }
+      }
+    },
+    "AEAD-encrypted channel (firmware 2.8, experimental)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AEAD-verschlüsselter Kanal (Firmware 2.8, experimentell)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AEAD-encrypted channel (firmware 2.8, experimental)"
+          }
+        }
+      }
+    },
+    "Long Slow (deprecated)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Long Slow (veraltet)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Long Slow (deprecated)"
+          }
+        }
+      }
+    },
+    "Very Long Slow (deprecated)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Very Long Slow (veraltet)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Very Long Slow (deprecated)"
+          }
+        }
+      }
+    },
+    "Text message" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Textnachricht"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text message"
+          }
+        }
+      }
+    },
+    "WS85 weather station" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WS85-Wetterstation"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WS85 weather station"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

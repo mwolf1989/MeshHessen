@@ -123,6 +123,12 @@ private struct ChannelRow: View {
             Spacer()
 
             HStack(spacing: 4) {
+                if channel.useAead {
+                    Image(systemName: "shield.lefthalf.filled")
+                        .foregroundStyle(.purple)
+                        .help("AEAD-encrypted channel (firmware 2.8, experimental)")
+                        .accessibilityLabel("AEAD-encrypted channel (firmware 2.8, experimental)")
+                }
                 if channel.uplinkEnabled {
                     Image(systemName: "arrow.up.circle.fill")
                         .foregroundStyle(.green)

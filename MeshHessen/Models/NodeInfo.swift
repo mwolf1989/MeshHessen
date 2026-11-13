@@ -151,6 +151,9 @@ final class NodeInfo: Identifiable {
 
     var viaMqtt: Bool = false
     var publicKey: Data = Data()
+    /// Firmware 2.8 NodeDB flag: heard directly by our radio on the current
+    /// LoRa slot. `nil` = unknown (older firmware or not from a device snapshot).
+    var heardOnCurrentLora: Bool?
 
     // Direct RF metadata. Relay and MQTT packets must not overwrite these values.
     var hopsAway: Int?

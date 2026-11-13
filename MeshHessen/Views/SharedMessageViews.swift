@@ -41,6 +41,7 @@ struct MessageSearchField: View {
 /// Shared delivery state label used in both channel and DM message bubbles.
 struct DeliveryStateLabel: View {
     let state: MessageDeliveryState
+    var ackProof: AckProof = .absent
 
     var body: some View {
         switch state {
@@ -51,13 +52,40 @@ struct DeliveryStateLabel: View {
                 .font(.caption2)
                 .foregroundStyle(.orange)
         case .acknowledged:
-            Text("Zugestellt")
-                .font(.caption2)
-                .foregroundStyle(.green)
+            HStack(spacing: 3) {
+                Text("Zugestellt")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                AckProofBadge(proof: ackProof)
+            }
         case .failed(let reason):
             Text(reason)
                 .font(.caption2)
                 .foregroundStyle(.red)
+        }
+    }
+}
+
+/// Signed-ACK marker (firmware 2.8). Flags a receipt, never blocks it.
+private struct AckProofBadge: View {
+    let proof: AckProof
+
+    var body: some View {
+        switch proof {
+        case .valid:
+            Image(systemName: "checkmark.shield")
+                .font(.caption2)
+                .foregroundStyle(.green)
+                .help("Receipt cryptographically verified")
+                .accessibilityLabel("Receipt cryptographically verified")
+        case .invalid:
+            Image(systemName: "exclamationmark.shield")
+                .font(.caption2)
+                .foregroundStyle(.red)
+                .help("Receipt signature INVALID — possibly forged")
+                .accessibilityLabel("Receipt signature INVALID — possibly forged")
+        case .absent, .noKey:
+            EmptyView()
         }
     }
 }
@@ -303,7 +331,7 @@ struct MessageBubbleView: View {
 
             if isMine {
                 HStack(spacing: 6) {
-                    DeliveryStateLabel(state: message.deliveryState)
+                    DeliveryStateLabel(state: message.deliveryState, ackProof: message.ackProof)
                     if case .failed = message.deliveryState, let onRetry {
                         Button("Erneut senden", action: onRetry)
                             .buttonStyle(.link)

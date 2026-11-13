@@ -1523,7 +1523,7 @@ private struct LoRaConfigurationForm: View {
                 if config.usePreset {
                     Picker("Modem preset", selection: $config.modemPreset) {
                         ForEach(Meshtastic_Config.LoRaConfig.ModemPreset.allCases, id: \.rawValue) { value in
-                            Text(protobufValueLabel(value)).tag(value)
+                            Text(value.displayLabel).tag(value)
                         }
                     }
                 } else {
@@ -1592,6 +1592,16 @@ private struct SecurityConfigurationForm: View {
                 Base64DataField("Private key", data: $config.privateKey, secure: true)
                 Base64DataListField("Authorized admin keys", values: $config.adminKey)
                 Text("Keys must be valid Base64. Invalid input remains visible but is not applied.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Packet signatures") {
+                Picker("Signature policy", selection: $config.packetSignaturePolicy) {
+                    ForEach(Meshtastic_Config.SecurityConfig.PacketSignaturePolicy.allCases, id: \.rawValue) { value in
+                        Text(value.displayLabel).tag(value)
+                    }
+                }
+                Text("Strict hides nodes running older firmware. Enforcement is done by the device (firmware 2.8+).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1885,7 +1895,7 @@ private struct SerialConfigurationForm: View {
                 Toggle("Enabled", isOn: $config.enabled)
                 Picker("Mode", selection: $config.mode) {
                     ForEach(Meshtastic_ModuleConfig.SerialConfig.Serial_Mode.allCases, id: \.rawValue) { value in
-                        Text(protobufValueLabel(value)).tag(value)
+                        Text(value.displayLabel).tag(value)
                     }
                 }
                 Picker("Baud rate", selection: $config.baud) {

@@ -8,6 +8,8 @@ struct ChannelInfo: Identifiable, Equatable {
     var role: String        // "PRIMARY" / "SECONDARY"
     var uplinkEnabled: Bool
     var downlinkEnabled: Bool
+    /// Firmware 2.8: channel uses AEAD (AES-CCM) instead of AES-CTR.
+    var useAead: Bool = false
 
     /// Display name including MQTT indicator
     var displayName: String {

@@ -543,3 +543,64 @@ enum PortNum: Int, CaseIterable, Identifiable {
         }
     }
 }
+
+// MARK: - Firmware 2.8 picker labels
+
+extension Meshtastic_Config.LoRaConfig.ModemPreset {
+    /// Readable label for the modem-preset picker; unknown future cases fall back to the enum name.
+    var displayLabel: String {
+        switch self {
+        case .longFast: return "Long Fast"
+        case .longSlow: return String(localized: "Long Slow (deprecated)")
+        case .veryLongSlow: return String(localized: "Very Long Slow (deprecated)")
+        case .mediumSlow: return "Medium Slow"
+        case .mediumFast: return "Medium Fast"
+        case .shortSlow: return "Short Slow"
+        case .shortFast: return "Short Fast"
+        case .longModerate: return "Long Moderate"
+        case .shortTurbo: return "Short Turbo"
+        case .longTurbo: return "Long Turbo"
+        case .liteFast: return "Lite Fast"
+        case .liteSlow: return "Lite Slow"
+        case .narrowFast: return "Narrow Fast"
+        case .narrowSlow: return "Narrow Slow"
+        case .tinyFast: return "Tiny Fast"
+        case .tinySlow: return "Tiny Slow"
+        case .mediumTurbo: return "Medium Turbo"
+        default: return String(describing: self)
+        }
+    }
+}
+
+extension Meshtastic_ModuleConfig.SerialConfig.Serial_Mode {
+    /// Readable label for the serial-module mode picker; unknown future cases fall back to the enum name.
+    var displayLabel: String {
+        switch self {
+        case .default: return String(localized: "Default")
+        case .simple: return "Simple"
+        case .proto: return "Proto"
+        case .textmsg: return String(localized: "Text message")
+        case .nmea: return "NMEA"
+        case .caltopo: return "CalTopo"
+        case .ws85: return String(localized: "WS85 weather station")
+        case .veDirect: return "VE.Direct (Victron)"
+        case .msConfig: return "MS config"
+        case .log: return "Log"
+        case .logtext: return "Log text"
+        case .modbus: return "Modbus"
+        default: return String(describing: self)
+        }
+    }
+}
+
+extension Meshtastic_Config.SecurityConfig.PacketSignaturePolicy {
+    /// Label for the packet-signature-policy picker (firmware 2.8+).
+    var displayLabel: String {
+        switch self {
+        case .compatible: return String(localized: "Compatible")
+        case .balanced: return String(localized: "Balanced")
+        case .strict: return String(localized: "Strict")
+        default: return String(describing: self)
+        }
+    }
+}

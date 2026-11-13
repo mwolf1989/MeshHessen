@@ -136,6 +136,12 @@ struct NodesTabView: View {
                             .foregroundStyle(.blue)
                             .help("MQTT")
                     }
+                    if node.heardOnCurrentLora == true {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                            .help("Heard directly by this radio on the current LoRa slot")
+                    }
                 }
             }
             .width(min: 140, ideal: 190)
@@ -521,6 +527,13 @@ private struct NodeTileView: View {
                 }
                 if node.viaMqtt {
                     statusIcon("cloud.fill", color: .blue, help: "Received via MQTT")
+                }
+                if node.heardOnCurrentLora == true {
+                    statusIcon(
+                        "antenna.radiowaves.left.and.right",
+                        color: .green,
+                        help: "Heard directly by this radio on the current LoRa slot"
+                    )
                 }
             }
         }

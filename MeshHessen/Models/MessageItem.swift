@@ -94,6 +94,16 @@ enum MessageDeliveryState: Equatable, Sendable {
     }
 }
 
+/// Firmware 2.8 verdict on the cryptographic proof carried by a routing ACK
+/// (`MeshPacket.ack_proof_status`). Kept separate from `MessageDeliveryState`:
+/// the proof only flags a receipt, it never changes the delivery state.
+enum AckProof: Int, Sendable {
+    case absent = 0
+    case valid = 1
+    case invalid = 2
+    case noKey = 3
+}
+
 /// A single message in a channel or DM conversation
 struct MessageItem: Identifiable, Sendable {
     static let maximumPayloadBytes = 200
@@ -121,6 +131,8 @@ struct MessageItem: Identifiable, Sendable {
     var senderNote: String = ""
     var hasAlertBell: Bool = false
     var deliveryState: MessageDeliveryState = .none
+    /// Signed-ACK verdict for the acknowledgement. In memory only (not persisted).
+    var ackProof: AckProof = .absent
 
     /// RF metadata captured with the packet. `nil` means unavailable (for
     /// example for MQTT traffic or imported legacy history).
