@@ -75,6 +75,9 @@ final class TelemetryDatabaseService: @unchecked Sendable {
     /// `timestamp` column; retention and clearing handle it explicitly.
     static let requestEchoTableName = "request_echo"
 
+    /// `telemetrySampleDidInsert` userInfo key: `[String]` raw values of the inserted metrics.
+    static let insertedMetricsUserInfoKey = "metrics"
+
     private struct StoredPosition {
         let latitude: Double
         let longitude: Double
@@ -1279,6 +1282,97 @@ final class TelemetryDatabaseService: @unchecked Sendable {
         }
     }
 
+    // MARK: - Environment Map Overlay
+
+    /// Recent environment data per node for the map overlay (Windows `GetLatestEnvironmentPerNode`).
+    ///
+    /// Every node with a sample of a known overlay metric (`EnvironmentMetricInfo.all`) newer than
+    /// `maxAgeHours` is returned with the newest value of each metric. When `metricColumn` names a
+    /// known metric, that metric's samples in the window are returned as well (oldest first) for
+    /// the heatmap. Metric names are taken from the metric table only, never from user input.
+    func latestEnvironmentPerNode(
+        metricColumn: String?,
+        maxAgeHours: Double
+    ) async -> [EnvironmentNodeSamples] {
+        let cutoff = clock().addingTimeInterval(-maxAgeHours * 3_600).timeIntervalSince1970
+        let columns = EnvironmentMetricInfo.all.map(\.column)
+        let selectedColumn = metricColumn.flatMap { EnvironmentMetricInfo.metric(forColumn: $0)?.column }
+        return await withCheckedContinuation { continuation in
+            queue.async { [weak self] in
+                guard let self, let db = self.db else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                var nodes: [UInt32: EnvironmentNodeSamples] = [:]
+
+                // Newest value per node and metric (SQLite returns the bare columns of the MAX row).
+                let placeholders = Array(repeating: "?", count: columns.count).joined(separator: ", ")
+                let latestSQL = """
+                    SELECT node_id, metric, value, MAX(timestamp)
+                    FROM telemetry_samples
+                    WHERE timestamp >= ? AND metric IN (\(placeholders))
+                    GROUP BY node_id, metric
+                    """
+                self.forEachRow(latestSQL, on: db, bind: { statement in
+                    sqlite3_bind_double(statement, 1, cutoff)
+                    for (index, column) in columns.enumerated() {
+                        sqlite3_bind_text(statement, Int32(index + 2), column, -1, Self.transientDestructor)
+                    }
+                }, row: { statement in
+                    guard let text = sqlite3_column_text(statement, 1),
+                          let metric = EnvironmentMetricInfo.metric(forColumn: String(cString: text)) else { return }
+                    let nodeID = UInt32(truncatingIfNeeded: sqlite3_column_int64(statement, 0))
+                    let timestamp = Date(timeIntervalSince1970: sqlite3_column_double(statement, 3))
+                    var entry = nodes[nodeID] ?? EnvironmentNodeSamples(nodeId: nodeID)
+                    entry.latestValues[metric.key] = sqlite3_column_double(statement, 2)
+                    if !metric.isVirtual {
+                        entry.latestTimestamp = max(entry.latestTimestamp ?? .distantPast, timestamp)
+                    }
+                    nodes[nodeID] = entry
+                })
+
+                if let selectedColumn {
+                    let samplesSQL = """
+                        SELECT node_id, timestamp, value
+                        FROM telemetry_samples
+                        WHERE metric = ? AND timestamp >= ?
+                        ORDER BY node_id, timestamp
+                        """
+                    self.forEachRow(samplesSQL, on: db, bind: { statement in
+                        sqlite3_bind_text(statement, 1, selectedColumn, -1, Self.transientDestructor)
+                        sqlite3_bind_double(statement, 2, cutoff)
+                    }, row: { statement in
+                        let nodeID = UInt32(truncatingIfNeeded: sqlite3_column_int64(statement, 0))
+                        var entry = nodes[nodeID] ?? EnvironmentNodeSamples(nodeId: nodeID)
+                        entry.samples.append(EnvironmentSample(
+                            timestamp: Date(timeIntervalSince1970: sqlite3_column_double(statement, 1)),
+                            value: sqlite3_column_double(statement, 2)
+                        ))
+                        nodes[nodeID] = entry
+                    })
+                }
+
+                continuation.resume(returning: nodes.values.sorted { $0.nodeId < $1.nodeId })
+            }
+        }
+    }
+
+    private func forEachRow(
+        _ sql: String,
+        on db: OpaquePointer,
+        bind: (OpaquePointer) -> Void,
+        row: (OpaquePointer) -> Void
+    ) {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            logPrepareError(sql: sql, on: db)
+            return
+        }
+        defer { sqlite3_finalize(statement) }
+        bind(statement)
+        while sqlite3_step(statement) == SQLITE_ROW { row(statement) }
+    }
+
     // MARK: - Funk-Echo
 
     /// Requests from the same node with the same type and detail within this window
@@ -2045,8 +2139,13 @@ final class TelemetryDatabaseService: @unchecked Sendable {
             timestamp: timestamp,
             values: finiteValues
         )
+        let metrics = finiteValues.keys.map(\.rawValue)
         Task { @MainActor in
-            NotificationCenter.default.post(name: .telemetrySampleDidInsert, object: self)
+            NotificationCenter.default.post(
+                name: .telemetrySampleDidInsert,
+                object: self,
+                userInfo: [Self.insertedMetricsUserInfoKey: metrics]
+            )
             await TelemetryAlarmService.shared.process(batch)
         }
     }
