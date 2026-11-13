@@ -1318,6 +1318,9 @@ final class MeshtasticProtocolService {
         node.hopsAway = info.hopsAway > 0 ? Int(info.hopsAway) : (info.viaMqtt ? nil : 0)
         node.isFavorite = info.isFavorite
         node.isOwnNode = info.num == myNodeId
+        if FirmwareCapabilities.supportsV28(appState?.myNodeInfo?.firmwareVersion) {
+            node.heardOnCurrentLora = info.heardOnCurrentLora
+        }
 
         // Apply saved color/note from settings
         node.colorHex = SettingsService.shared.colorHex(for: info.num)

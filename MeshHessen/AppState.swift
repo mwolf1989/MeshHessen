@@ -409,6 +409,7 @@ final class AppState {
                 existing.isFavorite = info.isFavorite
                 existing.isOwnNode = info.isOwnNode
                 existing.viaMqtt = info.viaMqtt
+                existing.heardOnCurrentLora = info.heardOnCurrentLora
             }
             // Preserve pin state from existing node (don't overwrite with incoming data)
             if info.isPinned { existing.isPinned = info.isPinned }

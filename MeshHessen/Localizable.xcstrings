@@ -18224,6 +18224,22 @@
           }
         }
       }
+    },
+    "Heard directly by this radio on the current LoRa slot" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von diesem Funkgerät direkt im aktuellen LoRa-Slot gehört"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heard directly by this radio on the current LoRa slot"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
