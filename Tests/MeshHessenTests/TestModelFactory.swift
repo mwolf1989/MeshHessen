@@ -24,9 +24,16 @@ enum TestModelFactory {
         return model
     }
 
+    /// Schema version 4, before the late-PKI-decryption `cipher` attribute.
+    static func makeVersion4Model() -> NSManagedObjectModel {
+        let model = makeModel()
+        model.entitiesByName["MHMessageEntity"]?.properties.removeAll { $0.name == "cipher" }
+        return model
+    }
+
     /// Schema used by MeshHessen 1.0.18 before context-aware message identity.
     static func makeVersion2Model() -> NSManagedObjectModel {
-        let model = makeModel()
+        let model = makeVersion4Model()
         model.entitiesByName["MHNodeEntity"]?.properties.removeAll {
             $0.name == "isInNodeDatabase"
         }
@@ -126,6 +133,7 @@ enum TestModelFactory {
             float("receivedSnr"),
             int32("receivedRssi"),
             binary("reactionsData"),
+            binary("cipher"),
         ]
         e.uniquenessConstraints = [["persistenceKey"]]
         return e
