@@ -613,6 +613,13 @@ final class MeshCoreDataStore {
                     storageContext: storageContext
                 )
             }
+            // A late encrypted copy must not turn a readable message back into a placeholder.
+            if message.isEncrypted,
+               let object,
+               object.value(forKey: "isEncrypted") as? Bool == false,
+               !((object.value(forKey: "messageText") as? String) ?? "").isEmpty {
+                return
+            }
             let isNewMessage = object == nil
             let messageObject = object
                 ?? NSEntityDescription.insertNewObject(forEntityName: "MHMessageEntity", into: context)
@@ -662,6 +669,7 @@ final class MeshCoreDataStore {
             let persistedReactions = Self.decodeReactions(messageObject.value(forKey: "reactionsData") as? Data)
             let mergedReactions = Self.mergingReactions(persistedReactions, with: message.reactionsByEmoji)
             messageObject.setValue(Self.encodeReactions(mergedReactions), forKey: "reactionsData")
+            messageObject.setValue(message.cipher, forKey: "cipher")
 
             if isDirect, let partnerNodeId {
                 let resolvedPartnerName = partnerName ?? message.from
@@ -830,7 +838,11 @@ final class MeshCoreDataStore {
             for convObj in conversations {
                 let partnerNodeId = UInt32((convObj.value(forKey: "partnerNodeId") as? Int64) ?? 0)
                 guard partnerNodeId > 0 else { continue }
-                let nodeName = convObj.value(forKey: "nodeName") as? String ?? "Node \(partnerNodeId)"
+                var nodeName = convObj.value(forKey: "nodeName") as? String ?? NodeInfo.placeholderName(for: partnerNodeId)
+                if NodeInfo.isPlaceholderName(nodeName, for: partnerNodeId),
+                   let knownName = appState.node(forId: partnerNodeId)?.name {
+                    nodeName = knownName
+                }
                 let colorHex = convObj.value(forKey: "colorHex") as? String ?? ""
                 let hasUnread = convObj.value(forKey: "hasUnread") as? Bool ?? false
 
@@ -855,7 +867,13 @@ final class MeshCoreDataStore {
         if let messages = try? context.fetch(messageRequest) {
             var seenPersistenceKeys = Set<String>()
             for object in messages {
-                guard let message = Self.makeMessage(from: object) else { continue }
+                guard var message = Self.makeMessage(from: object) else { continue }
+                // Stored before the sender's NodeInfo was known: show the name now known.
+                if NodeInfo.isPlaceholderName(message.from, for: message.fromId),
+                   let senderName = appState.node(forId: message.fromId)?.name,
+                   !NodeInfo.isPlaceholderName(senderName, for: message.fromId) {
+                    message.from = senderName
+                }
 
                 let isDirect = object.value(forKey: "isDirect") as? Bool ?? false
                 let storedPartnerNodeId = UInt32(clamping: (object.value(forKey: "partnerNodeId") as? Int64) ?? 0)
@@ -983,7 +1001,8 @@ final class MeshCoreDataStore {
             hopCount: hopCount,
             receivedSnr: receivedSnr,
             receivedRssi: receivedRssi,
-            reactionsByEmoji: Self.decodeReactions(object.value(forKey: "reactionsData") as? Data)
+            reactionsByEmoji: Self.decodeReactions(object.value(forKey: "reactionsData") as? Data),
+            cipher: object.value(forKey: "cipher") as? Data
         )
         let isDirect = object.value(forKey: "isDirect") as? Bool ?? false
         return isDirect ? message : message.normalizingUnknownChannel()

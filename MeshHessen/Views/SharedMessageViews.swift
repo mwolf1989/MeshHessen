@@ -288,6 +288,18 @@ struct MessageBubbleView: View {
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                             .contextMenu { messageContextMenu }
+                        if message.canRetryDecrypt && !isMine {
+                            Button {
+                                coordinator.protocol_.retryDecryption(of: message)
+                            } label: {
+                                Image(systemName: "key.fill")
+                            }
+                            .buttonStyle(.borderless)
+                            .font(.caption)
+                            .disabled(!protocolReady)
+                            .help("Decrypt now or request the sender's key")
+                            .accessibilityLabel("Request key and decrypt")
+                        }
                     } else if let attributed = Self.detectLinks(in: visibleMessageText) {
                         Text(attributed)
                             .textSelection(.enabled)
@@ -317,7 +329,7 @@ struct MessageBubbleView: View {
 
             // Reaction pills
             ReactionPillsView(reactions: message.reactionsByEmoji) { nodeId in
-                appState.node(forId: nodeId)?.name ?? String(format: "!%08x", nodeId)
+                appState.node(forId: nodeId)?.name ?? NodeInfo.placeholderName(for: nodeId)
             }
 
             if let receptionSummary {

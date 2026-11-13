@@ -54,7 +54,7 @@ struct UnknownTelemetrySenderProtocolTests {
         harness.database.waitForPendingWrites()
 
         let node = try #require(harness.state.node(forId: senderID))
-        #expect(node.name == "!deadbeef")
+        #expect(node.name == "Meshtastic beef")
         #expect(node.temperature == 21.5)
         #expect(node.relativeHumidity == 63)
         #expect(
@@ -90,7 +90,7 @@ struct UnknownTelemetrySenderProtocolTests {
         harness.database.waitForPendingWrites()
 
         let node = try #require(harness.state.node(forId: senderID))
-        #expect(node.name == "!00abcdef")
+        #expect(node.name == "Meshtastic cdef")
         #expect(node.paxMetrics == NodePaxMetrics(wifi: 3, ble: 4, uptimeSeconds: 120))
         #expect(
             harness.database.getTimeSeries(

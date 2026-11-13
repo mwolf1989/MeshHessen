@@ -19580,6 +19580,26 @@
           }
         }
       }
+    },
+    "Decrypt now or request the sender's key" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jetzt entschlüsseln oder den Schlüssel des Absenders anfordern"
+          }
+        }
+      }
+    },
+    "Request key and decrypt" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schlüssel anfordern und entschlüsseln"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

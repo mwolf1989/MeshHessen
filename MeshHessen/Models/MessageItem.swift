@@ -143,6 +143,13 @@ struct MessageItem: Identifiable, Sendable {
     /// Emoji reactions: emoji string → list of sender node IDs
     var reactionsByEmoji: [String: [UInt32]] = [:]
 
+    /// On-wire PKC blob of an encrypted direct message addressed to us, kept so it
+    /// can be decrypted once the sender's public key is known. `nil` otherwise.
+    var cipher: Data? = nil
+
+    /// Whether the 🔑 action can do something: an encrypted placeholder with ciphertext.
+    var canRetryDecrypt: Bool { isEncrypted && cipher?.isEmpty == false }
+
     /// true if this is a direct message (not broadcast)
     var isDirect: Bool { toId != 0xFFFFFFFF && toId != 0 }
 
@@ -180,6 +187,22 @@ struct MessageItem: Identifiable, Sendable {
 
     /// Whether this message has any reactions
     var hasReactions: Bool { !reactionsByEmoji.isEmpty }
+
+    /// The placeholder turned into the decrypted text message. Identity, timestamps
+    /// and RF metadata are kept so the bubble is updated in place, not duplicated.
+    func applyingLateDecryption(
+        text: String,
+        hasAlertBell: Bool,
+        replyToPacketId: UInt32?
+    ) -> MessageItem {
+        var decrypted = self
+        decrypted.message = text
+        decrypted.isEncrypted = false
+        decrypted.cipher = nil
+        decrypted.hasAlertBell = hasAlertBell
+        if let replyToPacketId { decrypted.replyToPacketId = replyToPacketId }
+        return decrypted
+    }
 
     /// Stable key used by CoreData and in-memory deduplication.
     /// Network messages use sender + packet ID + conversation context;
