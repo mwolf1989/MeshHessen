@@ -35,7 +35,7 @@ Generated on 2026-11-12 by a feature-gap audit of the Windows client against thi
 | [022](022-rf-links-polling-and-rates.md) | RF neighbour links, telemetry polling, LocalStats rates | P3 | L | LOW–MED | 005 | DONE (reviewed) — merged into `main` from `feat/022-rf-links-polling` |
 | [023](023-config-backup-restore.md) | Config backup / restore as JSON | P2 | M | MED | (001, 008) | DONE (reviewed) — merged into `main` from `feat/023-config-backup-restore` |
 | [024](024-firmware-foundation.md) | Firmware: catalog, download, file inspection, admin commands | P2 | L | LOW | 008, 002 | DONE (reviewed) — merged into `main` from `feat/024-firmware-foundation` |
-| [025](025-firmware-wizard-wifi-ota-uf2.md) | Firmware wizard + ESP32 Wi-Fi OTA + UF2 | P2 | L | **HIGH** | 024, 008, (023) | TODO |
+| [025](025-firmware-wizard-wifi-ota-uf2.md) | Firmware wizard + ESP32 Wi-Fi OTA + UF2 | P2 | L | **HIGH** | 024, 008, (023) | DONE (reviewed, **not hardware-tested**) — merged into `main` from `feat/025-firmware-wizard` |
 | [026](026-firmware-bluetooth-ota-and-nrf-dfu.md) | Firmware: ESP32 BLE OTA + nRF52 DFU | P3 | L | **HIGH** | 025 | TODO |
 | [027](027-environment-map-overlay.md) | Environment data on the map (boxes + heatmap) | P3 | L | MED | (013) | DONE (reviewed) — merged into `main` from `feat/027-environment-map-overlay` |
 | [028](028-terrain-link-profile-3d.md) | Terrain service, link elevation profile, 3D terrain | P3 | L | LOW–MED | (022) | DONE (reviewed) — merged into `main` from `feat/028-terrain-link-profile` |
@@ -103,6 +103,30 @@ Learnings that affect later plans:
 - **029**: entry point is a triple-click on the "Analysis of the last N days" footer in `TelemetryView`. Estimates are never written to `AppState.nodes`, Core Data or `node_positions` (tested). New read-only queries in `// MARK: - RF Links`: `rfLinkSnrRows(since:)`, `rfLinkSnrSamples(observer:neighbor:myNodeId:since:)`, `directRssiSamples(nodeId:since:)`, `latestNoiseFloors()`. The Mac has no per-node precision bits, so every position counts as exact (prior error 0.2 km). Expert link budgets exist only as the `TriangulationNodeOverride` hook. Map layers live in the in-memory `TriangulationMapStore`. The noise test uses an exact port of .NET `Random(42)`. Not checked in the app: the triple-click, both map renderings, the ✕ removal and "Show on Map".
 
 All plans except **025** and **026** are now done. Both flash real radios: unit tests cover only the protocol logic, and a person must test them on hardware before release. When they run: wire `protocol_.onClientNotification` in `AppCoordinator`, export a config backup first (023), then suppress `onLinkStale` / the heartbeat while flashing (008).
+
+2026-11-13 (seventh wave) — plan 025 executed alone and reviewed with extra care (coordinator hooks, session run order and every exit path read line by line). Merged cleanly (`feat/025-firmware-wizard`). Coordinator fix `6d52f99`: in the UF2 path a cancel during the DFU settle delay ended update mode while the device was already rebooting into its bootloader; the link now counts as released as soon as `enter_dfu_mode` was sent. The combined result builds (`swift build`, `xcodebuild` Debug) and `swift test` passes with 731 tests in 94 suites. **No device was touched; a person must run the hardware checklist below before release.**
+
+How it is wired:
+- `AppCoordinator.beginFirmwareUpdate()` sets `firmwareUpdateInProgress`, cancels any pending reconnect and calls `protocol_.suspendLinkSupervision()` (stops heartbeat + watchdog). While the flag is set, `handleLinkStale()` returns early and `handleUnexpectedDisconnect()` does not auto-reconnect. `endFirmwareUpdate()` clears it and calls `resumeLinkSupervision()` (no-op without a live link). `disconnectForFirmwareUpdate()` / `reconnectAfterFirmwareUpdate(type:parameters:)` keep and reuse the last connection target. `protocol_.onClientNotification` is wired to `firmwareClientNotificationHandler`.
+- `FirmwareUpdateSession.run()`: re-verify file (SHA-256, size, inspector) → config backup **while supervision is still on** (failure aborts before anything is sent) → `beginFirmwareUpdate()` → method. If the link was never released (refused, request not sent, cancelled early) update mode ends at the end of `run()`; after a release (or after `enter_dfu_mode` went out) it ends on Reconnect or when the wizard closes (`onDisappear` → `close()`).
+- Single gate: `FirmwareUpdateSession.canStart` (artifact + inspection without errors + no red pre-flight row), checked by the button, the confirmation alert's action (`startConfirmed()`), and `run()`. UF2 re-verifies the file right before copying and requires an `NSOpenPanel` grant for a folder containing `INFO_UF2.TXT`.
+- `Info.plist` gained `NSLocalNetworkUsageDescription`; entitlements unchanged. Backups are saved automatically to `<firmware cache>/backups/`.
+- Deviation to confirm: the OTA beacon regex accepts lowercase hex, as the Windows C# does (the plan's test list said lowercase → false).
+
+Hardware checklist (a person, before release):
+1. ESP32 Wi-Fi OTA over serial/BLE on firmware ≥ 2.7.17, Mac on the same Wi-Fi: accept the local-network prompt; log shows "Firmware confirmed", beacon IP, ERASING, upload %, final OK; Reconnect shows the new version; no auto-reconnect during the transfer.
+2. Same over TCP; block UDP to check the fallback to the known host after 8 s.
+3. Hash refusal (`ERR Hash Rejected` / `ERR Hash Mismatch`): clear error, old firmware still runs.
+4. Refusal while connected (Wi-Fi off on the device): refusal message, link stays up, debug log "Link supervision resumed".
+5. UF2 on an nRF52 (RAK4631 or T-Echo) over USB: enter DFU → drive appears → picker opens at it → copy → drive vanishes → Reconnect (the serial port name may change).
+6. UF2 on an RP2040 board, same as 5.
+7. Recovery mode: not connected, device already in its bootloader; drive picked via "Choose Boot Drive…" or by re-plugging; local `.uf2` flashes.
+8. Interrupted transfer: cancel / pull power mid-upload (ESP32) and mid-copy (UF2); the device stays recoverable; after closing the wizard, normal connect, auto-reconnect and heartbeat work again.
+9. Close after the link was released without Reconnect: manual connect works, and a later link loss auto-reconnects.
+10. Backup: JSON lands in the backups folder; a failed backup aborts with nothing sent.
+11. Sandbox: writing to the picked boot drive and receiving UDP broadcasts on port 3232 both work. If either fails, report it — do not add a `/Volumes` exception.
+
+Learnings for 026: replace the `.laterVersion` entries in `FirmwareWizardLogic.availableMethods`; add `.bleOta` / `.bleDfu` branches in `FirmwareUpdateSession.run()` (currently `methodNotSupported`); reuse `Esp32WifiOtaUpdater.perform`'s request/answer/release pattern and `classifyNotification` (add a mode parameter for "BLE"); go through `beginFirmwareUpdate` / `disconnectForFirmwareUpdate` / `endFirmwareUpdate`, never the heartbeat directly; keep every method behind `canStart`; `disconnect()` stops the shared `bleService`, so the loader/DFU scan probably needs its own CoreBluetooth central; heavy synchronous I/O belongs in `Task.detached` (the target uses approachable concurrency).
 
 ## Suggested waves
 
