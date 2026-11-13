@@ -7,6 +7,7 @@ struct ToolsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appState) private var appState
     @Environment(AppCoordinator.self) private var coordinator
+    @Environment(\.openWindow) private var openWindow
     @State private var settings = SettingsService.shared
     @State private var showTDeckWizard = false
     @State private var showTileExport = false
@@ -16,6 +17,9 @@ struct ToolsView: View {
             Form {
                 virtualNodeSection
                 mqttProxySection
+                if appState.connectionState.isConnected, let display = coordinator.protocol_.displayInfo {
+                    displayMirrorSection(display)
+                }
                 tDeckSection
             }
             .formStyle(.grouped)
@@ -97,6 +101,38 @@ struct ToolsView: View {
             Text("The proxy follows the MQTT module configuration of the connected radio and is active only when proxy-to-client mode is enabled on that radio.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Shown only when the connected device reports a display in its metadata
+    /// (firmware 2.8). Every Mac transport is a local connection.
+    private func displayMirrorSection(_ display: Meshtastic_DisplayInfo) -> some View {
+        Section("Device Display") {
+            Button {
+                openWindow(id: "display-mirror")
+            } label: {
+                Label("Mirror Device Display…", systemImage: "display")
+            }
+            if display.width > 0, display.height > 0 {
+                LabeledContent("Panel") {
+                    Text(verbatim: "\(display.width) × \(display.height)\(Self.panelSuffix(display.panelClass))")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Text("Shows a live copy of the connected device's screen. Mirroring runs only while the window is open.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private static func panelSuffix(_ panelClass: Meshtastic_DisplayInfo.PanelClass) -> String {
+        switch panelClass {
+        case .oled: return " · OLED"
+        case .lcd: return " · LCD"
+        case .tft: return " · TFT"
+        case .eink: return " · E-Ink"
+        case .hub75: return " · HUB75"
+        default: return ""
         }
     }
 

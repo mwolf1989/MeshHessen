@@ -124,6 +124,19 @@ struct MeshHessenApp: App {
         .defaultSize(width: 1180, height: 760)
         .windowResizability(.contentMinSize)
 
+        // MARK: - Device Display Mirror
+        Window("Device Display", id: "display-mirror") {
+            DisplayMirrorView()
+                .font(settings.scaledBodyFont)
+                .environment(\.locale, settings.appLocale)
+                .preferredColorScheme(settings.preferredColorScheme)
+                .environment(\.appState, coordinator.appState)
+                .environment(coordinator)
+                .environment(\.dynamicTypeSize, settings.dynamicTypeSize)
+        }
+        .windowStyle(.titleBar)
+        .defaultSize(width: 560, height: 360)
+
         // MARK: - Telemetry Chart Windows
         WindowGroup("Telemetry Charts", for: TelemetryChartWindowRequest.self) { request in
             if let request = request.wrappedValue {
