@@ -47,7 +47,7 @@ bringt viele neue Ansichten für Funkverbindungen, Telemetrie und Nachrichten.
 ## Qualitätssicherung
 
 - 791 erfolgreiche Swift-Package-Tests in 101 Test-Suites
-- Signierter, notarisierter Release-Build (Developer ID)
+- Mit Developer ID signierter Release-Build
 
 ## Hinweis
 
@@ -102,7 +102,7 @@ views for radio links, telemetry and messages.
 ## Quality assurance
 
 - 791 passing Swift package tests in 101 test suites
-- Signed, notarized release build (Developer ID)
+- Release build signed with Developer ID
 
 ## Note
 
