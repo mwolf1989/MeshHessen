@@ -20,7 +20,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				Proto/README.md,
 				Proto/meshtastic/admin.proto,
 				Proto/meshtastic/atak.proto,
 				Proto/meshtastic/channel.proto,
@@ -33,6 +32,7 @@
 				Proto/meshtastic/portnums.proto,
 				Proto/meshtastic/telemetry.proto,
 				Proto/meshtastic/xmodem.proto,
+				Proto/README.md,
 			);
 			target = 41BC718A2F4AFF9100813C30 /* MeshHessen */;
 		};
